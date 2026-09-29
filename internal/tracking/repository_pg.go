@@ -78,7 +78,9 @@ func (r *PostgresRepository) GetTracking(ctx context.Context, id uuid.UUID) (*do
 		SELECT id, user_id, product_source_id, active,
 		       polling_interval_seconds, next_fetch_at, created_at, updated_at
 		FROM tracked_products
-		WHERE id = $1;
+		WHERE id = $1 OR product_source_id = $1
+		ORDER BY (id = $1) DESC
+		LIMIT 1;
 	`
 	var t domain.TrackedProduct
 	err := r.pool.QueryRow(ctx, query, id).Scan(

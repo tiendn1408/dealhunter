@@ -145,3 +145,7 @@ func (s *TrackingService) ResumeTracking(ctx context.Context, id uuid.UUID) erro
 	}
 	return s.trackingRepo.UpdateNextFetchAt(ctx, nil, id, time.Now())
 }
+
+func (s *TrackingService) GetProductSource(ctx context.Context, id uuid.UUID) (*product.ProductSource, error) {
+	return s.productRepo.GetProductSource(ctx, id)
+}

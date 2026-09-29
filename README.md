@@ -52,3 +52,10 @@ go run cmd/worker/main.go
 - [x] API Server (`internal/http/handler.go`) with track, list, detail, prices, pause, resume
 - [x] Prometheus Metrics (`/metrics`) and structured JSON logging (`slog`)
 - [x] Unit & Integration Tests (`tests/integration/...`, `internal/pricing/model_test.go`)
+
+## Documentation
+Chi tiết tài liệu hệ thống được quản lý trong thư mục [`docs/`](docs/README.md):
+- [**Kiến trúc Hệ thống**](docs/architecture/overview.md): Tổng quan Modular Monolith và Ports & Adapters.
+- [**Cẩm nang Vận hành**](docs/runbooks/setup-and-run.md): Hướng dẫn cài đặt, cấu hình .env và chạy 3 service.
+- [**Kế hoạch Phase 1**](docs/plans/phase-1-core-tracking.md): Đặc tả nghiệp vụ và Definition of Done Phase 1.
+- [**Kế hoạch Phase 2**](docs/plans/phase-2-alert-and-zalo.md): Thiết kế Alert Engine & Zalo Notification.

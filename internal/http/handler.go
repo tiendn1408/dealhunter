@@ -57,6 +57,53 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type EnrichedTracking struct {
+	ID                     uuid.UUID `json:"ID"`
+	UserID                 uuid.UUID `json:"UserID"`
+	ProductSourceID        uuid.UUID `json:"ProductSourceID"`
+	Active                 bool      `json:"Active"`
+	PollingIntervalSeconds int       `json:"PollingIntervalSeconds"`
+	NextFetchAt            time.Time `json:"NextFetchAt"`
+	CreatedAt              time.Time `json:"CreatedAt"`
+	UpdatedAt              time.Time `json:"UpdatedAt"`
+	Title                  string    `json:"Title,omitempty"`
+	Platform               string    `json:"Platform,omitempty"`
+	CanonicalURL           string    `json:"CanonicalURL,omitempty"`
+	SellerName             string    `json:"SellerName,omitempty"`
+	LastPrice              *int64    `json:"LastPrice,omitempty"`
+	LastEffectivePrice     *int64    `json:"LastEffectivePrice,omitempty"`
+	LastInStock            *bool     `json:"LastInStock,omitempty"`
+}
+
+func (h *Handler) enrichTracking(r *http.Request, t *domain.TrackedProduct) EnrichedTracking {
+	enriched := EnrichedTracking{
+		ID:                     t.ID,
+		UserID:                 t.UserID,
+		ProductSourceID:        t.ProductSourceID,
+		Active:                 t.Active,
+		PollingIntervalSeconds: t.PollingIntervalSeconds,
+		NextFetchAt:            t.NextFetchAt,
+		CreatedAt:              t.CreatedAt,
+		UpdatedAt:              t.UpdatedAt,
+	}
+
+	if source, err := h.trackingService.GetProductSource(r.Context(), t.ProductSourceID); err == nil && source != nil {
+		if source.RawTitle != nil {
+			enriched.Title = *source.RawTitle
+		}
+		enriched.Platform = source.Platform
+		enriched.CanonicalURL = source.CanonicalURL
+		if source.SellerName != nil {
+			enriched.SellerName = *source.SellerName
+		}
+		enriched.LastPrice = source.LastPrice
+		enriched.LastEffectivePrice = source.LastEffectivePrice
+		enriched.LastInStock = source.LastInStock
+	}
+
+	return enriched
+}
+
 func (h *Handler) ListTrackings(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
 
@@ -66,9 +113,14 @@ func (h *Handler) ListTrackings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	enrichedList := make([]EnrichedTracking, 0, len(trackings))
+	for _, t := range trackings {
+		enrichedList = append(enrichedList, h.enrichTracking(r, t))
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data": trackings,
+		"data": enrichedList,
 	})
 }
 
@@ -81,13 +133,38 @@ func (h *Handler) GetTracking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tracked, err := h.trackingService.GetTracking(r.Context(), id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+	if err == nil && tracked != nil {
+		enriched := h.enrichTracking(r, tracked)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(enriched)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tracked)
+	// Fallback: check if id is a product_source_id directly
+	if source, err := h.trackingService.GetProductSource(r.Context(), id); err == nil && source != nil {
+		enriched := EnrichedTracking{
+			ProductSourceID:    source.ID,
+			Active:             source.Active,
+			Platform:           source.Platform,
+			CanonicalURL:       source.CanonicalURL,
+			LastPrice:          source.LastPrice,
+			LastEffectivePrice: source.LastEffectivePrice,
+			LastInStock:        source.LastInStock,
+			CreatedAt:          source.CreatedAt,
+			UpdatedAt:          source.UpdatedAt,
+		}
+		if source.RawTitle != nil {
+			enriched.Title = *source.RawTitle
+		}
+		if source.SellerName != nil {
+			enriched.SellerName = *source.SellerName
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(enriched)
+		return
+	}
+
+	http.Error(w, "tracking not found", http.StatusNotFound)
 }
 
 func (h *Handler) GetTrackingPrices(w http.ResponseWriter, r *http.Request) {
