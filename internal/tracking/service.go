@@ -49,42 +49,53 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 		return nil, fmt.Errorf("resolve product: %w", err)
 	}
 
-	// 3. Upsert Product
-	prod := &product.Product{
-		ID:        uuid.New(),
-		Title:     data.RawTitle,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	if err := s.productRepo.UpsertProduct(ctx, prod); err != nil {
-		return nil, fmt.Errorf("upsert product: %w", err)
+	// 3. Check if ProductSource already exists to avoid creating duplicate/orphan Products
+	var source *product.ProductSource
+	if data.ExternalProductID != "" {
+		source, err = s.productRepo.GetProductSourceByExternalID(ctx, adapter.Name(), data.ExternalProductID)
+		if err != nil {
+			return nil, fmt.Errorf("check existing source: %w", err)
+		}
 	}
 
-	// 4. Upsert ProductSource
-	source := &product.ProductSource{
-		ID:                uuid.New(),
-		ProductID:         prod.ID,
-		Platform:          adapter.Name(),
-		ExternalProductID: &data.ExternalProductID,
-		CanonicalURL:      data.CanonicalURL,
-		SellerName:        &data.SellerName,
-		Currency:          "VND",
-		Active:            true,
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
-	}
-	if err := s.productRepo.UpsertProductSource(ctx, source); err != nil {
-		return nil, fmt.Errorf("upsert source: %w", err)
+	if source == nil {
+		// New product: insert Product and ProductSource
+		prod := &product.Product{
+			ID:        uuid.New(),
+			Title:     data.RawTitle,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := s.productRepo.UpsertProduct(ctx, prod); err != nil {
+			return nil, fmt.Errorf("upsert product: %w", err)
+		}
+
+		source = &product.ProductSource{
+			ID:                uuid.New(),
+			ProductID:         prod.ID,
+			Platform:          adapter.Name(),
+			ExternalProductID: &data.ExternalProductID,
+			CanonicalURL:      data.CanonicalURL,
+			SellerName:        &data.SellerName,
+			Currency:          "VND",
+			Active:            true,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
+		}
+		if err := s.productRepo.UpsertProductSource(ctx, source); err != nil {
+			return nil, fmt.Errorf("upsert source: %w", err)
+		}
 	}
 
-	// 5. Create Tracking
+	// 4. Create Tracking (schedule next fetch for 30m later since we queue an immediate fetch now)
+	pollInterval := 1800
 	tracked := &domain.TrackedProduct{
 		ID:                     uuid.New(),
 		UserID:                 userID,
 		ProductSourceID:        source.ID,
 		Active:                 true,
-		PollingIntervalSeconds: 1800,
-		NextFetchAt:            time.Now(),
+		PollingIntervalSeconds: pollInterval,
+		NextFetchAt:            time.Now().Add(time.Duration(pollInterval) * time.Second),
 		CreatedAt:              time.Now(),
 		UpdatedAt:              time.Now(),
 	}
@@ -92,7 +103,7 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 		return nil, fmt.Errorf("create tracking: %w", err)
 	}
 
-	// 6. Create FetchJob
+	// 5. Create immediate initial FetchJob
 	job := &domain.FetchJob{
 		ID:              uuid.New(),
 		ProductSourceID: source.ID,
@@ -105,7 +116,7 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 		return nil, fmt.Errorf("create job: %w", err)
 	}
 
-	// 7. Enqueue to Redis
+	// 6. Enqueue to Redis
 	if err := s.q.Enqueue(ctx, job.ID.String()); err != nil {
 		// Log error but don't fail tracking creation.
 		// The scheduler will pick it up later if queue fails.
@@ -113,4 +124,24 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 	}
 
 	return tracked, nil
+}
+
+func (s *TrackingService) GetTracking(ctx context.Context, id uuid.UUID) (*domain.TrackedProduct, error) {
+	return s.trackingRepo.GetTracking(ctx, id)
+}
+
+func (s *TrackingService) ListTrackings(ctx context.Context, userID uuid.UUID) ([]*domain.TrackedProduct, error) {
+	return s.trackingRepo.ListTrackingsByUser(ctx, userID)
+}
+
+func (s *TrackingService) PauseTracking(ctx context.Context, id uuid.UUID) error {
+	return s.trackingRepo.SetTrackingActive(ctx, id, false)
+}
+
+func (s *TrackingService) ResumeTracking(ctx context.Context, id uuid.UUID) error {
+	// Set active to true and schedule fetch immediately
+	if err := s.trackingRepo.SetTrackingActive(ctx, id, true); err != nil {
+		return err
+	}
+	return s.trackingRepo.UpdateNextFetchAt(ctx, nil, id, time.Now())
 }

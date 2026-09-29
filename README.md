@@ -1,47 +1,54 @@
 # Deal Hunter
 
-Deal Hunter is a cross-platform e-commerce deal tracking engine.
-Phase 1 focuses on building the core tracking pipeline.
+Deal Hunter is a cross-platform e-commerce deal tracking engine built purely in Go.
+Phase 1 delivers the core backend tracking pipeline: from product link ingestion, periodic price checks, snapshot history logging, to observability and metrics.
 
 ## Tech Stack
-- Go 1.23+
-- PostgreSQL (Business data)
-- Redis (Queue via Streams)
+- **Language**: Go 1.23+ (`chi` router, `slog`, `prometheus`)
+- **Database**: PostgreSQL 15 (`pgx/v5`, connection pooling via `pgxpool`)
+- **Queue**: Redis 7 (`Redis Streams` consumer groups `XREADGROUP` / `XACK`)
+- **Migrations**: `golang-migrate/migrate/v4`
 
 ## Architecture
 
-The system consists of 3 distinct services:
-1. **API Server (`cmd/api`)**: Handles HTTP ingestion and queries.
-2. **Worker Pool (`cmd/worker`)**: Consumes jobs from Redis Streams, invokes marketplace adapters, and updates prices.
-3. **Scheduler (`cmd/scheduler`)**: Periodically finds due tracked products and queues them into Redis Streams.
+The system consists of 3 distinct background/API Go services:
+1. **API Server (`cmd/api`)**: Handles URL ingestion, listing, detail, price history, pause/resume endpoints.
+2. **Worker Pool (`cmd/worker`)**: Consumes fetch jobs from Redis Streams, invokes marketplace adapters, and executes atomic price snapshot transactions in PostgreSQL.
+3. **Scheduler (`cmd/scheduler`)**: Periodically queries due tracking records with `SELECT ... FOR UPDATE SKIP LOCKED` and dispatches jobs to Redis Streams.
 
 ## Quick Start
 
+### 1. Start Infrastructure
 ```bash
-# 1. Start dependencies
 docker compose up -d postgres redis
-
-# 2. Run migrations
-go run cmd/migrate/main.go up
-
-# 3. Start services (in separate terminals)
-go run cmd/api/main.go
-go run cmd/worker/main.go
-go run cmd/scheduler/main.go
 ```
 
-## Implementation Plan
+### 2. Run Database Migrations
+```bash
+go mod tidy
+go run cmd/migrate/main.go up
+```
 
-We have successfully bootstrapped the Phase 1 implementation according to the plan:
-- [x] Database Schema & Migrations
-- [x] Domain Models
-- [x] PostgreSQL Repositories
-- [x] Redis Stream Queue
-- [x] Marketplace Adapters (Mock, Lazada skeleton)
-- [x] Worker Pool & Scheduler
-- [x] API (POST track, GET prices)
+### 3. Run Backend Services (in separate terminals)
+```bash
+# Terminal 1: API Server (port 8080)
+go run cmd/api/main.go
 
-## Next Steps
-- Implement concrete PostgreSQL database repository logic using `pgx/v5`.
-- Develop integration tests and crash tests.
-- Develop the Next.js frontend (`frontend/`).
+# Terminal 2: Scheduler
+go run cmd/scheduler/main.go
+
+# Terminal 3: Worker Pool
+go run cmd/worker/main.go
+```
+
+## Phase 1 Deliverables
+- [x] Database Schema & Migrations (`migrations/000001_init.up.sql`)
+- [x] Domain Models (`internal/domain`, `internal/product`, `internal/pricing`)
+- [x] Concrete PostgreSQL Repositories (`pgx/v5` in `product`, `tracking`, `pricing`, `jobs`)
+- [x] Redis Streams Queue (`internal/queue/redis_stream.go`)
+- [x] Marketplace Adapters (`internal/marketplace/mock`, `lazada`)
+- [x] Worker Pool (`internal/jobs/worker.go`) with concurrency & atomic transactions
+- [x] Scheduler (`internal/jobs/scheduler.go`) with `SKIP LOCKED` and next fetch scheduling
+- [x] API Server (`internal/http/handler.go`) with track, list, detail, prices, pause, resume
+- [x] Prometheus Metrics (`/metrics`) and structured JSON logging (`slog`)
+- [x] Unit & Integration Tests (`tests/integration/...`, `internal/pricing/model_test.go`)

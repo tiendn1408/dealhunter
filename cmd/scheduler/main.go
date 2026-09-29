@@ -7,9 +7,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/tiendang/deal-hunter/internal/jobs"
+	"github.com/tiendang/deal-hunter/internal/queue"
+	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/pkg/config"
+	"github.com/tiendang/deal-hunter/pkg/database"
 )
 
 func main() {
@@ -21,16 +26,47 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	logger.Info("Starting scheduler", "poll_interval", cfg.DefaultPollInterval)
 
-	// TODO: wire trackingRepo, jobRepo, queue from real DB/Redis connections.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 1. PostgreSQL Connection Pool
+	dbPool, err := database.NewPostgresPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("Failed to connect to PostgreSQL", "err", err)
+		os.Exit(1)
+	}
+	defer dbPool.Close()
+
+	// 2. Redis Client
+	redisOpt, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		redisOpt = &redis.Options{Addr: cfg.RedisURL}
+	}
+	rdb := redis.NewClient(redisOpt)
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		logger.Error("Failed to connect to Redis", "err", err)
+		os.Exit(1)
+	}
+	defer rdb.Close()
+
+	// 3. Repositories
+	trackingRepo := tracking.NewPostgresRepository(dbPool)
+	jobRepo := jobs.NewPostgresRepository(dbPool)
+
+	// 4. Queue
+	q := queue.NewRedisStreamQueue(rdb, "dh:stream:price-fetch", "price-workers")
+	if err := q.Init(ctx); err != nil {
+		logger.Warn("Redis consumer group init note", "err", err)
+	}
+
+	// 5. Scheduler (ticks every 10 seconds to check due trackings)
 	scheduler := jobs.NewScheduler(
-		nil, // trackingRepo — wire real implementation before running
-		nil, // jobRepo     — wire real implementation before running
-		nil, // queue       — wire real implementation before running
-		cfg.DefaultPollInterval,
+		trackingRepo,
+		jobRepo,
+		q,
+		10*time.Second,
 		logger,
 	)
-
-	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		sig := make(chan os.Signal, 1)
@@ -43,4 +79,5 @@ func main() {
 	if err := scheduler.Run(ctx); err != nil {
 		logger.Error("Scheduler exit with error", "err", err)
 	}
+	logger.Info("Scheduler stopped")
 }

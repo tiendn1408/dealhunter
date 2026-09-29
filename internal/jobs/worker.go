@@ -14,6 +14,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
+	"github.com/tiendang/deal-hunter/pkg/metrics"
 )
 
 // Worker processes price-fetch jobs consumed from the Redis Stream.
@@ -36,6 +37,7 @@ func NewWorker(
 	productRepo product.ProductRepository,
 	pricingRepo pricing.PricingRepository,
 	registry *marketplace.Registry,
+	db *pgxpool.Pool,
 	logger *slog.Logger,
 ) *Worker {
 	return &Worker{
@@ -45,12 +47,12 @@ func NewWorker(
 		productRepo: productRepo,
 		pricingRepo: pricingRepo,
 		registry:    registry,
+		db:          db,
 		logger:      logger,
 	}
 }
 
-// SetDB injects the connection pool.
-// Must be called before Run().
+// SetDB injects the connection pool (optional override).
 func (w *Worker) SetDB(db *pgxpool.Pool) {
 	w.db = db
 }
@@ -129,23 +131,30 @@ func (w *Worker) processJob(ctx context.Context, msg queue.Message) {
 	}
 
 	// 4. Fetch price with timeout
+	fetchStart := time.Now()
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	snapshot, err := adapter.FetchPrice(fetchCtx, source)
+	duration := time.Since(fetchStart).Seconds()
+	metrics.PriceFetchDuration.WithLabelValues(source.Platform).Observe(duration)
+
 	if err != nil {
+		metrics.PriceFetchTotal.WithLabelValues(source.Platform, "failure").Inc()
 		w.logger.Error("Fetch failed", "job_id", job.ID, "err", err)
 		if job.Attempt >= 5 {
 			_ = w.jobRepo.MarkDead(ctx, job.ID)
 		} else {
+			metrics.JobRetryTotal.Inc()
 			_ = w.jobRepo.MarkFailed(ctx, job.ID, "fetch_failed", err.Error())
 		}
 		_ = w.q.Ack(ctx, msg.MsgID)
 		return
 	}
+	metrics.PriceFetchTotal.WithLabelValues(source.Platform, "success").Inc()
 
 	// 5. Atomic success transaction:
-	//    INSERT snapshot + UPDATE product_source + UPDATE fetch_job + UPDATE tracked_products
+	//    INSERT snapshot + UPDATE product_source + UPDATE fetch_job
 	tx, err := w.db.Begin(ctx)
 	if err != nil {
 		w.logger.Error("Begin tx failed", "err", err)
@@ -179,6 +188,8 @@ func (w *Worker) processJob(ctx context.Context, msg queue.Message) {
 		w.logger.Error("Commit failed", "err", err)
 		return
 	}
+
+	metrics.PriceSnapshotsTotal.Inc()
 
 	w.logger.Info("Job succeeded",
 		"job_id", job.ID,

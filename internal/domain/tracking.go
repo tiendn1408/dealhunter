@@ -27,4 +27,5 @@ type TrackingRepository interface {
 	ListTrackingsByUser(ctx context.Context, userID uuid.UUID) ([]*TrackedProduct, error)
 	UpdateNextFetchAt(ctx context.Context, tx pgx.Tx, id uuid.UUID, nextFetch time.Time) error
 	ClaimDueTrackings(ctx context.Context, limit int) ([]*TrackedProduct, error)
+	SetTrackingActive(ctx context.Context, id uuid.UUID, active bool) error
 }
