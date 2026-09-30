@@ -1,17 +1,25 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
 	AppEnv              string
 	HTTPPort            int
+	LogLevel            string
 	DatabaseURL         string
+	PostgresUser        string
+	PostgresPassword    string
+	PostgresDB          string
+	PostgresPort        int
 	RedisURL            string
+	RedisPort           int
 	WorkerConcurrency   int
 	DefaultPollInterval time.Duration
 	FetchTimeout        time.Duration
@@ -19,10 +27,14 @@ type Config struct {
 	ZaloOAAccessToken   string
 	ZaloTemplateID      string
 	ZaloAppID           string
+	ZaloOASecretKey     string
 	ZaloEnabled         bool
+	CORSAllowedOrigins  string
 }
 
 func Load() (*Config, error) {
+	loadEnvFile(".env")
+
 	port, err := parseInt(getEnv("HTTP_PORT", "8080"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid HTTP_PORT: %w", err)
@@ -49,16 +61,26 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid MAX_RETRY: %w", err)
 	}
 
+	pgPort, _ := parseInt(getEnv("POSTGRES_PORT", "5433"))
+	redisPort, _ := parseInt(getEnv("REDIS_PORT", "6379"))
+
 	zaloToken := getEnv("ZALO_OA_ACCESS_TOKEN", "")
 	zaloTemplate := getEnv("ZALO_TEMPLATE_ID", "")
 	zaloAppID := getEnv("ZALO_APP_ID", "")
+	zaloSecret := getEnv("ZALO_OA_SECRET_KEY", "")
 	zaloEnabled := getEnv("ZALO_ENABLED", "false") == "true" || zaloToken != ""
 
 	return &Config{
 		AppEnv:              getEnv("APP_ENV", "development"),
 		HTTPPort:            port,
+		LogLevel:            getEnv("LOG_LEVEL", "info"),
 		DatabaseURL:         getEnv("DATABASE_URL", "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable"),
+		PostgresUser:        getEnv("POSTGRES_USER", "dealuser"),
+		PostgresPassword:    getEnv("POSTGRES_PASSWORD", "dealpass"),
+		PostgresDB:          getEnv("POSTGRES_DB", "dealdb"),
+		PostgresPort:        pgPort,
 		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379"),
+		RedisPort:           redisPort,
 		WorkerConcurrency:   concurrency,
 		DefaultPollInterval: time.Duration(pollInterval) * time.Second,
 		FetchTimeout:        timeout,
@@ -66,8 +88,39 @@ func Load() (*Config, error) {
 		ZaloOAAccessToken:   zaloToken,
 		ZaloTemplateID:      zaloTemplate,
 		ZaloAppID:           zaloAppID,
+		ZaloOASecretKey:     zaloSecret,
 		ZaloEnabled:         zaloEnabled,
+		CORSAllowedOrigins:  getEnv("CORS_ALLOWED_ORIGINS", "*"),
 	}, nil
+}
+
+func loadEnvFile(filenames ...string) {
+	for _, filename := range filenames {
+		f, err := os.Open(filename)
+		if err != nil {
+			continue
+		}
+		defer f.Close()
+
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				val := strings.TrimSpace(parts[1])
+				if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+					val = val[1 : len(val)-1]
+				}
+				if _, exists := os.LookupEnv(key); !exists {
+					os.Setenv(key, val)
+				}
+			}
+		}
+	}
 }
 
 func getEnv(key, fallback string) string {

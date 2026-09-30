@@ -31,10 +31,23 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 		})
 	})
 
+	// Health check endpoint
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok","app":"DealHunter"}`))
+	})
+
 	// Prometheus metrics endpoint
 	r.Handle("/metrics", promhttp.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status":"ok","app":"DealHunter"}`))
+		})
+
 		r.Post("/tracked-products", handler.TrackProduct)
 		r.Get("/tracked-products", handler.ListTrackings)
 		r.Get("/tracked-products/{id}", handler.GetTracking)
@@ -57,6 +70,9 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 		r.Delete("/users/me/zalo", handler.DisconnectZalo)
 		r.Get("/auth/zalo/status", handler.GetUserProfile)
 		r.Post("/auth/zalo/disconnect", handler.DisconnectZalo)
+		r.Post("/user/zalo/connect", handler.ConnectZalo)
+		r.Get("/user/zalo/status", handler.GetUserProfile)
+		r.Delete("/user/zalo", handler.DisconnectZalo)
 
 		// Phase 3: Cross-platform Price Comparison
 		r.Get("/products/{product_id}/comparison", handler.GetProductComparison)
