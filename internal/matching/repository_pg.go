@@ -38,6 +38,7 @@ func (r *PostgresMatchingRepository) SaveSuggestion(ctx context.Context, s *Matc
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (product_id, candidate_url) DO UPDATE
 		SET match_score = EXCLUDED.match_score,
+		    status = EXCLUDED.status,
 		    candidate_title = EXCLUDED.candidate_title,
 		    candidate_seller = EXCLUDED.candidate_seller,
 		    candidate_price = EXCLUDED.candidate_price,
@@ -121,6 +122,35 @@ func (r *PostgresMatchingRepository) GetSuggestionByID(ctx context.Context, id u
 			return nil, nil
 		}
 		return nil, fmt.Errorf("query suggestion by id: %w", err)
+	}
+	if seller != nil {
+		s.CandidateSeller = *seller
+	}
+
+	return s, nil
+}
+
+func (r *PostgresMatchingRepository) GetSuggestionByProductAndURL(ctx context.Context, productID uuid.UUID, candidateURL string) (*MatchSuggestion, error) {
+	query := `
+		SELECT id, product_id, candidate_platform, candidate_url,
+		       candidate_title, candidate_seller, candidate_price,
+		       match_score, status, created_at, updated_at
+		FROM product_match_suggestions
+		WHERE product_id = $1 AND candidate_url = $2
+	`
+
+	s := &MatchSuggestion{}
+	var seller *string
+	err := r.pool.QueryRow(ctx, query, productID, candidateURL).Scan(
+		&s.ID, &s.ProductID, &s.CandidatePlatform, &s.CandidateURL,
+		&s.CandidateTitle, &seller, &s.CandidatePrice,
+		&s.MatchScore, &s.Status, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query suggestion by product and url: %w", err)
 	}
 	if seller != nil {
 		s.CandidateSeller = *seller

@@ -2,10 +2,13 @@ package matching
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/tiendang/deal-hunter/internal/comparison"
+	"github.com/tiendang/deal-hunter/internal/tracking"
 )
 
 // SourceLinker defines an interface to link a discovered product source to a canonical product.
@@ -13,25 +16,26 @@ type SourceLinker interface {
 	LinkSource(ctx context.Context, userID, productID uuid.UUID, url string) error
 }
 
-// CacheInvalidator defines an interface to bust comparison caches.
-type CacheInvalidator interface {
+// ComparisonProvider defines an interface to read comparison and invalidate caches.
+type ComparisonProvider interface {
+	GetComparison(ctx context.Context, productID uuid.UUID) (*comparison.ComparisonResult, error)
 	Invalidate(ctx context.Context, productID uuid.UUID) error
 }
 
 // MatchingService coordinates query normalization, cross-platform searching, scoring, auto-linking, and suggestions.
 type MatchingService struct {
-	repo        MatchingRepository
-	searcher    CandidateSearcher
-	linker      SourceLinker
-	invalidator CacheInvalidator
+	repo       MatchingRepository
+	searcher   CandidateSearcher
+	linker     SourceLinker
+	comparison ComparisonProvider
 }
 
-func NewMatchingService(repo MatchingRepository, searcher CandidateSearcher, linker SourceLinker, inv CacheInvalidator) *MatchingService {
+func NewMatchingService(repo MatchingRepository, searcher CandidateSearcher, linker SourceLinker, comp ComparisonProvider) *MatchingService {
 	return &MatchingService{
-		repo:        repo,
-		searcher:    searcher,
-		linker:      linker,
-		invalidator: inv,
+		repo:       repo,
+		searcher:   searcher,
+		linker:     linker,
+		comparison: comp,
 	}
 }
 
@@ -51,11 +55,22 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 	}
 
 	result := &AutoMatchResult{
-		ProductID:          productID,
-		ReferenceTitle:     refTitle,
-		AutoLinkedSources:  []string{},
-		NewSuggestions:     []*MatchSuggestion{},
-		TotalDiscovered:    0,
+		ProductID:         productID,
+		ReferenceTitle:    refTitle,
+		AutoLinkedSources: []string{},
+		NewSuggestions:    []*MatchSuggestion{},
+		TotalDiscovered:   0,
+	}
+
+	// 1. Gather existing source URLs to avoid duplicate matching
+	existingURLs := make(map[string]bool)
+	if s.comparison != nil {
+		if cmp, err := s.comparison.GetComparison(ctx, productID); err == nil && cmp != nil {
+			for _, src := range cmp.Sources {
+				existingURLs[src.CanonicalURL] = true
+				existingURLs[strings.TrimRight(src.CanonicalURL, "/")] = true
+			}
+		}
 	}
 
 	for _, targetPlatform := range targetPlatforms {
@@ -67,6 +82,25 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 		result.TotalDiscovered += len(candidates)
 
 		for _, cand := range candidates {
+			cleanCandURL := strings.TrimRight(cand.URL, "/")
+			if existingURLs[cand.URL] || existingURLs[cleanCandURL] {
+				// Already an active linked source in this product group
+				continue
+			}
+
+			// Check if suggestion already exists in DB
+			existing, _ := s.repo.GetSuggestionByProductAndURL(ctx, productID, cand.URL)
+			if existing != nil {
+				if existing.Status == StatusDismissed {
+					// User explicitly dismissed this candidate before; respect their choice
+					continue
+				}
+				if existing.Status == StatusAccepted || existing.Status == StatusAutoLinked {
+					// Already accepted or auto-linked
+					continue
+				}
+			}
+
 			score := ScoreMatch(norm, refPrice, cand.Title, cand.Price, cand.SellerName, cand.IsMall)
 
 			if score >= ThresholdAutoLink && s.linker != nil {
@@ -74,8 +108,9 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 				err := s.linker.LinkSource(ctx, userID, productID, cand.URL)
 				if err == nil {
 					result.AutoLinkedSources = append(result.AutoLinkedSources, cand.URL)
-					if s.invalidator != nil {
-						_ = s.invalidator.Invalidate(ctx, productID)
+					existingURLs[cand.URL] = true
+					if s.comparison != nil {
+						_ = s.comparison.Invalidate(ctx, productID)
 					}
 					// Persist as auto_linked in suggestions table for audit
 					_ = s.repo.SaveSuggestion(ctx, &MatchSuggestion{
@@ -91,12 +126,22 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 					})
 					continue
 				}
+
+				if errors.Is(err, tracking.ErrSourceAlreadyLinked) {
+					existingURLs[cand.URL] = true
+					continue
+				}
 			}
 
 			if score >= ThresholdSuggestion {
 				// Medium confidence: Save suggestion for user confirmation
+				suggID := uuid.New()
+				if existing != nil && existing.Status == StatusPending {
+					suggID = existing.ID
+				}
+
 				sugg := &MatchSuggestion{
-					ID:                uuid.New(),
+					ID:                suggID,
 					ProductID:         productID,
 					CandidatePlatform: cand.Platform,
 					CandidateURL:      cand.URL,
@@ -107,7 +152,9 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 					Status:            StatusPending,
 				}
 				if err := s.repo.SaveSuggestion(ctx, sugg); err == nil {
-					result.NewSuggestions = append(result.NewSuggestions, sugg)
+					if existing == nil {
+						result.NewSuggestions = append(result.NewSuggestions, sugg)
+					}
 				}
 			}
 		}
@@ -133,7 +180,9 @@ func (s *MatchingService) AcceptSuggestion(ctx context.Context, userID, suggesti
 
 	if s.linker != nil {
 		if err := s.linker.LinkSource(ctx, userID, sugg.ProductID, sugg.CandidateURL); err != nil {
-			return fmt.Errorf("link source on accept: %w", err)
+			if !errors.Is(err, tracking.ErrSourceAlreadyLinked) {
+				return fmt.Errorf("link source on accept: %w", err)
+			}
 		}
 	}
 
@@ -141,8 +190,8 @@ func (s *MatchingService) AcceptSuggestion(ctx context.Context, userID, suggesti
 		return fmt.Errorf("update status to accepted: %w", err)
 	}
 
-	if s.invalidator != nil {
-		_ = s.invalidator.Invalidate(ctx, sugg.ProductID)
+	if s.comparison != nil {
+		_ = s.comparison.Invalidate(ctx, sugg.ProductID)
 	}
 
 	return nil

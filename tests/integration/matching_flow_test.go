@@ -107,8 +107,9 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	userID := uuid.New()
 
 	t.Log("Step 1: Tracking a product with model code (Sony WH-1000XM5) on Shopee...")
+	testURL := fmt.Sprintf("https://shopee.vn/Tai-nghe-Sony-WH-1000XM5-Chinh-Hang-i.88201679.%d", time.Now().UnixNano())
 	trackPayload, _ := json.Marshal(map[string]string{
-		"url": "https://shopee.vn/Tai-nghe-Sony-WH-1000XM5-Chinh-Hang-i.88201679.22731853609",
+		"url": testURL,
 	})
 	req, _ := http.NewRequestWithContext(ctx, "POST", ts.URL+"/api/v1/tracked-products", bytes.NewReader(trackPayload))
 	req.Header.Set("Content-Type", "application/json")
@@ -130,14 +131,22 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 
 	// Seed an initial price for comparison
 	seedPrice := int64(6290000)
+	effPrice := seedPrice + 15000
 	_ = pricingRepo.InsertSnapshot(ctx, nil, &pricing.PriceSnapshot{
 		ProductSourceID: trackResp.ProductSourceID,
 		Price:           seedPrice,
 		ShippingFee:     15000,
-		EffectivePrice:  seedPrice + 15000,
+		EffectivePrice:  effPrice,
 		Currency:        "VND",
 		CapturedAt:      time.Now(),
 	})
+
+	// Also update the ProductSource record so comparison has the price
+	if ps, err := productRepo.GetProductSource(ctx, trackResp.ProductSourceID); err == nil && ps != nil {
+		ps.LastPrice = &seedPrice
+		ps.LastEffectivePrice = &effPrice
+		_ = productRepo.UpdateProductSourcePrice(ctx, nil, ps)
+	}
 
 	t.Log("Step 2: Triggering Auto-Match for the product...")
 	autoMatchReq, _ := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/api/v1/tracked-products/%s/auto-match", ts.URL, trackedID), nil)
@@ -152,8 +161,8 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	_ = json.NewDecoder(amResp.Body).Decode(&matchResult)
 	amResp.Body.Close()
 
-	t.Logf("Auto-match completed: Discovered=%d, AutoLinked=%d, NewSuggestions=%d",
-		matchResult.TotalDiscovered, len(matchResult.AutoLinkedSources), len(matchResult.NewSuggestions))
+	t.Logf("Auto-match completed: RefTitle=%q, Discovered=%d, AutoLinked=%d, NewSuggestions=%d",
+		matchResult.ReferenceTitle, matchResult.TotalDiscovered, len(matchResult.AutoLinkedSources), len(matchResult.NewSuggestions))
 
 	t.Log("Step 3: Querying match suggestions...")
 	suggReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/api/v1/tracked-products/%s/match-suggestions", ts.URL, trackedID), nil)
@@ -202,6 +211,24 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 		if len(cmpResult.Sources) < 2 {
 			t.Errorf("expected >= 2 sources after linking accepted suggestion, got %d", len(cmpResult.Sources))
 		}
+	} else if len(matchResult.AutoLinkedSources) > 0 {
+		t.Log("Step 4b: Verifying cross-platform comparison after auto-link...")
+		cmpReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/api/v1/products/%s/comparison", ts.URL, matchResult.ProductID), nil)
+		cmpResp, err := client.Do(cmpReq)
+		if err != nil || cmpResp.StatusCode != http.StatusOK {
+			t.Fatalf("get comparison failed: status=%d, err=%v", cmpResp.StatusCode, err)
+		}
+
+		var cmpResult comparison.ComparisonResult
+		_ = json.NewDecoder(cmpResp.Body).Decode(&cmpResult)
+		cmpResp.Body.Close()
+
+		t.Logf("Comparison sources count: %d, Available: %v", len(cmpResult.Sources), cmpResult.ComparisonAvailable)
+		if len(cmpResult.Sources) < 2 {
+			t.Errorf("expected >= 2 sources after auto-linking, got %d", len(cmpResult.Sources))
+		}
+	} else {
+		t.Fatalf("expected either auto-linked sources or suggestions to be produced, got 0 of both")
 	}
 
 	t.Log("ALL GAP-03 AUTO-MATCHING AND SUGGESTIONS STEPS PASSED SUCCESSFULLY!")

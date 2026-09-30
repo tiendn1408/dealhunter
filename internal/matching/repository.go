@@ -11,5 +11,6 @@ type MatchingRepository interface {
 	SaveSuggestion(ctx context.Context, s *MatchSuggestion) error
 	GetSuggestionsByProductID(ctx context.Context, productID uuid.UUID) ([]*MatchSuggestion, error)
 	GetSuggestionByID(ctx context.Context, id uuid.UUID) (*MatchSuggestion, error)
+	GetSuggestionByProductAndURL(ctx context.Context, productID uuid.UUID, candidateURL string) (*MatchSuggestion, error)
 	UpdateSuggestionStatus(ctx context.Context, id uuid.UUID, status string) error
 }

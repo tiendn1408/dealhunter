@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/tiendang/deal-hunter/internal/comparison"
 )
 
 type mockMatchingRepo struct {
@@ -34,6 +35,15 @@ func (m *mockMatchingRepo) GetSuggestionsByProductID(_ context.Context, pid uuid
 
 func (m *mockMatchingRepo) GetSuggestionByID(_ context.Context, id uuid.UUID) (*MatchSuggestion, error) {
 	return m.suggestions[id], nil
+}
+
+func (m *mockMatchingRepo) GetSuggestionByProductAndURL(_ context.Context, pid uuid.UUID, url string) (*MatchSuggestion, error) {
+	for _, s := range m.suggestions {
+		if s.ProductID == pid && s.CandidateURL == url {
+			return s, nil
+		}
+	}
+	return nil, nil
 }
 
 func (m *mockMatchingRepo) UpdateSuggestionStatus(_ context.Context, id uuid.UUID, status string) error {
@@ -66,11 +76,15 @@ func (ml *mockLinker) LinkSource(_ context.Context, _, _ uuid.UUID, url string) 
 	return nil
 }
 
-type mockInvalidator struct {
+type mockComparisonProvider struct {
 	invalidated bool
 }
 
-func (mi *mockInvalidator) Invalidate(_ context.Context, _ uuid.UUID) error {
+func (mi *mockComparisonProvider) GetComparison(_ context.Context, _ uuid.UUID) (*comparison.ComparisonResult, error) {
+	return nil, nil
+}
+
+func (mi *mockComparisonProvider) Invalidate(_ context.Context, _ uuid.UUID) error {
 	mi.invalidated = true
 	return nil
 }
@@ -78,7 +92,7 @@ func (mi *mockInvalidator) Invalidate(_ context.Context, _ uuid.UUID) error {
 func TestMatchingService_DiscoverAndMatch(t *testing.T) {
 	repo := newMockMatchingRepo()
 	linker := &mockLinker{}
-	inv := &mockInvalidator{}
+	comp := &mockComparisonProvider{}
 
 	searcher := &mockSearcher{
 		candidates: []*MatchCandidate{
@@ -101,7 +115,7 @@ func TestMatchingService_DiscoverAndMatch(t *testing.T) {
 		},
 	}
 
-	svc := NewMatchingService(repo, searcher, linker, inv)
+	svc := NewMatchingService(repo, searcher, linker, comp)
 	ctx := context.Background()
 
 	productID := uuid.New()

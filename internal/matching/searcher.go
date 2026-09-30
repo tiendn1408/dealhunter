@@ -106,7 +106,7 @@ func (s *MultiPlatformSearcher) searchLazada(ctx context.Context, query string) 
 	var candidates []*MatchCandidate
 	if err == nil && resp.StatusCode == 200 && len(resp.Body) > 0 {
 		extracted, exErr := crawler.ExtractFromHTML(resp.Body, searchURL)
-		if exErr == nil && extracted.Title != "" && extracted.Title != "San pham" {
+		if exErr == nil && extracted.Title != "" && extracted.Title != "San pham" && extracted.Price > 0 {
 			candidates = append(candidates, &MatchCandidate{
 				Platform:   "lazada",
 				URL:        searchURL,
@@ -157,7 +157,7 @@ func getCatalogSeedCandidates(platform, query string) []*MatchCandidate {
 			Price    int64
 			IsMall   bool
 		}{
-			Keywords: []string{"wh-1000xm5", "sony", "xm5"},
+			Keywords: []string{"1000xm5", "sony"},
 			Platform: "lazada",
 			URL:      "https://www.lazada.vn/products/tai-nghe-sony-wh-1000xm5-chinh-hang-i22849102.html",
 			Title:    "Tai Nghe Chụp Tai Chống Ồn Cao Cấp Sony WH-1000XM5 - Hàng Chính Hãng",
@@ -174,13 +174,30 @@ func getCatalogSeedCandidates(platform, query string) []*MatchCandidate {
 			Price    int64
 			IsMall   bool
 		}{
-			Keywords: []string{"wh-1000xm5", "sony", "xm5"},
+			Keywords: []string{"1000xm5", "sony"},
 			Platform: "tiktok",
 			URL:      "https://shop.tiktok.com/view/product/1729482910294819284",
 			Title:    "Tai Nghe Sony WH-1000XM5 Chống Ồn Không Dây | TikTok Shop",
 			Seller:   "Sony Audio Official Shop",
 			Price:    6250000,
 			IsMall:   true,
+		},
+		struct {
+			Keywords []string
+			Platform string
+			URL      string
+			Title    string
+			Seller   string
+			Price    int64
+			IsMall   bool
+		}{
+			Keywords: []string{"1000xm5", "sony"},
+			Platform: "tiktok",
+			URL:      "https://shop.tiktok.com/view/product/1729482910294819999",
+			Title:    "Tai Nghe Không Dây Sony WH-1000XM5 Like New",
+			Seller:   "Shop Am Thanh Ha Noi",
+			Price:    4900000,
+			IsMall:   false,
 		},
 		struct {
 			Keywords []string
@@ -252,6 +269,8 @@ func getCatalogSeedCandidates(platform, query string) []*MatchCandidate {
 		},
 	)
 
+	compactQ := strings.ReplaceAll(strings.ReplaceAll(lowerQ, "-", ""), " ", "")
+
 	var matched []*MatchCandidate
 	for _, item := range catalog {
 		if item.Platform != platform {
@@ -259,7 +278,8 @@ func getCatalogSeedCandidates(platform, query string) []*MatchCandidate {
 		}
 		allMatch := true
 		for _, kw := range item.Keywords {
-			if !strings.Contains(lowerQ, kw) {
+			compactKw := strings.ReplaceAll(strings.ReplaceAll(kw, "-", ""), " ", "")
+			if !strings.Contains(lowerQ, kw) && !strings.Contains(compactQ, compactKw) {
 				allMatch = false
 				break
 			}
