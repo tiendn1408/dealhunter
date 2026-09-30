@@ -6,13 +6,16 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/auth"
 	"github.com/tiendang/deal-hunter/internal/comparison"
 	"github.com/tiendang/deal-hunter/internal/domain"
+	"github.com/tiendang/deal-hunter/internal/matching"
 	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/tracking"
@@ -24,6 +27,9 @@ type Handler struct {
 	alertRepo       alert.Repository
 	notifRepo       notification.Repository
 	comparisonSvc   *comparison.ComparisonService
+	authService     *auth.AuthService
+	jwtManager      *auth.JWTManager
+	matchingService *matching.MatchingService
 }
 
 func NewHandler(ts *tracking.TrackingService, ps *pricing.PricingService) *Handler {
@@ -39,12 +45,39 @@ func (h *Handler) SetComparisonService(svc *comparison.ComparisonService) {
 	h.comparisonSvc = svc
 }
 
+func (h *Handler) SetAuthService(svc *auth.AuthService, jm *auth.JWTManager) {
+	h.authService = svc
+	h.jwtManager = jm
+}
+
+func (h *Handler) SetMatchingService(svc *matching.MatchingService) {
+	h.matchingService = svc
+}
+
+func (h *Handler) getUserID(r *http.Request) uuid.UUID {
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		if h.jwtManager != nil {
+			if claims, err := h.jwtManager.ValidateToken(tokenStr); err == nil && claims.UserID != uuid.Nil {
+				return claims.UserID
+			}
+		}
+	}
+
+	val := r.Header.Get("X-User-ID")
+	if parsed, err := uuid.Parse(val); err == nil && parsed != uuid.Nil {
+		return parsed
+	}
+	// Fallback to a deterministic demo anonymous user ID
+	return uuid.MustParse("00000000-0000-0000-0000-000000000001")
+}
+
 func getUserID(r *http.Request) uuid.UUID {
 	val := r.Header.Get("X-User-ID")
 	if parsed, err := uuid.Parse(val); err == nil {
 		return parsed
 	}
-	// Fallback to a deterministic demo anonymous user ID
 	return uuid.MustParse("00000000-0000-0000-0000-000000000001")
 }
 
@@ -59,12 +92,37 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 
 	tracked, err := h.trackingService.TrackURL(r.Context(), userID, req.URL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if h.matchingService != nil && h.comparisonSvc != nil {
+		go func(uid uuid.UUID, sourceID uuid.UUID) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			source, sErr := h.trackingService.GetProductSource(bgCtx, sourceID)
+			if sErr == nil && source != nil {
+				cmp, cErr := h.comparisonSvc.GetComparison(bgCtx, source.ProductID)
+				title := ""
+				if cErr == nil && cmp != nil {
+					title = cmp.ProductTitle
+				}
+				if source.RawTitle != nil && *source.RawTitle != "" {
+					title = *source.RawTitle
+				}
+				price := int64(0)
+				if source.LastEffectivePrice != nil {
+					price = *source.LastEffectivePrice
+				} else if source.LastPrice != nil {
+					price = *source.LastPrice
+				}
+				_, _ = h.matchingService.DiscoverAndMatch(bgCtx, uid, source.ProductID, source.Platform, title, price)
+			}
+		}(userID, tracked.ProductSourceID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -128,7 +186,7 @@ func (h *Handler) enrichTracking(r *http.Request, t *domain.TrackedProduct) Enri
 }
 
 func (h *Handler) ListTrackings(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 
 	trackings, err := h.trackingService.ListTrackings(r.Context(), userID)
 	if err != nil {
@@ -312,7 +370,7 @@ func (h *Handler) CreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	now := time.Now()
 
 	var expiresAt *time.Time
@@ -440,7 +498,7 @@ func (h *Handler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	limit := 30
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
@@ -477,7 +535,7 @@ func (h *Handler) MarkNotificationAsRead(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	if err := h.notifRepo.MarkAsRead(r.Context(), notifID, userID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -496,7 +554,7 @@ func (h *Handler) ListUserAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	rules, err := h.alertRepo.ListRulesByUser(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -519,7 +577,7 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	profile, err := h.notifRepo.GetUserProfile(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -552,7 +610,7 @@ func (h *Handler) ConnectZalo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	if err := h.notifRepo.UpdateUserZalo(r.Context(), userID, req.ZaloID, req.Phone); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -572,7 +630,7 @@ func (h *Handler) DisconnectZalo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	if err := h.notifRepo.DisconnectUserZalo(r.Context(), userID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -660,7 +718,7 @@ func (h *Handler) LinkProductSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	source, err := h.trackingService.LinkSourceToProduct(r.Context(), userID, productID, req.URL)
 	if err != nil {
 		if errors.Is(err, tracking.ErrSourceAlreadyLinked) {
@@ -692,7 +750,7 @@ func (h *Handler) ListProductGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := getUserID(r)
+	userID := h.getUserID(r)
 	groups, err := h.comparisonSvc.GetUserMultiSourceProducts(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

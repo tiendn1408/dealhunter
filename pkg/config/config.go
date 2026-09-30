@@ -30,6 +30,8 @@ type Config struct {
 	ZaloOASecretKey     string
 	ZaloEnabled         bool
 	CORSAllowedOrigins  string
+	JWTSecret           string
+	GoogleClientID      string
 }
 
 func Load() (*Config, error) {
@@ -91,6 +93,8 @@ func Load() (*Config, error) {
 		ZaloOASecretKey:     zaloSecret,
 		ZaloEnabled:         zaloEnabled,
 		CORSAllowedOrigins:  getEnv("CORS_ALLOWED_ORIGINS", "*"),
+		JWTSecret:           getEnv("JWT_SECRET", "dealhunter-super-secret-jwt-key-32bytes-secure!"),
+		GoogleClientID:      getEnv("GOOGLE_CLIENT_ID", ""),
 	}, nil
 }
 

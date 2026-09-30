@@ -1,0 +1,11 @@
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS email         TEXT UNIQUE,
+    ADD COLUMN IF NOT EXISTS name          TEXT,
+    ADD COLUMN IF NOT EXISTS avatar_url    TEXT,
+    ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(32) NOT NULL DEFAULT 'guest',
+    ADD COLUMN IF NOT EXISTS password_hash TEXT,
+    ADD COLUMN IF NOT EXISTS updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_users_email
+    ON users(email)
+    WHERE email IS NOT NULL;

@@ -17,6 +17,7 @@ Chua tai lieu PRD, dac ta BA/PM va ke hoach trien khai chi tiet cho tung giai do
 - [**phase-1-core-tracking.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/plans/phase-1-core-tracking.md): Dac ta goc va tieu chuan nghiem thu Phase 1 (Core Price Tracking Pipeline).
 - [**phase-2-alert-and-zalo.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/plans/phase-2-alert-and-zalo.md): Ke hoach va thiet ke kien truc chuan bi cho Phase 2 (Alert Engine + Zalo Notification).
 - [**phase-3-cross-platform.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/plans/phase-3-cross-platform.md): Ke hoach va thiet ke kien truc Phase 3 (Cross-platform Price Comparison).
+- [**gap-resolution-and-foundation-completion.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/plans/gap-resolution-and-foundation-completion.md): Ke hoach giai quyet dut diem cac thanh phan con thieu (Scraper thuc te, Auth, Auto-matching, Local dev runner) va ghi chu trien khai Docker tai Phase 6.
 
 ---
 

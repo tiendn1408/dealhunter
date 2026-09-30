@@ -1424,9 +1424,10 @@ Zalo
 [ ] Personalized hunt
 ```
 
-## Phase 6 — Scale
+## Phase 6 — Scale & Full Docker Deployment
 
 ```text
+[ ] Docker packaging for entire app (Multi-stage Go Dockerfiles + Next.js Dockerfile + full docker-compose profiles)
 [ ] Distributed workers
 [ ] Adaptive polling
 [ ] Per-platform rate limiting

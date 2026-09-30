@@ -48,6 +48,14 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 			w.Write([]byte(`{"status":"ok","app":"DealHunter"}`))
 		})
 
+		// Phase 1 Foundation / GAP-02: Authentication & Guest Data Migration
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/demo-login", handler.DemoLogin)
+			r.Post("/google", handler.GoogleLogin)
+			r.Post("/migrate", handler.MigrateGuestData)
+			r.Get("/me", handler.GetCurrentUser)
+		})
+
 		r.Post("/tracked-products", handler.TrackProduct)
 		r.Get("/tracked-products", handler.ListTrackings)
 		r.Get("/tracked-products/{id}", handler.GetTracking)
@@ -79,6 +87,14 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 		r.Post("/products/{product_id}/link-source", handler.LinkProductSource)
 		r.Get("/product-groups", handler.ListProductGroups)
 		r.Get("/tracked-products/{id}/comparison", handler.GetTrackedProductComparison)
+
+		// GAP-03: Cross-platform Auto-Matching & Suggestions
+		r.Get("/products/{product_id}/match-suggestions", handler.GetMatchSuggestions)
+		r.Post("/products/{product_id}/match-suggestions/{id}/accept", handler.AcceptMatchSuggestion)
+		r.Post("/products/{product_id}/match-suggestions/{id}/dismiss", handler.DismissMatchSuggestion)
+		r.Post("/products/{product_id}/auto-match", handler.TriggerAutoMatch)
+		r.Get("/tracked-products/{id}/match-suggestions", handler.GetTrackedProductMatchSuggestions)
+		r.Post("/tracked-products/{id}/auto-match", handler.TriggerTrackedProductAutoMatch)
 	})
 
 	return r

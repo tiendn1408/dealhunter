@@ -1,8 +1,11 @@
-.PHONY: dev test test-integration build migrate-up migrate-down
+.PHONY: dev dev-all test test-integration build migrate-up migrate-down
 
 dev:
 	docker compose up -d postgres redis
 	echo "Ready for local dev"
+
+dev-all:
+	./scripts/dev-all.sh
 
 test:
 	go test -v ./...
@@ -14,6 +17,7 @@ build:
 	go build -o bin/api ./cmd/api
 	go build -o bin/worker ./cmd/worker
 	go build -o bin/scheduler ./cmd/scheduler
+	go build -o bin/notifier ./cmd/notifier
 
 migrate-up:
 	go run cmd/migrate/main.go up

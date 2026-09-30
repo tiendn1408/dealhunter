@@ -11,8 +11,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/auth"
 	"github.com/tiendang/deal-hunter/internal/comparison"
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/jobs"
@@ -21,6 +23,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
 	"github.com/tiendang/deal-hunter/internal/marketplace/shopee"
 	"github.com/tiendang/deal-hunter/internal/marketplace/tiktok"
+	"github.com/tiendang/deal-hunter/internal/matching"
 	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
@@ -77,6 +80,7 @@ func main() {
 	alertRepo := alert.NewPostgresRepository(dbPool)
 	notifRepo := notification.NewPostgresRepository(dbPool)
 	comparisonRepo := comparison.NewPostgresRepository(dbPool)
+	authRepo := auth.NewPostgresUserRepository(dbPool)
 
 	// 5. Queue
 	q := queue.NewRedisStreamQueue(rdb, "dh:stream:price-fetch", "price-workers")
@@ -89,11 +93,21 @@ func main() {
 	pricingSvc := pricing.NewPricingService(pricingRepo)
 	comparisonCache := comparison.NewRedisCache(rdb)
 	comparisonSvc := comparison.NewComparisonService(comparisonRepo, comparisonCache)
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, 7*24*time.Hour)
+	authSvc := auth.NewAuthService(authRepo, jwtMgr, cfg.GoogleClientID)
+
+	// GAP-03: Matching Service
+	matchingRepo := matching.NewPostgresMatchingRepository(dbPool)
+	searcher := matching.NewMultiPlatformSearcher(nil)
+	linker := &trackingLinker{trackingSvc: trackingSvc}
+	matchingSvc := matching.NewMatchingService(matchingRepo, searcher, linker, comparisonSvc)
 
 	// 7. HTTP Handlers & Router
 	handler := router.NewHandler(trackingSvc, pricingSvc)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
 	handler.SetComparisonService(comparisonSvc)
+	handler.SetAuthService(authSvc, jwtMgr)
+	handler.SetMatchingService(matchingSvc)
 	r := router.NewRouter(logger, handler)
 
 	srv := &http.Server{
@@ -122,4 +136,13 @@ func main() {
 		logger.Error("Server shutdown failed", "err", err)
 	}
 	logger.Info("API server stopped")
+}
+
+type trackingLinker struct {
+	trackingSvc *tracking.TrackingService
+}
+
+func (l *trackingLinker) LinkSource(ctx context.Context, userID, productID uuid.UUID, url string) error {
+	_, err := l.trackingSvc.LinkSourceToProduct(ctx, userID, productID, url)
+	return err
 }

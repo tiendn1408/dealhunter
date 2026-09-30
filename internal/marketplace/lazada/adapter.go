@@ -3,12 +3,12 @@ package lazada
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/tiendang/deal-hunter/internal/marketplace"
+	"github.com/tiendang/deal-hunter/internal/marketplace/crawler"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 )
@@ -16,10 +16,17 @@ import (
 var lazadaItemPattern = regexp.MustCompile(`-i(\d+)`)
 
 // LazadaAdapter handles product ingestion and price scraping for Lazada Vietnam.
-type LazadaAdapter struct{}
+type LazadaAdapter struct {
+	client *crawler.Client
+}
 
 func NewLazadaAdapter() *LazadaAdapter {
-	return &LazadaAdapter{}
+	c, _ := crawler.NewClient(crawler.ClientOptions{
+		Timeout: 10 * time.Second,
+	})
+	return &LazadaAdapter{
+		client: c,
+	}
 }
 
 func (a *LazadaAdapter) Name() string {
@@ -27,6 +34,14 @@ func (a *LazadaAdapter) Name() string {
 }
 
 func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
+	// Expand shortlinks if necessary
+	if strings.Contains(rawURL, "s.lazada.vn") {
+		resolved, err := a.client.ResolveFinalURL(ctx, rawURL)
+		if err == nil && resolved != "" {
+			rawURL = resolved
+		}
+	}
+
 	if !strings.Contains(rawURL, "lazada.vn") && !strings.Contains(rawURL, "lazada") {
 		return nil, fmt.Errorf("invalid lazada url: %s", rawURL)
 	}
@@ -43,60 +58,97 @@ func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 		extID = fmt.Sprintf("lazada-%s", clean)
 	}
 
-	title := "Sản phẩm Lazada"
-	lower := strings.ToLower(rawURL)
-	price := int64(6390000)
+	// 1. Try HTML Crawler Extraction (OpenGraph / JSON-LD)
+	resp, err := a.client.Fetch(ctx, rawURL, nil)
+	if err == nil && len(resp.Body) > 0 {
+		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, rawURL)
+		if extractErr == nil && extracted.Title != "" && extracted.Title != "San pham" {
+			price := extracted.Price
+			listedPrice := extracted.ListedPrice
+			if listedPrice <= 0 {
+				listedPrice = price
+			}
+			seller := extracted.SellerName
+			if seller == "" {
+				seller = "LazMall Official"
+			}
 
-	if strings.Contains(lower, "sony") || strings.Contains(lower, "wh1000") || strings.Contains(lower, "xm6") {
-		title = "Tai nghe chống ồn Sony WH-1000XM6 LazMall"
-		price = 6390000
-	} else if strings.Contains(lower, "samsung") || strings.Contains(lower, "ssd") {
-		title = "Ổ Cứng SSD Samsung 990 Pro 2TB Chính Hãng LazMall"
-		price = 2890000
-	} else if strings.Contains(lower, "iphone") {
-		title = "Apple iPhone 16 Pro Max 256GB LazMall"
-		price = 32290000
+			return &marketplace.ProductData{
+				ExternalProductID: extID,
+				CanonicalURL:      rawURL,
+				RawTitle:          extracted.Title,
+				SellerName:        seller,
+				Price: pricing.Price{
+					ListedPrice: listedPrice,
+					SalePrice:   price,
+					ShippingFee: extracted.ShippingFee,
+				},
+				InStock: extracted.InStock,
+			}, nil
+		}
+	}
+
+	// 2. Fallback: Parse slug if WAF blocks direct content
+	slugTitle := crawler.ExtractSlugTitle(rawURL)
+	if slugTitle == "" || slugTitle == "San pham" {
+		slugTitle = "San pham Lazada"
 	}
 
 	return &marketplace.ProductData{
 		ExternalProductID: extID,
 		CanonicalURL:      rawURL,
-		RawTitle:          title,
-		SellerName:        "Lazada Flagship Store",
+		RawTitle:          slugTitle,
+		SellerName:        "LazMall Official",
 		Price: pricing.Price{
-			ListedPrice: price + int64(float64(price)*0.12),
-			SalePrice:   price,
-			ShippingFee: 20000,
+			ListedPrice: 0,
+			SalePrice:   0,
+			ShippingFee: 0,
 		},
-		InStock: true,
+		InStock: false,
 	}, nil
 }
 
 func (a *LazadaAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
-	base := int64(6390000)
+	targetURL := source.CanonicalURL
+
+	// 1. Try HTML crawl
+	resp, err := a.client.Fetch(ctx, targetURL, nil)
+	if err == nil && len(resp.Body) > 0 {
+		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, targetURL)
+		if extractErr == nil && extracted.Price > 0 {
+			shipping := extracted.ShippingFee
+			if shipping <= 0 && source.LastShippingFee != nil {
+				shipping = *source.LastShippingFee
+			}
+			return &pricing.PriceSnapshot{
+				ProductSourceID: source.ID,
+				Price:           extracted.Price,
+				ShippingFee:     shipping,
+				EffectivePrice:  extracted.Price + shipping,
+				Currency:        extracted.Currency,
+				InStock:         &extracted.InStock,
+				CapturedAt:      time.Now(),
+			}, nil
+		}
+	}
+
+	// 2. Fallback: preserve last verified price without random numbers
 	if source.LastPrice != nil && *source.LastPrice > 0 {
-		base = *source.LastPrice
+		shipping := int64(15000)
+		if source.LastShippingFee != nil && *source.LastShippingFee >= 0 {
+			shipping = *source.LastShippingFee
+		}
+		inStock := true
+		return &pricing.PriceSnapshot{
+			ProductSourceID: source.ID,
+			Price:           *source.LastPrice,
+			ShippingFee:     shipping,
+			EffectivePrice:  *source.LastPrice + shipping,
+			Currency:        "VND",
+			InStock:         &inStock,
+			CapturedAt:      time.Now(),
+		}, nil
 	}
 
-	fluctuation := float64(rand.Intn(5)-2) / 100.0
-	currentPrice := base + int64(float64(base)*fluctuation)
-	if currentPrice <= 0 {
-		currentPrice = base
-	}
-
-	shipping := int64(20000)
-	if source.LastShippingFee != nil && *source.LastShippingFee >= 0 {
-		shipping = *source.LastShippingFee
-	}
-
-	inStock := true
-	return &pricing.PriceSnapshot{
-		ProductSourceID: source.ID,
-		Price:           currentPrice,
-		ShippingFee:     shipping,
-		EffectivePrice:  currentPrice + shipping,
-		Currency:        "VND",
-		InStock:         &inStock,
-		CapturedAt:      time.Now(),
-	}, nil
+	return nil, fmt.Errorf("lazada price extraction failed: %s", targetURL)
 }
