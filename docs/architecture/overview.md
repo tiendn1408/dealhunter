@@ -68,7 +68,7 @@ flowchart TD
 ## 3. Cau Truc Phan Tang Ma Nguon (Source Tree)
 
 ```text
-deal_hunter/
+dealhunter/
 ├── cmd/                      # Composition Root: Khoi tao va rap noi dependencies (Manual DI)
 │   ├── api/main.go           # Khoi dong REST API Server
 │   ├── worker/main.go        # Khoi dong Worker Pool cao gia & danh gia canh bao

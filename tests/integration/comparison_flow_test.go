@@ -27,7 +27,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://dealuser:dealpass@localhost:5432/dealdb?sslmode=disable"
+		dbURL = "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable"
 	}
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {

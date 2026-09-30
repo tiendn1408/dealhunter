@@ -102,7 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_tracked_products_user_primary
 ## 4. Cau Truc Ma Nguon Da Trien Khai
 
 ```text
-deal_hunter/
+dealhunter/
 ├── internal/
 │   ├── comparison/                     -- Package moi chuyen trach so sanh gia
 │   │   ├── model.go                   -- SourcePrice, ComparisonResult, BestDealSummary, IdentifyBestDeal

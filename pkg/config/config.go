@@ -57,7 +57,7 @@ func Load() (*Config, error) {
 	return &Config{
 		AppEnv:              getEnv("APP_ENV", "development"),
 		HTTPPort:            port,
-		DatabaseURL:         getEnv("DATABASE_URL", "postgres://dealuser:dealpass@localhost:5432/dealdb?sslmode=disable"),
+		DatabaseURL:         getEnv("DATABASE_URL", "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable"),
 		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379"),
 		WorkerConcurrency:   concurrency,
 		DefaultPollInterval: time.Duration(pollInterval) * time.Second,

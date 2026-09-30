@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dealpass}
       POSTGRES_DB: ${POSTGRES_DB:-dealdb}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
