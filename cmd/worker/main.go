@@ -9,10 +9,15 @@ import (
 	"syscall"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/comparison"
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
 	"github.com/tiendang/deal-hunter/internal/marketplace/lazada"
 	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
+	"github.com/tiendang/deal-hunter/internal/marketplace/shopee"
+	"github.com/tiendang/deal-hunter/internal/marketplace/tiktok"
+	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
@@ -56,6 +61,8 @@ func main() {
 	registry := marketplace.NewRegistry()
 	registry.Register(mock.NewMockAdapter())
 	registry.Register(lazada.NewLazadaAdapter())
+	registry.Register(shopee.NewShopeeAdapter())
+	registry.Register(tiktok.NewTikTokAdapter())
 
 	// 4. Repositories
 	productRepo := product.NewPostgresRepository(dbPool)
@@ -79,6 +86,22 @@ func main() {
 		dbPool,
 		logger,
 	)
+
+	// 7. Phase 2 Alert & Notification Components
+	alertRepo := alert.NewPostgresRepository(dbPool)
+	ruleEngine := alert.NewRuleEngine(alertRepo, pricingRepo)
+	notifRepo := notification.NewPostgresRepository(dbPool)
+	dedupService := notification.NewDedupService(notifRepo, notification.NotifDedupWindow)
+	notifQueue := queue.NewRedisStreamQueue(rdb, "dh:stream:notifications", "dh:notifier")
+	if err := notifQueue.Init(ctx); err != nil {
+		logger.Warn("Redis notification consumer group init note", "err", err)
+	}
+
+	worker.SetAlertComponents(ruleEngine, notifRepo, dedupService, notifQueue)
+
+	// 8. Phase 3 Comparison Cache Invalidation
+	comparisonCache := comparison.NewRedisCache(rdb)
+	worker.SetComparisonCache(comparisonCache)
 
 	go func() {
 		sig := make(chan os.Signal, 1)

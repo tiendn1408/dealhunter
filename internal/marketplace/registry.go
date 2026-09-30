@@ -29,20 +29,20 @@ func (r *Registry) Detect(productURL string) (Marketplace, error) {
 	host := strings.ToLower(parsed.Host)
 	
 	// Basic domain matching logic
-	if strings.Contains(host, "shopee.vn") {
+	if strings.Contains(host, "mock") {
+		if m, ok := r.adapters["mock"]; ok {
+			return m, nil
+		}
+	} else if strings.Contains(host, "shopee.vn") || strings.Contains(host, "shopee") {
 		if m, ok := r.adapters["shopee"]; ok {
 			return m, nil
 		}
-	} else if strings.Contains(host, "lazada.vn") {
+	} else if strings.Contains(host, "lazada.vn") || strings.Contains(host, "lazada") {
 		if m, ok := r.adapters["lazada"]; ok {
 			return m, nil
 		}
-	} else if strings.Contains(host, "tiktok.com") {
+	} else if strings.Contains(host, "tiktok.com") || strings.Contains(host, "tiktok") {
 		if m, ok := r.adapters["tiktok"]; ok {
-			return m, nil
-		}
-	} else if strings.Contains(host, "mock") {
-		if m, ok := r.adapters["mock"]; ok {
 			return m, nil
 		}
 	}

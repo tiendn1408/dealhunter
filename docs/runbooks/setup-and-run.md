@@ -1,174 +1,184 @@
-# Deal Hunter — Hướng dẫn Cấu hình và Vận hành (Phase 1)
+# Deal Hunter — Huong dan Cau hinh va Van hanh (Phase 1, 2 & 3)
 
-Tài liệu này hướng dẫn chi tiết cách cấu hình môi trường, khởi động hạ tầng phụ thuộc, chạy database migrations và vận hành các dịch vụ trong hệ thống **Deal Hunter**.
-
----
-
-## 1. Yêu cầu Tiên quyết (Prerequisites)
-
-Trước khi bắt đầu, đảm bảo máy của bạn đã cài đặt các công cụ sau:
-
-- **Go**: Phiên bản `1.23+` ([Tải tại golang.org](https://go.dev/dl/))
-- **Docker & Docker Compose**: Để chạy PostgreSQL và Redis ([Tải Docker Desktop](https://www.docker.com/products/docker-desktop/))
-- **Make**: (Tùy chọn) Có sẵn trên macOS/Linux để chạy lệnh tắt qua `Makefile`.
-- **curl** hoặc **Postman**: Để kiểm tra và gọi API.
+Tai lieu nay huong dan chi tiet cach cau hinh moi truong, khoi dong ha tang phu thuoc, chay database migrations va van hanh cac dich vu trong he thong **Deal Hunter**.
 
 ---
 
-## 2. Cấu hình Môi trường (.env)
+## 1. Yeu cau Tien quyet (Prerequisites)
 
-Tạo file cấu hình `.env` tại thư mục gốc của dự án bằng cách copy từ `.env.example`:
+Truoc khi bat dau, dam bao may cua ban da cai dat cac cong cu sau:
+
+- **Go**: Phien ban `1.23+` ([Tai tai golang.org](https://go.dev/dl/))
+- **Docker & Docker Compose**: De chay PostgreSQL va Redis ([Tai Docker Desktop](https://www.docker.com/products/docker-desktop/))
+- **Make**: (Tuy chon) Co san tren macOS/Linux de chay lenh tat qua `Makefile`.
+- **curl** hoac **Postman**: De kiem tra va goi API.
+
+---
+
+## 2. Cau hinh Moi truong (.env)
+
+Tao file cau hinh `.env` tai thu muc goc cua du an bang cach copy tu `.env.example`:
 
 ```bash
 cd /Users/tien.dang/Workplace/reference/deal_hunter
 cp .env.example .env
 ```
 
-### Ý nghĩa các biến môi trường:
+### Y nghia cac bien moi truong:
 
-| Biến môi trường | Mặc định | Ý nghĩa |
+| Bien moi truong | Mac dinh | Y nghia |
 | :--- | :--- | :--- |
-| `APP_ENV` | `development` | Môi trường chạy ứng dụng (`development` / `production`). |
-| `HTTP_PORT` | `8080` | Cổng lắng nghe của API Server. |
-| `DATABASE_URL` | `postgres://dealuser:dealpass@localhost:5432/dealdb?sslmode=disable` | Chuỗi kết nối PostgreSQL. |
-| `REDIS_URL` | `redis://localhost:6379` | Địa chỉ kết nối Redis (dùng cho Redis Streams queue). |
-| `WORKER_CONCURRENCY`| `10` | Số worker goroutine chạy song song để xử lý fetch giá. |
-| `DEFAULT_POLL_INTERVAL` | `1800` | Chu kỳ mặc định giữa các lần kiểm tra giá (tính bằng giây, 1800 = 30 phút). |
-| `FETCH_TIMEOUT` | `10s` | Thời gian timeout tối đa cho mỗi lần gọi adapter lấy giá. |
-| `MAX_RETRY` | `5` | Số lần thử lại tối đa trước khi đánh dấu job là `dead`. |
+| `APP_ENV` | `development` | Moi truong chay ung dung (`development` / `production`). |
+| `HTTP_PORT` | `8080` | Cong lang nghe cua API Server. |
+| `DATABASE_URL` | `postgres://dealuser:dealpass@localhost:5432/dealdb?sslmode=disable` | Chuoi ket noi PostgreSQL. |
+| `REDIS_URL` | `redis://localhost:6379` | Dia chi ket noi Redis (hang doi stream va cache). |
+| `WORKER_CONCURRENCY`| `10` | So worker goroutine chay song song de xu ly fetch gia. |
+| `DEFAULT_POLL_INTERVAL` | `1800` | Chu ky mac dinh giua cac lan kiem tra gia (1800 = 30 phut). |
+| `FETCH_TIMEOUT` | `10s` | Thoi gian timeout toi da cho moi lan goi adapter lay gia. |
+| `MAX_RETRY` | `5` | So lan thu lai toi da truoc khi danh dau job la `dead`. |
+| `ZALO_ENABLED` | `false` | Bat/tat ket noi Zalo thuc te (false dung Mock Sandbox). |
+| `ZALO_OA_ACCESS_TOKEN` | | Token truy cap Zalo OA API. |
+| `ZALO_TEMPLATE_ID` | | Template ID cho ZNS. |
+| `ZALO_APP_ID` | | Application ID Zalo Developer. |
 
 ---
 
-## 3. Khởi động Hạ tầng (PostgreSQL & Redis)
+## 3. Khoi dong Ha tang (PostgreSQL & Redis)
 
-Hệ thống phụ thuộc vào PostgreSQL (lưu trữ nghiệp vụ chính) và Redis (hàng đợi phân tán Redis Streams).
+He thong phu thuoc vao PostgreSQL (luu tru nghiep vu chinh) va Redis (hang doi phan tan Redis Streams va cache so sanh gia).
 
-Khởi động các dịch vụ qua Docker Compose:
+Khoi dong cac dich vu qua Docker Compose:
 
 ```bash
-# Khởi động PostgreSQL và Redis ngầm
+# Khoi dong PostgreSQL va Redis ngam
 docker compose up -d postgres redis
 ```
 
-Kiểm tra trạng thái container:
+Kiem tra trang thai container:
 ```bash
 docker compose ps
 ```
-Đảm bảo cả 2 container `postgres` (port `5432`) và `redis` (port `6379`) đều ở trạng thái `Up` hoặc `healthy`.
+Dam bao ca 2 container `postgres` va `redis` deu o trang thai `Up` hoac `healthy`.
 
 ---
 
-## 4. Chạy Database Migrations
+## 4. Chay Database Migrations
 
-Trước khi chạy ứng dụng, cần khởi tạo schema cơ sở dữ liệu (tạo bảng `users`, `products`, `product_sources`, `tracked_products`, `price_snapshots`, `fetch_jobs` và các indexes):
+He thong gom 3 phien ban migration:
+- `000001_init`: Khoi tao bang `users`, `products`, `product_sources`, `tracked_products`, `price_snapshots`, `fetch_jobs`.
+- `000002_alerts`: Bo sung thong tin Zalo, tao bang `alert_rules`, `notification_logs`.
+- `000003_cross_platform`: Tao bang `comparison_snapshots`, bo sung cot `is_primary` cho `tracked_products`.
+
+Chay migration UP toan bo:
 
 ```bash
-# Tải các Go module phụ thuộc (nếu chưa tải)
 go mod tidy
-
-# Chạy migration UP
 go run cmd/migrate/main.go up
 ```
 
-*(Nếu muốn rollback migrations: `go run cmd/migrate/main.go down` hoặc dùng `make migrate-up` / `make migrate-down`).*
+*(Neu muon rollback migrations: `go run cmd/migrate/main.go down`)*
 
 ---
 
-## 5. Vận hành các Dịch vụ (Services)
+## 5. Van hanh cac Dich vu (Services)
 
-Deal Hunter được thiết kế theo kiến trúc chia tách trách nhiệm thành 3 tiến trình (processes) độc lập:
+Deal Hunter gom 4 tien trinh (processes) doc lap:
 
-1. **API Server (`cmd/api`)**: Tiếp nhận request từ người dùng.
-2. **Scheduler (`cmd/scheduler`)**: Quét các sản phẩm đến hạn kiểm tra giá và đẩy job vào Redis Streams.
-3. **Worker Pool (`cmd/worker`)**: Nhận job từ Redis Streams, gọi Adapter lấy giá và cập nhật lịch sử giá vào PostgreSQL.
+1. **API Server (`cmd/api`)**: Tiep nhan request tu nguoi dung va giao dien frontend.
+2. **Scheduler (`cmd/scheduler`)**: Quet cac san pham den han kiem tra gia va refresh snapshot so sanh gia dinh ky 10 phut.
+3. **Worker Pool (`cmd/worker`)**: Nhan job tu Redis Streams, goi Adapter lay gia, ghi snapshot, danh gia luat canh bao va xoa cache Redis.
+4. **Notifier (`cmd/notifier`)**: Nhan su kien thong bao tu Redis Streams va gui tin nhan Zalo OA / ZNS.
 
-Mở **3 cửa sổ terminal riêng biệt** tại thư mục dự án để chạy cả 3 dịch vụ:
+Mo **4 cua so terminal rieng biet** tai thu muc du an de chay ca 4 dich vu:
 
-### Terminal 1: Chạy API Server
+### Terminal 1: Chay API Server
 ```bash
 go run cmd/api/main.go
 ```
-*Server sẽ khởi động và lắng nghe tại cổng `http://localhost:8080`.*
+*Server lang nghe tai `http://localhost:8080`.*
 
-### Terminal 2: Chạy Scheduler
+### Terminal 2: Chay Scheduler
 ```bash
 go run cmd/scheduler/main.go
 ```
-*Scheduler sẽ định kỳ quét các tracking tới hạn và đẩy vào Redis Streams `dh:stream:price-fetch`.*
+*Scheduler dinh ky quet tracking toi han va refresh comparison snapshots.*
 
-### Terminal 3: Chạy Worker Pool
+### Terminal 3: Chay Worker Pool
 ```bash
 go run cmd/worker/main.go
 ```
-*Worker pool sẽ lắng nghe job từ Redis Streams, gọi adapter và ghi snapshot giá.*
+*Worker pool lang nghe job tu Redis Streams, cao gia va commit atomic snapshot.*
+
+### Terminal 4: Chay Notifier Service
+```bash
+go run cmd/notifier/main.go
+```
+*Notifier lang nghe su kien thong bao va gui canh bao Zalo.*
 
 ---
 
-## 6. Kiểm tra & Kiểm thử Hệ thống (Verification)
+## 6. Kiem tra & Kiem thu He thong (Verification)
 
-### 6.1. Đăng ký theo dõi sản phẩm mới (`POST /api/v1/tracked-products`)
-
-Gửi yêu cầu theo dõi một đường link sản phẩm:
-
+### 6.1. Dang ky theo doi san pham (`POST /api/v1/tracked-products`)
 ```bash
-# Test với link mock (đã có MockAdapter sẵn trong code)
 curl -X POST http://localhost:8080/api/v1/tracked-products \
   -H "Content-Type: application/json" \
+  -d '{"url": "https://shopee.vn/product/123/456"}'
+```
+
+### 6.2. Kiem tra lich su gia (`GET /api/v1/tracked-products/:id/prices`)
+```bash
+curl -X GET http://localhost:8080/api/v1/tracked-products/<product_source_id>/prices
+```
+
+### 6.3. Tao quy tac canh bao gia (Phase 2)
+```bash
+curl -X POST http://localhost:8080/api/v1/tracked-products/<id>/alerts \
+  -H "Content-Type: application/json" \
   -d '{
-    "url": "https://mock.dealhunter.vn/product/12345"
+    "rule_type": "drop_percent",
+    "threshold_value": 10,
+    "expires_in_days": 30
   }'
 ```
 
-**Phản hồi mẫu (HTTP 201 Created):**
-```json
-{
-  "id": "c1f7a08b-626a-4d3e-908d-8a62f5bf7dc9",
-  "product_source_id": "89e29a3e-7b7f-4f81-9b64-21b714571de4",
-  "next_fetch_at": "2026-09-29T12:00:00Z"
-}
-```
-
-### 6.2. Kiểm tra lịch sử giá (`GET /api/v1/tracked-products/:id/prices`)
-
-Sử dụng `product_source_id` nhận được ở trên:
-
+### 6.4. Xem bang so sanh gia da san & Best Deal (Phase 3)
 ```bash
-curl -X GET http://localhost:8080/api/v1/tracked-products/89e29a3e-7b7f-4f81-9b64-21b714571de4/prices
+# Bang so sanh theo ID san pham hoac ID theo doi
+curl -X GET http://localhost:8080/api/v1/tracked-products/<id>/comparison
+
+# Hoac theo Product ID logic:
+curl -X GET http://localhost:8080/api/v1/products/<product_id>/comparison
 ```
 
-**Phản hồi mẫu:**
-```json
-{
-  "product_source_id": "89e29a3e-7b7f-4f81-9b64-21b714571de4",
-  "snapshots": [
-    {
-      "ID": 1,
-      "ProductSourceID": "89e29a3e-7b7f-4f81-9b64-21b714571de4",
-      "Price": 1200000,
-      "ShippingFee": 15000,
-      "EffectivePrice": 1215000,
-      "Currency": "VND",
-      "InStock": true,
-      "CapturedAt": "2026-09-29T12:00:05Z",
-      "CreatedAt": "2026-09-29T12:00:05Z"
-    }
-  ]
-}
+### 6.5. Lien ket them nguon san moi (Phase 3)
+```bash
+curl -X POST http://localhost:8080/api/v1/products/<product_id>/link-source \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://tiktok.com/@shop/product/789"}'
+```
+
+### 6.6. Danh sach nhom san pham da san (Phase 3)
+```bash
+curl -X GET http://localhost:8080/api/v1/product-groups \
+  -H "X-User-ID: <user_uuid>"
 ```
 
 ---
 
-## 7. Khắc phục Sự cố Thường gặp (Troubleshooting)
+## 7. Khac phuc Su co Thuong gap (Troubleshooting)
 
-1. **Lỗi `command not found: go`**:
-   - Kiểm tra xem Go đã được cài đặt và thêm vào biến môi trường `PATH` chưa (`export PATH=$PATH:/usr/local/go/bin:/opt/homebrew/bin`).
+1. **Loi ket noi PostgreSQL (`connection refused`)**:
+   - Kiem tra container: `docker compose ps`
+   - Dam bao bien `DATABASE_URL` trong file `.env` dung cong host mapped.
 
-2. **Lỗi kết nối PostgreSQL (`connection refused` hoặc `password authentication failed`)**:
-   - Kiểm tra Docker container: `docker compose ps`
-   - Đảm bảo biến `DATABASE_URL` trong file `.env` khớp với cấu hình trong `docker-compose.yml`.
-
-3. **Lỗi Migration (`Dirty database`)**:
-   - Nếu quá trình migration bị ngắt quãng giữa chừng, sử dụng lệnh force version:
+2. **Loi Migration (`Dirty database`)**:
+   - Neu migration bi dirty, dung lenh force:
      ```bash
-     go run cmd/migrate/main.go force 1
+     go run cmd/migrate/main.go force 3
      ```
+
+3. **Chay test tich hop toan dien (E2E Integration Test)**:
+   ```bash
+   DATABASE_URL="postgres://dealuser:dealpass@localhost:5432/dealdb?sslmode=disable" REDIS_URL="redis://localhost:6379" go test -tags=integration -v ./tests/integration/...
+   ```

@@ -16,6 +16,10 @@ type Config struct {
 	DefaultPollInterval time.Duration
 	FetchTimeout        time.Duration
 	MaxRetry            int
+	ZaloOAAccessToken   string
+	ZaloTemplateID      string
+	ZaloAppID           string
+	ZaloEnabled         bool
 }
 
 func Load() (*Config, error) {
@@ -45,6 +49,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid MAX_RETRY: %w", err)
 	}
 
+	zaloToken := getEnv("ZALO_OA_ACCESS_TOKEN", "")
+	zaloTemplate := getEnv("ZALO_TEMPLATE_ID", "")
+	zaloAppID := getEnv("ZALO_APP_ID", "")
+	zaloEnabled := getEnv("ZALO_ENABLED", "false") == "true" || zaloToken != ""
+
 	return &Config{
 		AppEnv:              getEnv("APP_ENV", "development"),
 		HTTPPort:            port,
@@ -54,6 +63,10 @@ func Load() (*Config, error) {
 		DefaultPollInterval: time.Duration(pollInterval) * time.Second,
 		FetchTimeout:        timeout,
 		MaxRetry:            maxRetry,
+		ZaloOAAccessToken:   zaloToken,
+		ZaloTemplateID:      zaloTemplate,
+		ZaloAppID:           zaloAppID,
+		ZaloEnabled:         zaloEnabled,
 	}, nil
 }
 

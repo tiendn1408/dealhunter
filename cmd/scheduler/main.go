@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/tiendang/deal-hunter/internal/comparison"
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/queue"
 	"github.com/tiendang/deal-hunter/internal/tracking"
@@ -67,6 +68,26 @@ func main() {
 		10*time.Second,
 		logger,
 	)
+
+	// 6. Phase 3: Refresh comparison snapshots every 10 minutes
+	comparisonRepo := comparison.NewPostgresRepository(dbPool)
+	comparisonCache := comparison.NewRedisCache(rdb)
+	comparisonSvc := comparison.NewComparisonService(comparisonRepo, comparisonCache)
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := comparisonSvc.RefreshAllActiveProducts(ctx); err != nil {
+					logger.Error("Comparison refresh error", "err", err)
+				}
+			}
+		}
+	}()
 
 	go func() {
 		sig := make(chan os.Signal, 1)

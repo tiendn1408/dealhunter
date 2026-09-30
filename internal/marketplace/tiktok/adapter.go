@@ -1,4 +1,4 @@
-package lazada
+package tiktok
 
 import (
 	"context"
@@ -13,67 +13,66 @@ import (
 	"github.com/tiendang/deal-hunter/internal/product"
 )
 
-var lazadaItemPattern = regexp.MustCompile(`-i(\d+)`)
+var tiktokProductPattern = regexp.MustCompile(`product/(\d+)`)
 
-// LazadaAdapter handles product ingestion and price scraping for Lazada Vietnam.
-type LazadaAdapter struct{}
+// TikTokAdapter handles product ingestion and price scraping for TikTok Shop Vietnam.
+type TikTokAdapter struct{}
 
-func NewLazadaAdapter() *LazadaAdapter {
-	return &LazadaAdapter{}
+func NewTikTokAdapter() *TikTokAdapter {
+	return &TikTokAdapter{}
 }
 
-func (a *LazadaAdapter) Name() string {
-	return "lazada"
+func (a *TikTokAdapter) Name() string {
+	return "tiktok"
 }
 
-func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
-	if !strings.Contains(rawURL, "lazada.vn") && !strings.Contains(rawURL, "lazada") {
-		return nil, fmt.Errorf("invalid lazada url: %s", rawURL)
+func (a *TikTokAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
+	if !strings.Contains(rawURL, "tiktok.com") && !strings.Contains(rawURL, "tiktok") {
+		return nil, fmt.Errorf("invalid tiktok url: %s", rawURL)
 	}
 
-	matches := lazadaItemPattern.FindStringSubmatch(rawURL)
+	matches := tiktokProductPattern.FindStringSubmatch(rawURL)
 	extID := ""
 	if len(matches) == 2 {
-		extID = fmt.Sprintf("lazada-%s", matches[1])
+		extID = fmt.Sprintf("tiktok-%s", matches[1])
 	} else {
 		parts := strings.Split(strings.TrimRight(rawURL, "/"), "/")
 		last := parts[len(parts)-1]
 		clean := strings.Split(last, "?")[0]
-		clean = strings.TrimSuffix(clean, ".html")
-		extID = fmt.Sprintf("lazada-%s", clean)
+		extID = fmt.Sprintf("tiktok-%s", clean)
 	}
 
-	title := "Sản phẩm Lazada"
+	title := "Sản phẩm TikTok Shop"
 	lower := strings.ToLower(rawURL)
-	price := int64(6390000)
+	price := int64(6190000)
 
 	if strings.Contains(lower, "sony") || strings.Contains(lower, "wh1000") || strings.Contains(lower, "xm6") {
-		title = "Tai nghe chống ồn Sony WH-1000XM6 LazMall"
-		price = 6390000
+		title = "Tai nghe Sony WH-1000XM6 TikTok Shop Official"
+		price = 6190000
 	} else if strings.Contains(lower, "samsung") || strings.Contains(lower, "ssd") {
-		title = "Ổ Cứng SSD Samsung 990 Pro 2TB Chính Hãng LazMall"
-		price = 2890000
+		title = "Ổ Cứng SSD Samsung 990 Pro 2TB TikTok Shop"
+		price = 2790000
 	} else if strings.Contains(lower, "iphone") {
-		title = "Apple iPhone 16 Pro Max 256GB LazMall"
-		price = 32290000
+		title = "Apple iPhone 16 Pro Max 256GB TikTok Shop"
+		price = 31990000
 	}
 
 	return &marketplace.ProductData{
 		ExternalProductID: extID,
 		CanonicalURL:      rawURL,
 		RawTitle:          title,
-		SellerName:        "Lazada Flagship Store",
+		SellerName:        "TikTok Shop Verified",
 		Price: pricing.Price{
-			ListedPrice: price + int64(float64(price)*0.12),
+			ListedPrice: price + int64(float64(price)*0.15),
 			SalePrice:   price,
-			ShippingFee: 20000,
+			ShippingFee: 12000,
 		},
 		InStock: true,
 	}, nil
 }
 
-func (a *LazadaAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
-	base := int64(6390000)
+func (a *TikTokAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
+	base := int64(6190000)
 	if source.LastPrice != nil && *source.LastPrice > 0 {
 		base = *source.LastPrice
 	}
@@ -84,7 +83,7 @@ func (a *LazadaAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 		currentPrice = base
 	}
 
-	shipping := int64(20000)
+	shipping := int64(12000)
 	if source.LastShippingFee != nil && *source.LastShippingFee >= 0 {
 		shipping = *source.LastShippingFee
 	}

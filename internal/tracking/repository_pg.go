@@ -34,13 +34,14 @@ func (r *PostgresRepository) CreateTracking(ctx context.Context, t *domain.Track
 	query := `
 		INSERT INTO tracked_products (
 			id, user_id, product_source_id, active,
-			polling_interval_seconds, next_fetch_at, created_at, updated_at
+			polling_interval_seconds, next_fetch_at, created_at, updated_at, is_primary
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (user_id, product_source_id) DO UPDATE
 		SET active = TRUE,
+		    is_primary = EXCLUDED.is_primary,
 		    updated_at = NOW()
-		RETURNING id, active, polling_interval_seconds, next_fetch_at, created_at, updated_at;
+		RETURNING id, active, polling_interval_seconds, next_fetch_at, created_at, updated_at, is_primary;
 	`
 	now := time.Now()
 	if t.CreatedAt.IsZero() {
@@ -63,6 +64,7 @@ func (r *PostgresRepository) CreateTracking(ctx context.Context, t *domain.Track
 		t.NextFetchAt,
 		t.CreatedAt,
 		t.UpdatedAt,
+		t.IsPrimary,
 	).Scan(
 		&t.ID,
 		&t.Active,
@@ -70,13 +72,14 @@ func (r *PostgresRepository) CreateTracking(ctx context.Context, t *domain.Track
 		&t.NextFetchAt,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&t.IsPrimary,
 	)
 }
 
 func (r *PostgresRepository) GetTracking(ctx context.Context, id uuid.UUID) (*domain.TrackedProduct, error) {
 	query := `
 		SELECT id, user_id, product_source_id, active,
-		       polling_interval_seconds, next_fetch_at, created_at, updated_at
+		       polling_interval_seconds, next_fetch_at, created_at, updated_at, is_primary
 		FROM tracked_products
 		WHERE id = $1 OR product_source_id = $1
 		ORDER BY (id = $1) DESC
@@ -92,6 +95,7 @@ func (r *PostgresRepository) GetTracking(ctx context.Context, id uuid.UUID) (*do
 		&t.NextFetchAt,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&t.IsPrimary,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -103,10 +107,40 @@ func (r *PostgresRepository) GetTracking(ctx context.Context, id uuid.UUID) (*do
 	return &t, nil
 }
 
+func (r *PostgresRepository) GetTrackingBySource(ctx context.Context, userID, sourceID uuid.UUID) (*domain.TrackedProduct, error) {
+	query := `
+		SELECT id, user_id, product_source_id, active,
+		       polling_interval_seconds, next_fetch_at, created_at, updated_at, is_primary
+		FROM tracked_products
+		WHERE user_id = $1 AND product_source_id = $2
+		LIMIT 1;
+	`
+	var t domain.TrackedProduct
+	err := r.pool.QueryRow(ctx, query, userID, sourceID).Scan(
+		&t.ID,
+		&t.UserID,
+		&t.ProductSourceID,
+		&t.Active,
+		&t.PollingIntervalSeconds,
+		&t.NextFetchAt,
+		&t.CreatedAt,
+		&t.UpdatedAt,
+		&t.IsPrimary,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil // Return nil, nil when not tracked
+		}
+		return nil, fmt.Errorf("query tracking by source: %w", err)
+	}
+
+	return &t, nil
+}
+
 func (r *PostgresRepository) ListTrackingsByUser(ctx context.Context, userID uuid.UUID) ([]*domain.TrackedProduct, error) {
 	query := `
 		SELECT id, user_id, product_source_id, active,
-		       polling_interval_seconds, next_fetch_at, created_at, updated_at
+		       polling_interval_seconds, next_fetch_at, created_at, updated_at, is_primary
 		FROM tracked_products
 		WHERE user_id = $1
 		ORDER BY created_at DESC;
@@ -129,6 +163,7 @@ func (r *PostgresRepository) ListTrackingsByUser(ctx context.Context, userID uui
 			&t.NextFetchAt,
 			&t.CreatedAt,
 			&t.UpdatedAt,
+			&t.IsPrimary,
 		); err != nil {
 			return nil, fmt.Errorf("scan tracking row: %w", err)
 		}
@@ -153,7 +188,7 @@ func (r *PostgresRepository) ClaimDueTrackings(ctx context.Context, limit int) (
 			FOR UPDATE SKIP LOCKED
 		)
 		RETURNING id, user_id, product_source_id, active,
-		          polling_interval_seconds, next_fetch_at, created_at, updated_at;
+		          polling_interval_seconds, next_fetch_at, created_at, updated_at, is_primary;
 	`
 	rows, err := r.pool.Query(ctx, query, limit)
 	if err != nil {
@@ -173,6 +208,7 @@ func (r *PostgresRepository) ClaimDueTrackings(ctx context.Context, limit int) (
 			&t.NextFetchAt,
 			&t.CreatedAt,
 			&t.UpdatedAt,
+			&t.IsPrimary,
 		); err != nil {
 			return nil, fmt.Errorf("scan due tracking: %w", err)
 		}

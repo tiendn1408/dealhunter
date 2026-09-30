@@ -1,12 +1,19 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/comparison"
+	"github.com/tiendang/deal-hunter/internal/domain"
+	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/tracking"
 )
@@ -14,10 +21,22 @@ import (
 type Handler struct {
 	trackingService *tracking.TrackingService
 	pricingService  *pricing.PricingService
+	alertRepo       alert.Repository
+	notifRepo       notification.Repository
+	comparisonSvc   *comparison.ComparisonService
 }
 
 func NewHandler(ts *tracking.TrackingService, ps *pricing.PricingService) *Handler {
 	return &Handler{trackingService: ts, pricingService: ps}
+}
+
+func (h *Handler) SetAlertAndNotificationRepos(ar alert.Repository, nr notification.Repository) {
+	h.alertRepo = ar
+	h.notifRepo = nr
+}
+
+func (h *Handler) SetComparisonService(svc *comparison.ComparisonService) {
+	h.comparisonSvc = svc
 }
 
 func getUserID(r *http.Request) uuid.UUID {
@@ -66,6 +85,8 @@ type EnrichedTracking struct {
 	NextFetchAt            time.Time `json:"NextFetchAt"`
 	CreatedAt              time.Time `json:"CreatedAt"`
 	UpdatedAt              time.Time `json:"UpdatedAt"`
+	ProductID              uuid.UUID `json:"ProductID,omitempty"`
+	IsPrimary              bool      `json:"IsPrimary"`
 	Title                  string    `json:"Title,omitempty"`
 	Platform               string    `json:"Platform,omitempty"`
 	CanonicalURL           string    `json:"CanonicalURL,omitempty"`
@@ -85,9 +106,11 @@ func (h *Handler) enrichTracking(r *http.Request, t *domain.TrackedProduct) Enri
 		NextFetchAt:            t.NextFetchAt,
 		CreatedAt:              t.CreatedAt,
 		UpdatedAt:              t.UpdatedAt,
+		IsPrimary:              t.IsPrimary,
 	}
 
 	if source, err := h.trackingService.GetProductSource(r.Context(), t.ProductSourceID); err == nil && source != nil {
+		enriched.ProductID = source.ProductID
 		if source.RawTitle != nil {
 			enriched.Title = *source.RawTitle
 		}
@@ -245,4 +268,472 @@ func (h *Handler) ResumeTracking(w http.ResponseWriter, r *http.Request) {
 		"status": "resumed",
 		"id":     id,
 	})
+}
+
+type CreateAlertRequest struct {
+	RuleType       alert.RuleType `json:"rule_type"`
+	ThresholdValue int64          `json:"threshold_value"`
+	ExpiresInDays  *int           `json:"expires_in_days,omitempty"`
+}
+
+func (h *Handler) CreateAlert(w http.ResponseWriter, r *http.Request) {
+	if h.alertRepo == nil {
+		http.Error(w, "alert service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	sourceID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	// Resolve to productSourceID if the passed ID is a tracked_product ID
+	if h.trackingService != nil {
+		if tracked, err := h.trackingService.GetTracking(r.Context(), sourceID); err == nil && tracked != nil {
+			sourceID = tracked.ProductSourceID
+		}
+	}
+
+	var req CreateAlertRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if !req.RuleType.IsValid() {
+		http.Error(w, "invalid rule_type: must be drop_percent, target_price, or lowest_in_days", http.StatusBadRequest)
+		return
+	}
+
+	if req.ThresholdValue <= 0 {
+		http.Error(w, "threshold_value must be greater than 0", http.StatusBadRequest)
+		return
+	}
+
+	userID := getUserID(r)
+	now := time.Now()
+
+	var expiresAt *time.Time
+	if req.ExpiresInDays != nil && *req.ExpiresInDays > 0 {
+		exp := now.AddDate(0, 0, *req.ExpiresInDays)
+		expiresAt = &exp
+	}
+
+	rule := &alert.AlertRule{
+		ID:              uuid.New(),
+		UserID:          userID,
+		ProductSourceID: sourceID,
+		RuleType:        req.RuleType,
+		ThresholdValue:  req.ThresholdValue,
+		Active:          true,
+		ExpiresAt:       expiresAt,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	if err := h.alertRepo.CreateRule(r.Context(), rule); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(rule)
+}
+
+func (h *Handler) ListAlerts(w http.ResponseWriter, r *http.Request) {
+	if h.alertRepo == nil {
+		http.Error(w, "alert service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	sourceID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	if h.trackingService != nil {
+		if tracked, err := h.trackingService.GetTracking(r.Context(), sourceID); err == nil && tracked != nil {
+			sourceID = tracked.ProductSourceID
+		}
+	}
+
+	rules, err := h.alertRepo.ListRulesBySource(r.Context(), sourceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if rules == nil {
+		rules = make([]*alert.AlertRule, 0)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"product_source_id": sourceID,
+		"data":              rules,
+	})
+}
+
+func (h *Handler) DeactivateAlert(w http.ResponseWriter, r *http.Request) {
+	if h.alertRepo == nil {
+		http.Error(w, "alert service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	idStr := chi.URLParam(r, "alert_id")
+	alertID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid alert_id", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.alertRepo.DeactivateRule(r.Context(), alertID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "deactivated",
+		"id":     alertID,
+	})
+}
+
+func (h *Handler) GetAlertLogs(w http.ResponseWriter, r *http.Request) {
+	if h.notifRepo == nil {
+		http.Error(w, "notification service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	idStr := chi.URLParam(r, "alert_id")
+	alertID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid alert_id", http.StatusBadRequest)
+		return
+	}
+
+	logs, err := h.notifRepo.ListRuleLogs(r.Context(), alertID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if logs == nil {
+		logs = make([]*notification.NotificationLog, 0)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"alert_id": alertID,
+		"data":     logs,
+	})
+}
+
+func (h *Handler) ListNotifications(w http.ResponseWriter, r *http.Request) {
+	if h.notifRepo == nil {
+		http.Error(w, "notification service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	userID := getUserID(r)
+	limit := 30
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	notifs, err := h.notifRepo.ListUserNotifications(r.Context(), userID, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if notifs == nil {
+		notifs = make([]*notification.EnrichedNotification, 0)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data": notifs,
+	})
+}
+
+func (h *Handler) MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
+	if h.notifRepo == nil {
+		http.Error(w, "notification service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	notifID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	userID := getUserID(r)
+	if err := h.notifRepo.MarkAsRead(r.Context(), notifID, userID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "read",
+		"id":     notifID,
+	})
+}
+
+func (h *Handler) ListUserAlerts(w http.ResponseWriter, r *http.Request) {
+	if h.alertRepo == nil {
+		http.Error(w, "alert service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	userID := getUserID(r)
+	rules, err := h.alertRepo.ListRulesByUser(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if rules == nil {
+		rules = make([]*alert.AlertRule, 0)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"data": rules,
+	})
+}
+
+func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
+	if h.notifRepo == nil {
+		http.Error(w, "service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	userID := getUserID(r)
+	profile, err := h.notifRepo.GetUserProfile(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(profile)
+}
+
+type ConnectZaloRequest struct {
+	ZaloID string `json:"zalo_id,omitempty"`
+	Phone  string `json:"phone,omitempty"`
+}
+
+func (h *Handler) ConnectZalo(w http.ResponseWriter, r *http.Request) {
+	if h.notifRepo == nil {
+		http.Error(w, "service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req ConnectZaloRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ZaloID == "" && req.Phone == "" {
+		http.Error(w, "either zalo_id or phone is required", http.StatusBadRequest)
+		return
+	}
+
+	userID := getUserID(r)
+	if err := h.notifRepo.UpdateUserZalo(r.Context(), userID, req.ZaloID, req.Phone); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "connected",
+		"zalo_id": req.ZaloID,
+		"phone":   req.Phone,
+	})
+}
+
+func (h *Handler) DisconnectZalo(w http.ResponseWriter, r *http.Request) {
+	if h.notifRepo == nil {
+		http.Error(w, "service not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	userID := getUserID(r)
+	if err := h.notifRepo.DisconnectUserZalo(r.Context(), userID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "disconnected",
+	})
+}
+
+// Phase 3: Cross-platform Price Comparison Handlers
+
+func (h *Handler) resolveCanonicalProductID(ctx context.Context, rawID uuid.UUID) (uuid.UUID, error) {
+	if h.comparisonSvc != nil {
+		if exists, _ := h.comparisonSvc.ProductExists(ctx, rawID); exists {
+			return rawID, nil
+		}
+	}
+
+	if tracked, err := h.trackingService.GetTracking(ctx, rawID); err == nil && tracked != nil {
+		if source, err := h.trackingService.GetProductSource(ctx, tracked.ProductSourceID); err == nil && source != nil {
+			return source.ProductID, nil
+		}
+	}
+
+	if source, err := h.trackingService.GetProductSource(ctx, rawID); err == nil && source != nil {
+		return source.ProductID, nil
+	}
+
+	return uuid.Nil, errors.New("product not found")
+}
+
+func (h *Handler) GetProductComparison(w http.ResponseWriter, r *http.Request) {
+	if h.comparisonSvc == nil {
+		http.Error(w, "comparison service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	idStr := chi.URLParam(r, "product_id")
+	rawID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid product id", http.StatusBadRequest)
+		return
+	}
+
+	productID, err := h.resolveCanonicalProductID(r.Context(), rawID)
+	if err != nil {
+		http.Error(w, "product not found", http.StatusNotFound)
+		return
+	}
+
+	comparisonResult, err := h.comparisonSvc.GetComparison(r.Context(), productID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(comparisonResult)
+}
+
+func (h *Handler) LinkProductSource(w http.ResponseWriter, r *http.Request) {
+	if h.comparisonSvc == nil {
+		http.Error(w, "comparison service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	idStr := chi.URLParam(r, "product_id")
+	rawID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid product id", http.StatusBadRequest)
+		return
+	}
+
+	productID, err := h.resolveCanonicalProductID(r.Context(), rawID)
+	if err != nil {
+		http.Error(w, "product not found", http.StatusNotFound)
+		return
+	}
+
+	var req TrackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.URL == "" {
+		http.Error(w, "invalid request: url is required", http.StatusBadRequest)
+		return
+	}
+
+	userID := getUserID(r)
+	source, err := h.trackingService.LinkSourceToProduct(r.Context(), userID, productID, req.URL)
+	if err != nil {
+		if errors.Is(err, tracking.ErrSourceAlreadyLinked) {
+			http.Error(w, "Sản phẩm từ đường dẫn này đã được liên kết với nhóm sản phẩm", http.StatusConflict)
+			return
+		}
+		if errors.Is(err, tracking.ErrProductNotFound) {
+			http.Error(w, "Nhóm sản phẩm không tồn tại", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	_ = h.comparisonSvc.Invalidate(r.Context(), productID)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"source_id": source.ID,
+		"platform":  source.Platform,
+		"message":   "Liên kết thành công. Dữ liệu giá sẽ được cập nhật ngay lập tức.",
+	})
+}
+
+func (h *Handler) ListProductGroups(w http.ResponseWriter, r *http.Request) {
+	if h.comparisonSvc == nil {
+		http.Error(w, "comparison service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	userID := getUserID(r)
+	groups, err := h.comparisonSvc.GetUserMultiSourceProducts(r.Context(), userID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if groups == nil {
+		groups = []comparison.ProductGroupSummary{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"groups": groups,
+	})
+}
+
+func (h *Handler) GetTrackedProductComparison(w http.ResponseWriter, r *http.Request) {
+	if h.comparisonSvc == nil {
+		http.Error(w, "comparison service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	rawID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid tracking id", http.StatusBadRequest)
+		return
+	}
+
+	productID, err := h.resolveCanonicalProductID(r.Context(), rawID)
+	if err != nil {
+		http.Error(w, "tracking not found", http.StatusNotFound)
+		return
+	}
+
+	comparisonResult, err := h.comparisonSvc.GetComparison(r.Context(), productID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(comparisonResult)
 }

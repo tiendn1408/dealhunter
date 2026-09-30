@@ -1,23 +1,36 @@
-version: '3.8'
+name: dealhunter
+
 services:
   postgres:
+    container_name: dealhunter-postgres
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: dealuser
-      POSTGRES_PASSWORD: dealpass
-      POSTGRES_DB: dealdb
+      POSTGRES_USER: ${POSTGRES_USER:-dealuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dealpass}
+      POSTGRES_DB: ${POSTGRES_DB:-dealdb}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - dealhunter-network
 
   redis:
+    container_name: dealhunter-redis
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
+    networks:
+      - dealhunter-network
 
 volumes:
   pgdata:
+    name: dealhunter-pgdata
   redisdata:
+    name: dealhunter-redisdata
+
+networks:
+  dealhunter-network:
+    name: dealhunter-network

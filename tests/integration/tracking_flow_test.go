@@ -87,6 +87,7 @@ func TestEndToEndTrackingFlow(t *testing.T) {
 
 	// 3. Worker consume from queue and process
 	worker := jobs.NewWorker(1, q, jobRepo, productRepo, pricingRepo, registry, dbPool, nil)
+	_ = worker
 
 	consumeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()

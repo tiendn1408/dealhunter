@@ -216,3 +216,27 @@ func (r *PostgresRepository) UpdateProductSourcePrice(ctx context.Context, tx pg
 	}
 	return nil
 }
+
+func (r *PostgresRepository) ProductExists(ctx context.Context, productID uuid.UUID) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM products WHERE id = $1);`
+	var exists bool
+	err := r.pool.QueryRow(ctx, query, productID).Scan(&exists)
+	return exists, err
+}
+
+func (r *PostgresRepository) AssignProductSource(ctx context.Context, sourceID, productID uuid.UUID) error {
+	query := `
+		UPDATE product_sources
+		SET product_id = $1,
+		    updated_at = NOW()
+		WHERE id = $2;
+	`
+	res, err := r.pool.Exec(ctx, query, productID, sourceID)
+	if err != nil {
+		return fmt.Errorf("assign product source: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return errors.New("product source not found")
+	}
+	return nil
+}

@@ -13,4 +13,6 @@ type ProductRepository interface {
 	GetProductSource(ctx context.Context, id uuid.UUID) (*ProductSource, error)
 	GetProductSourceByExternalID(ctx context.Context, platform, externalID string) (*ProductSource, error)
 	UpdateProductSourcePrice(ctx context.Context, tx pgx.Tx, update *ProductSource) error
+	ProductExists(ctx context.Context, productID uuid.UUID) (bool, error)
+	AssignProductSource(ctx context.Context, sourceID, productID uuid.UUID) error
 }

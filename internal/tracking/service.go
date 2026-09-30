@@ -2,6 +2,7 @@ package tracking
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -98,6 +99,7 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 		NextFetchAt:            time.Now().Add(time.Duration(pollInterval) * time.Second),
 		CreatedAt:              time.Now(),
 		UpdatedAt:              time.Now(),
+		IsPrimary:              true,
 	}
 	if err := s.trackingRepo.CreateTracking(ctx, tracked); err != nil {
 		return nil, fmt.Errorf("create tracking: %w", err)
@@ -112,15 +114,19 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 		AvailableAt:     time.Now(),
 		CreatedAt:       time.Now(),
 	}
-	if err := s.jobRepo.CreateJob(ctx, job); err != nil {
-		return nil, fmt.Errorf("create job: %w", err)
-	}
+	if s.jobRepo != nil {
+		if err := s.jobRepo.CreateJob(ctx, job); err != nil {
+			return nil, fmt.Errorf("create job: %w", err)
+		}
 
-	// 6. Enqueue to Redis
-	if err := s.q.Enqueue(ctx, job.ID.String()); err != nil {
-		// Log error but don't fail tracking creation.
-		// The scheduler will pick it up later if queue fails.
-		fmt.Printf("failed to enqueue job: %v\n", err)
+		// 6. Enqueue to Redis
+		if s.q != nil {
+			if err := s.q.Enqueue(ctx, job.ID.String()); err != nil {
+				// Log error but don't fail tracking creation.
+				// The scheduler will pick it up later if queue fails.
+				fmt.Printf("failed to enqueue job: %v\n", err)
+			}
+		}
 	}
 
 	return tracked, nil
@@ -148,4 +154,100 @@ func (s *TrackingService) ResumeTracking(ctx context.Context, id uuid.UUID) erro
 
 func (s *TrackingService) GetProductSource(ctx context.Context, id uuid.UUID) (*product.ProductSource, error) {
 	return s.productRepo.GetProductSource(ctx, id)
+}
+
+var (
+	ErrProductNotFound     = errors.New("product not found")
+	ErrSourceAlreadyLinked = errors.New("source already linked to this product")
+)
+
+func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targetProductID uuid.UUID, url string) (*product.ProductSource, error) {
+	exists, err := s.productRepo.ProductExists(ctx, targetProductID)
+	if err != nil {
+		return nil, fmt.Errorf("check target product: %w", err)
+	}
+	if !exists {
+		return nil, ErrProductNotFound
+	}
+
+	adapter, err := s.registry.Detect(url)
+	if err != nil {
+		return nil, fmt.Errorf("detect platform: %w", err)
+	}
+	data, err := adapter.ResolveProduct(ctx, url)
+	if err != nil {
+		return nil, fmt.Errorf("resolve product: %w", err)
+	}
+
+	var source *product.ProductSource
+	if data.ExternalProductID != "" {
+		source, err = s.productRepo.GetProductSourceByExternalID(ctx, adapter.Name(), data.ExternalProductID)
+		if err != nil {
+			return nil, fmt.Errorf("check existing source: %w", err)
+		}
+	}
+
+	if source != nil {
+		if source.ProductID == targetProductID {
+			return nil, ErrSourceAlreadyLinked
+		}
+		if err := s.productRepo.AssignProductSource(ctx, source.ID, targetProductID); err != nil {
+			return nil, fmt.Errorf("reassign source: %w", err)
+		}
+		source.ProductID = targetProductID
+	} else {
+		var extID *string
+		if data.ExternalProductID != "" {
+			extID = &data.ExternalProductID
+		}
+		source = &product.ProductSource{
+			ID:                uuid.New(),
+			ProductID:         targetProductID,
+			Platform:          adapter.Name(),
+			ExternalProductID: extID,
+			CanonicalURL:      data.CanonicalURL,
+			SellerName:        &data.SellerName,
+			RawTitle:          &data.RawTitle,
+			Currency:          "VND",
+			Active:            true,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
+		}
+		if err := s.productRepo.UpsertProductSource(ctx, source); err != nil {
+			return nil, fmt.Errorf("insert source: %w", err)
+		}
+	}
+
+	// Create TrackedProduct with IsPrimary = false if user isn't tracking yet
+	tracked, err := s.trackingRepo.GetTrackingBySource(ctx, userID, source.ID)
+	if err == nil && tracked == nil {
+		pollInterval := 1800
+		newTracked := &domain.TrackedProduct{
+			ID:                     uuid.New(),
+			UserID:                 userID,
+			ProductSourceID:        source.ID,
+			Active:                 true,
+			PollingIntervalSeconds: pollInterval,
+			NextFetchAt:            time.Now().Add(time.Duration(pollInterval) * time.Second),
+			CreatedAt:              time.Now(),
+			UpdatedAt:              time.Now(),
+			IsPrimary:              false,
+		}
+		_ = s.trackingRepo.CreateTracking(ctx, newTracked)
+	}
+
+	// Create and enqueue initial fetch job
+	job := &domain.FetchJob{
+		ID:              uuid.New(),
+		ProductSourceID: source.ID,
+		Status:          domain.JobStatusQueued,
+		Attempt:         0,
+		AvailableAt:     time.Now(),
+		CreatedAt:       time.Now(),
+	}
+	if err := s.jobRepo.CreateJob(ctx, job); err == nil {
+		_ = s.q.Enqueue(ctx, job.ID.String())
+	}
+
+	return source, nil
 }

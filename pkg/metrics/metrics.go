@@ -62,4 +62,22 @@ var (
 			Help:      "Current length of the fetch job stream",
 		},
 	)
+
+	NotifierSentTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "dealhunter",
+			Subsystem: "notifier",
+			Name:      "notifier_sent_total",
+			Help:      "Total number of successfully sent notifications",
+		},
+	)
+
+	NotifierFailedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "dealhunter",
+			Subsystem: "notifier",
+			Name:      "notifier_failed_total",
+			Help:      "Total number of failed notification attempts",
+		},
+	)
 )

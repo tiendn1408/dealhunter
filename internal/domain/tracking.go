@@ -18,12 +18,14 @@ type TrackedProduct struct {
 	NextFetchAt            time.Time
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+	IsPrimary              bool
 }
 
 // TrackingRepository defines persistence operations for tracked products.
 type TrackingRepository interface {
 	CreateTracking(ctx context.Context, t *TrackedProduct) error
 	GetTracking(ctx context.Context, id uuid.UUID) (*TrackedProduct, error)
+	GetTrackingBySource(ctx context.Context, userID, sourceID uuid.UUID) (*TrackedProduct, error)
 	ListTrackingsByUser(ctx context.Context, userID uuid.UUID) ([]*TrackedProduct, error)
 	UpdateNextFetchAt(ctx context.Context, tx pgx.Tx, id uuid.UUID, nextFetch time.Time) error
 	ClaimDueTrackings(ctx context.Context, limit int) ([]*TrackedProduct, error)

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -9,8 +10,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/comparison"
 	"github.com/tiendang/deal-hunter/internal/domain"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
+	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
@@ -28,6 +32,15 @@ type Worker struct {
 	registry    *marketplace.Registry
 	db          *pgxpool.Pool // pool supports concurrent transactions across goroutines
 	logger      *slog.Logger
+
+	// Phase 2 components
+	ruleEngine   alert.RuleEngine
+	notifRepo    notification.Repository
+	dedupService *notification.DedupService
+	notifQueue   queue.Queue
+
+	// Phase 3 components
+	comparisonCache comparison.ComparisonCache
 }
 
 func NewWorker(
@@ -55,6 +68,24 @@ func NewWorker(
 // SetDB injects the connection pool (optional override).
 func (w *Worker) SetDB(db *pgxpool.Pool) {
 	w.db = db
+}
+
+// SetAlertComponents injects alert evaluation and notification components.
+func (w *Worker) SetAlertComponents(
+	engine alert.RuleEngine,
+	notifRepo notification.Repository,
+	dedup *notification.DedupService,
+	notifQueue queue.Queue,
+) {
+	w.ruleEngine = engine
+	w.notifRepo = notifRepo
+	w.dedupService = dedup
+	w.notifQueue = notifQueue
+}
+
+// SetComparisonCache injects the comparison cache for cache invalidation upon price updates.
+func (w *Worker) SetComparisonCache(cache comparison.ComparisonCache) {
+	w.comparisonCache = cache
 }
 
 func (w *Worker) Run(ctx context.Context) error {
@@ -167,6 +198,11 @@ func (w *Worker) processJob(ctx context.Context, msg queue.Message) {
 		return
 	}
 
+	oldPrice := int64(0)
+	if source.LastPrice != nil {
+		oldPrice = *source.LastPrice
+	}
+
 	now := time.Now()
 	source.LastPrice = &snapshot.Price
 	source.LastShippingFee = &snapshot.ShippingFee
@@ -191,10 +227,102 @@ func (w *Worker) processJob(ctx context.Context, msg queue.Message) {
 
 	metrics.PriceSnapshotsTotal.Inc()
 
+	// Phase 2: Check price change and evaluate alert rules
+	if oldPrice > 0 && oldPrice != snapshot.Price && w.ruleEngine != nil {
+		w.evaluateAlerts(ctx, source, oldPrice, snapshot.Price, snapshot.CapturedAt)
+	}
+
 	w.logger.Info("Job succeeded",
 		"job_id", job.ID,
 		"platform", source.Platform,
 		"effective_price", snapshot.EffectivePrice,
 	)
 	_ = w.q.Ack(ctx, msg.MsgID)
+
+	// Phase 3: Invalidate comparison cache if product has multiple sources
+	if w.comparisonCache != nil && source.ProductID != uuid.Nil {
+		if err := w.comparisonCache.Invalidate(ctx, source.ProductID); err != nil {
+			w.logger.Warn("Comparison cache invalidate failed", "product_id", source.ProductID, "err", err)
+		}
+	}
+}
+
+func (w *Worker) evaluateAlerts(ctx context.Context, source *product.ProductSource, oldPrice, newPrice int64, capturedAt time.Time) {
+	if w.logger == nil {
+		w.logger = slog.Default()
+	}
+
+	event := alert.PriceChangeEvent{
+		ProductSourceID: source.ID,
+		OldPrice:        oldPrice,
+		NewPrice:        newPrice,
+		CapturedAt:      capturedAt,
+	}
+
+	matchedRules, err := w.ruleEngine.Evaluate(ctx, event)
+	if err != nil {
+		w.logger.Error("Failed to evaluate alert rules", "source_id", source.ID, "err", err)
+		return
+	}
+
+	for _, rule := range matchedRules {
+		// Dedup check
+		if w.dedupService != nil {
+			suppressed, err := w.dedupService.ShouldSuppress(ctx, rule.UserID, rule.ID)
+			if err != nil {
+				w.logger.Error("Dedup check error", "rule_id", rule.ID, "err", err)
+			} else if suppressed {
+				w.logger.Info("Alert suppressed by dedup window", "rule_id", rule.ID, "user_id", rule.UserID)
+				continue
+			}
+		}
+
+		recipient := ""
+		if w.notifRepo != nil {
+			rec, err := w.notifRepo.GetUserRecipient(ctx, rule.UserID, "zalo")
+			if err == nil {
+				recipient = rec
+			}
+		}
+
+		logEntry := &notification.NotificationLog{
+			UserID:      rule.UserID,
+			AlertRuleID: rule.ID,
+			Channel:     "zalo",
+			Recipient:   recipient,
+			Status:      notification.StatusQueued,
+			PriceBefore: oldPrice,
+			PriceAfter:  newPrice,
+		}
+
+		if w.notifRepo != nil {
+			if err := w.notifRepo.InsertLog(ctx, logEntry); err != nil {
+				w.logger.Error("Failed to insert notification log", "rule_id", rule.ID, "err", err)
+				continue
+			}
+		}
+
+		if w.notifQueue != nil {
+			payloadBytes, err := json.Marshal(notification.QueuePayload{
+				NotificationLogID: logEntry.ID,
+				UserID:            rule.UserID,
+				AlertRuleID:       rule.ID,
+				Recipient:         recipient,
+				Channel:           "zalo",
+				ProductSourceID:   source.ID,
+				PriceBefore:       oldPrice,
+				PriceAfter:        newPrice,
+			})
+			if err != nil {
+				w.logger.Error("Failed to marshal notification queue payload", "err", err)
+				continue
+			}
+
+			if err := w.notifQueue.Enqueue(ctx, string(payloadBytes)); err != nil {
+				w.logger.Error("Failed to enqueue notification", "err", err)
+			} else {
+				w.logger.Info("Notification queued for alert", "rule_id", rule.ID, "user_id", rule.UserID)
+			}
+		}
+	}
 }

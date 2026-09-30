@@ -1,96 +1,118 @@
-# Deal Hunter — Tổng Quan Kiến Trúc Hệ Thống
+# Deal Hunter — Tong Quan Kien Truc He Thong
 
-Tài liệu này mô tả kiến trúc tổng thể, mô hình phân tầng và các quyết định kỹ thuật của dự án **Deal Hunter**.
-
----
-
-## 1. Phong Cách Kiến Trúc (Architectural Style)
-
-Hệ thống được thiết kế theo mô hình **Modular Monolith (Multi-process Monolith)** kết hợp nguyên lý **Clean Architecture / Ports & Adapters (Hexagonal Architecture)**.
-
-- **Đơn nhất về Codebase (Monolithic Codebase)**: Toàn bộ code nằm chung 1 Go module `github.com/tiendang/deal-hunter`, chia sẻ chung database PostgreSQL và hàng đợi Redis.
-- **Tách biệt về Vận hành (Multi-process Runtime)**: Biên dịch thành 3 tiến trình Go độc lập (`cmd/api`, `cmd/scheduler`, `cmd/worker`) để đảm bảo khả năng co giãn (scaling) và cách ly tải.
+Tai lieu nay mo ta kien truc tong the, mo hinh phan tang va cac quyet dinh ky thuat cua du an **Deal Hunter** qua cac giai doan Phase 1, Phase 2 va Phase 3.
 
 ---
 
-## 2. Sơ Đồ Khối Hệ Thống
+## 1. Phong Cach Kien Truc (Architectural Style)
+
+He thong duoc thiet ke theo mo hinh **Modular Monolith (Multi-process Monolith)** ket hop nguyen ly **Clean Architecture / Ports & Adapters (Hexagonal Architecture)**.
+
+- **Don nhat ve Codebase (Monolithic Codebase)**: Toan bo code nam chung 1 Go module `github.com/tiendang/deal-hunter`, chia se chung database PostgreSQL va hang doi / cache Redis.
+- **Tach biet ve Van hanh (Multi-process Runtime)**: Bien dich thanh 4 tien trinh Go doc lap (`cmd/api`, `cmd/scheduler`, `cmd/worker`, `cmd/notifier`) de dam bao kha nang co gian (scaling) va cach ly tai.
+
+---
+
+## 2. So Do Khoi He Thong (System Architecture Diagram)
 
 ```mermaid
 flowchart TD
-    subgraph Presentation ["Presentation / Delivery Layer"]
+    subgraph Delivery ["Presentation / Delivery Layer"]
         API["cmd/api (Chi Router, Port 8080)"]
-        Scheduler["cmd/scheduler (10s Cron Loop)"]
+        Scheduler["cmd/scheduler (Cron Loop & Comparison Refresh)"]
         Worker["cmd/worker (Consumer Group Pool)"]
+        Notifier["cmd/notifier (Notification Consumer Group)"]
     end
 
-    subgraph Core ["Application & Domain Layer"]
+    subgraph Application ["Application & Domain Layer"]
         TrackingSvc["internal/tracking.TrackingService"]
         PricingSvc["internal/pricing.PricingService"]
-        Domain["internal/domain (Entities & Interfaces)"]
+        ComparisonSvc["internal/comparison.ComparisonService"]
+        AlertEngine["internal/alert (Rule Evaluator)"]
+        NotifSvc["internal/notification (Zalo Client)"]
         Registry["internal/marketplace.Registry"]
     end
 
-    subgraph Infrastructure ["Infrastructure & Adapters Layer"]
+    subgraph Storage ["Infrastructure & Persistence Layer"]
         PG[("PostgreSQL 15 (Source of Truth)")]
-        RedisStream[("Redis Streams (dh:stream:price-fetch)")]
-        Adapters["Marketplace Adapters (Mock, Lazada, Shopee...)"]
+        RedisStream[("Redis Streams (fetch & notif)")]
+        RedisCache[("Redis Cache (dh:cmp:product_id)")]
+        Adapters["Marketplace Adapters (Shopee, Lazada, TikTok, Mock)"]
     end
 
     API --> TrackingSvc
     API --> PricingSvc
-    Scheduler --> Domain
-    Worker --> Domain
+    API --> ComparisonSvc
+
+    Scheduler --> PG
+    Scheduler --> RedisStream
+    Scheduler --> ComparisonSvc
+
     Worker --> Registry
-
-    TrackingSvc --> PG
-    TrackingSvc --> RedisStream
-    TrackingSvc --> Registry
-
-    Scheduler -->|Claim SKIP LOCKED| PG
-    Scheduler -->|XADD| RedisStream
-
-    Worker -->|XREADGROUP / XACK| RedisStream
     Worker --> Adapters
-    Worker -->|Atomic Tx Commit| PG
+    Worker --> AlertEngine
+    Worker --> PG
+    Worker --> RedisStream
+    Worker --> RedisCache
+
+    Notifier --> NotifSvc
+    Notifier --> RedisStream
+    Notifier --> PG
+
+    ComparisonSvc --> RedisCache
+    ComparisonSvc --> PG
 ```
 
 ---
 
-## 3. Cấu Trúc Phân Tầng Mã Nguồn (Source Tree)
+## 3. Cau Truc Phan Tang Ma Nguon (Source Tree)
 
 ```text
 deal_hunter/
-├── cmd/                      # Composition Root: Khởi tạo và ráp nối dependencies (Manual DI)
-│   ├── api/main.go           # Khởi động REST API Server
-│   ├── worker/main.go        # Khởi động Worker Pool cào giá
-│   ├── scheduler/main.go     # Khởi động Scheduler quét định kỳ
-│   └── migrate/main.go       # Công cụ chạy migration SQL
+├── cmd/                      # Composition Root: Khoi tao va rap noi dependencies (Manual DI)
+│   ├── api/main.go           # Khoi dong REST API Server
+│   ├── worker/main.go        # Khoi dong Worker Pool cao gia & danh gia canh bao
+│   ├── scheduler/main.go     # Khoi dong Scheduler quet dinh ky va refresh so sanh
+│   ├── notifier/main.go      # Khoi dong Notifier gui thong bao Zalo (Phase 2)
+│   └── migrate/main.go       # Cong cu chay migration SQL
 │
-├── internal/                 # Mã nguồn đóng gói nghiệp vụ (Private to this module)
+├── internal/                 # Ma nguon dong goi nghiep vu (Private to this module)
 │   ├── domain/               # Core Entities (TrackedProduct, FetchJob) & Repository interfaces
 │   ├── product/              # Sub-domain Product & ProductSource (Models, Repo PG)
 │   ├── pricing/              # Sub-domain Pricing, Snapshot, Business Rule EffectivePrice()
-│   ├── tracking/             # Service tiếp nhận URL và quản lý tracking
+│   ├── comparison/           # Sub-domain So sanh gia da nen tang & Best Deal (Phase 3)
+│   ├── alert/                # Sub-domain Canh bao gia va danh gia luat (Phase 2)
+│   ├── notification/         # Sub-domain Gui thong bao Zalo OA / ZNS (Phase 2)
+│   ├── tracking/             # Service tiep nhan URL va quan ly tracking
 │   ├── jobs/                 # Worker pool logic, Scheduler logic, Job Repo PG
-│   ├── marketplace/          # Port & Adapter sàn TMĐT (Registry, Mock, Lazada...)
-│   ├── queue/                # Port & Adapter hàng đợi (Queue interface, Redis Stream)
+│   ├── marketplace/          # Port & Adapter san TMDT (Registry, Shopee, Lazada, TikTok, Mock)
+│   ├── queue/                # Port & Adapter hang doi (Queue interface, Redis Stream)
 │   └── http/                 # Delivery HTTP (Chi Router, Handlers, Middleware, CORS)
 │
-├── pkg/                      # Thư viện kỹ thuật dùng chung (Domain-agnostic)
-│   ├── config/               # Load biến môi trường từ .env
-│   ├── database/             # Quản lý connection pool PostgreSQL (pgxpool)
+├── pkg/                      # Thu vien ky thuat dung chung (Domain-agnostic)
+│   ├── config/               # Load bien moi truong tu .env
+│   ├── database/             # Quan ly connection pool PostgreSQL (pgxpool)
 │   ├── metrics/              # Prometheus Metrics exporter
 │   └── retry/                # Exponential backoff retry logic
 │
-├── migrations/               # Schema DDL versioned (Up / Down)
-└── tests/                    # Integration tests (E2E flow, Idempotency replay)
+├── migrations/               # Schema DDL versioned (000001, 000002, 000003)
+└── tests/                    # Integration tests (E2E flow, Idempotency replay, Comparison full flow)
 ```
 
 ---
 
-## 4. Các Nguyên Tắc Thiết Kế Cốt Lõi
+## 4. Cac Nguyen Tac Thiet Ke Cot Loi
 
-1. **Explicit Dependency Injection**: Không sử dụng biến toàn cục (`global state`). Tất cả database pools, redis clients và repositories đều được truyền qua constructor.
-2. **Transaction Isolation**: Chuỗi thao tác ghi snapshot giá, cập nhật giá mới nhất và đánh dấu job thành công được bọc trong một `pgx.Tx` duy nhất.
-3. **Idempotency**: Worker kiểm tra trạng thái job (`Status == Succeeded || Status == Dead`) trước khi xử lý, chống việc Redis replay message gây trùng lặp snapshot.
-4. **Non-blocking Scheduler**: Sử dụng `FOR UPDATE SKIP LOCKED` kết hợp câu lệnh atomic update để nhiều scheduler replica có thể chạy song song mà không bao giờ bị conflict hoặc lock contention.
+1. **Explicit Dependency Injection**: Khong su dung bien toan cuc (`global state`). Tat ca database pools, redis clients va repositories deu duoc truyen qua constructor.
+2. **Transaction Isolation**: Chuoi thao tac ghi snapshot gia, cap nhat gia moi nhat va danh dau job thanh cong duoc boc trong mot `pgx.Tx` duy nhat.
+3. **Idempotency**: Worker kiem tra trang thai job (`Status == Succeeded || Status == Dead`) truoc khi xu ly, chong viec Redis replay message gay trung lap snapshot.
+4. **Non-blocking Scheduler**: Su dung `FOR UPDATE SKIP LOCKED` ket hop cau lenh atomic update de nhieu scheduler replica co the chay song song ma khong bao gio bi conflict hoac lock contention.
+5. **Multi-layer Comparison Caching (Phase 3)**:
+   - Tang 1: Cache Redis toc do cao (`dh:cmp:{product_id}`, TTL 5 phut) phuc vu API `< 10ms`.
+   - Tang 2: Bang materialized `comparison_snapshots` luu tru lich su ket qua so sanh trong PostgreSQL.
+   - Cache Invalidation Pipeline: Worker tu dong xoa cache Redis ngay khi commit snapshot gia moi.
+   - Periodic Refresh: Scheduler chay ticker 10 phut refresh cac nhom san pham da san.
+6. **Multi-Marketplace Normalization & Canonical Product**:
+   - Nguon hang duoc bieu dien boi `product_sources` gan voi san (`shopee`, `lazada`, `tiktok`).
+   - Nhieu `product_sources` duoc gom chung vao mot thuc the logic `products` duy nhat.
+   - Thuat toan `IdentifyBestDeal` chon nguon gia re nhat con hang dua tren `EffectivePrice` (gia niem yet + phi ship) va tinh toan so tien cung nhu ty le tiet kiem.

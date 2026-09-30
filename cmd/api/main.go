@@ -12,11 +12,16 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/comparison"
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
 	"github.com/tiendang/deal-hunter/internal/marketplace/lazada"
 	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
+	"github.com/tiendang/deal-hunter/internal/marketplace/shopee"
+	"github.com/tiendang/deal-hunter/internal/marketplace/tiktok"
+	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
@@ -61,12 +66,17 @@ func main() {
 	registry := marketplace.NewRegistry()
 	registry.Register(mock.NewMockAdapter())
 	registry.Register(lazada.NewLazadaAdapter())
+	registry.Register(shopee.NewShopeeAdapter())
+	registry.Register(tiktok.NewTikTokAdapter())
 
 	// 4. Repositories
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
 	pricingRepo := pricing.NewPostgresRepository(dbPool)
 	jobRepo := jobs.NewPostgresRepository(dbPool)
+	alertRepo := alert.NewPostgresRepository(dbPool)
+	notifRepo := notification.NewPostgresRepository(dbPool)
+	comparisonRepo := comparison.NewPostgresRepository(dbPool)
 
 	// 5. Queue
 	q := queue.NewRedisStreamQueue(rdb, "dh:stream:price-fetch", "price-workers")
@@ -77,9 +87,13 @@ func main() {
 	// 6. Domain Services
 	trackingSvc := tracking.NewTrackingService(registry, productRepo, trackingRepo, jobRepo, q)
 	pricingSvc := pricing.NewPricingService(pricingRepo)
+	comparisonCache := comparison.NewRedisCache(rdb)
+	comparisonSvc := comparison.NewComparisonService(comparisonRepo, comparisonCache)
 
 	// 7. HTTP Handlers & Router
 	handler := router.NewHandler(trackingSvc, pricingSvc)
+	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
+	handler.SetComparisonService(comparisonSvc)
 	r := router.NewRouter(logger, handler)
 
 	srv := &http.Server{

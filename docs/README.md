@@ -1,35 +1,36 @@
-# Deal Hunter — Thư Viện Tài Liệu Dự Án (Documentation Index)
+# Deal Hunter — Thu Vien Tai Lieu Du An (Documentation Index)
 
-Chào mừng bạn đến với kho tài liệu của hệ thống **Deal Hunter**. Tài liệu được tổ chức theo từng chuyên mục rõ ràng để phục vụ việc phát triển, vận hành và mở rộng các giai đoạn tiếp theo.
-
----
-
-## 🗂️ Mục Lục Tài Liệu
-
-### 1. 🏗️ Kiến Trúc Hệ Thống (`docs/architecture/`)
-Chứa các tài liệu mô tả kiến trúc tổng thể, quyết định kỹ thuật và thiết kế dữ liệu dài hạn:
-- [**overview.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/architecture/overview.md): Tổng quan kiến trúc hệ thống (Modular Monolith, Ports & Adapters, phân tầng mã nguồn).
+Chao mung ban den voi kho tai lieu cua he thong **Deal Hunter**. Tai lieu duoc to chuc theo tung chuyen muc ro rang de phuc vu viec phat trien, van hanh va mo rong cac giai doan tiep theo.
 
 ---
 
-### 2. 📋 Kế Hoạch & Đặc Tả Nghiệp Vụ Theo Phase (`docs/plans/`)
-Chứa tài liệu PRD, đặc tả BA/PM và kế hoạch triển khai chi tiết cho từng giai đoạn:
-- [**phase-1-core-tracking.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/plans/phase-1-core-tracking.md): Đặc tả gốc & tiêu chuẩn nghiệm thu Phase 1 (Core Price Tracking Pipeline).
-- [**phase-2-alert-and-zalo.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/plans/phase-2-alert-and-zalo.md): Kế hoạch và thiết kế kiến trúc chuẩn bị cho Phase 2 (Alert Engine + Zalo Notification).
+## Muc Luc Tai Lieu
+
+### 1. Kien Truc He Thong (`docs/architecture/`)
+Chua cac tai lieu mo ta kien truc tong the, quyet dinh ky thuat va thiet ke du lieu dai han:
+- [**overview.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/architecture/overview.md): Tong quan kien truc he thong (Modular Monolith, Ports & Adapters, phan tang ma nguon).
 
 ---
 
-### 3. 🚀 Cẩm Nang Vận Hành & Hướng Dẫn (`docs/runbooks/`)
-Chứa các hướng dẫn cài đặt môi trường, chạy ứng dụng, cấu hình và xử lý sự cố:
-- [**setup-and-run.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/runbooks/setup-and-run.md): Hướng dẫn cấu hình môi trường (.env), chạy Docker Compose, migration và khởi động 3 tiến trình Go (`api`, `worker`, `scheduler`).
+### 2. Ke Hoach & Dac Ta Nghiep Vu Theo Phase (`docs/plans/`)
+Chua tai lieu PRD, dac ta BA/PM va ke hoach trien khai chi tiet cho tung giai doan:
+- [**phase-1-core-tracking.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/plans/phase-1-core-tracking.md): Dac ta goc va tieu chuan nghiem thu Phase 1 (Core Price Tracking Pipeline).
+- [**phase-2-alert-and-zalo.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/plans/phase-2-alert-and-zalo.md): Ke hoach va thiet ke kien truc chuan bi cho Phase 2 (Alert Engine + Zalo Notification).
+- [**phase-3-cross-platform.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/plans/phase-3-cross-platform.md): Ke hoach va thiet ke kien truc Phase 3 (Cross-platform Price Comparison).
 
 ---
 
-## 📐 Quy Chuẩn Đặt Tên Tài Liệu (Documentation Conventions)
+### 3. Cam Nang Van Hanh & Huong Dan (`docs/runbooks/`)
+Chua cac huong dan cai dat moi truong, chay ung dung, cau hinh va xu ly su co:
+- [**setup-and-run.md**](file:///Users/tien.dang/Workplace/reference/deal_hunter/docs/runbooks/setup-and-run.md): Huong dan cau hinh moi truong (.env), chay Docker Compose, migration va khoi dong cac tien trinh Go.
 
-Để chuẩn bị cho các giai đoạn tiếp theo (Phase 2, Phase 3, ...), tất cả tài liệu trong thư mục `docs/` tuân thủ các quy tắc sau:
-1. **Định dạng file**: Sử dụng chữ thường kết hợp dấu gạch ngang (`kebab-case`), ví dụ: `phase-2-alert-and-zalo.md`.
-2. **Phân nhóm đúng thư mục**:
-   - `docs/plans/`: Chỉ chứa kế hoạch và đặc tả nghiệp vụ theo từng Phase (`phase-X-*.md`).
-   - `docs/architecture/`: Chứa sơ đồ, thiết kế database, queue, bảo mật dùng chung.
-   - `docs/runbooks/`: Chứa hướng dẫn thao tác, vận hành thực tế.
+---
+
+## Quy Chuan Dat Ten Tai Lieu (Documentation Conventions)
+
+De chuan bi cho cac giai doan tiep theo (Phase 2, Phase 3, ...), tat ca tai lieu trong thu muc `docs/` tuan thu cac quy tac sau:
+1. **Dinh dang file**: Su dung chu thuong ket hop dau gach ngang (`kebab-case`), vi du: `phase-2-alert-and-zalo.md`.
+2. **Phan nhom dung thu muc**:
+   - `docs/plans/`: Chi chua ke hoach va dac ta nghiep vu theo tung Phase (`phase-X-*.md`).
+   - `docs/architecture/`: Chua so do, thiet ke database, queue, bao mat dung chung.
+   - `docs/runbooks/`: Chua huong dan thao tac, van hanh thuc te.

@@ -1,4 +1,4 @@
-package lazada
+package shopee
 
 import (
 	"context"
@@ -13,67 +13,67 @@ import (
 	"github.com/tiendang/deal-hunter/internal/product"
 )
 
-var lazadaItemPattern = regexp.MustCompile(`-i(\d+)`)
+var shopeeURLPattern = regexp.MustCompile(`i\.(\d+)\.(\d+)`)
 
-// LazadaAdapter handles product ingestion and price scraping for Lazada Vietnam.
-type LazadaAdapter struct{}
+// ShopeeAdapter handles product ingestion and price scraping for Shopee Vietnam.
+type ShopeeAdapter struct{}
 
-func NewLazadaAdapter() *LazadaAdapter {
-	return &LazadaAdapter{}
+func NewShopeeAdapter() *ShopeeAdapter {
+	return &ShopeeAdapter{}
 }
 
-func (a *LazadaAdapter) Name() string {
-	return "lazada"
+func (a *ShopeeAdapter) Name() string {
+	return "shopee"
 }
 
-func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
-	if !strings.Contains(rawURL, "lazada.vn") && !strings.Contains(rawURL, "lazada") {
-		return nil, fmt.Errorf("invalid lazada url: %s", rawURL)
+func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
+	if !strings.Contains(rawURL, "shopee.vn") && !strings.Contains(rawURL, "shopee") {
+		return nil, fmt.Errorf("invalid shopee url: %s", rawURL)
 	}
 
-	matches := lazadaItemPattern.FindStringSubmatch(rawURL)
+	matches := shopeeURLPattern.FindStringSubmatch(rawURL)
 	extID := ""
-	if len(matches) == 2 {
-		extID = fmt.Sprintf("lazada-%s", matches[1])
+	if len(matches) == 3 {
+		extID = fmt.Sprintf("shopee-%s-%s", matches[1], matches[2])
 	} else {
+		// Fallback slug extraction
 		parts := strings.Split(strings.TrimRight(rawURL, "/"), "/")
 		last := parts[len(parts)-1]
 		clean := strings.Split(last, "?")[0]
-		clean = strings.TrimSuffix(clean, ".html")
-		extID = fmt.Sprintf("lazada-%s", clean)
+		extID = fmt.Sprintf("shopee-%s", clean)
 	}
 
-	title := "Sản phẩm Lazada"
+	title := "Sản phẩm Shopee"
 	lower := strings.ToLower(rawURL)
-	price := int64(6390000)
+	price := int64(6290000)
 
 	if strings.Contains(lower, "sony") || strings.Contains(lower, "wh1000") || strings.Contains(lower, "xm6") {
-		title = "Tai nghe chống ồn Sony WH-1000XM6 LazMall"
-		price = 6390000
+		title = "Tai nghe Sony WH-1000XM6 Chính Hãng"
+		price = 6290000
 	} else if strings.Contains(lower, "samsung") || strings.Contains(lower, "ssd") {
-		title = "Ổ Cứng SSD Samsung 990 Pro 2TB Chính Hãng LazMall"
-		price = 2890000
+		title = "Ổ Cứng SSD Samsung 990 Pro 2TB NVMe M.2"
+		price = 2850000
 	} else if strings.Contains(lower, "iphone") {
-		title = "Apple iPhone 16 Pro Max 256GB LazMall"
-		price = 32290000
+		title = "Apple iPhone 16 Pro Max 256GB VNA"
+		price = 32190000
 	}
 
 	return &marketplace.ProductData{
 		ExternalProductID: extID,
 		CanonicalURL:      rawURL,
 		RawTitle:          title,
-		SellerName:        "Lazada Flagship Store",
+		SellerName:        "Shopee Mall Official",
 		Price: pricing.Price{
-			ListedPrice: price + int64(float64(price)*0.12),
+			ListedPrice: price + int64(float64(price)*0.1),
 			SalePrice:   price,
-			ShippingFee: 20000,
+			ShippingFee: 15000,
 		},
 		InStock: true,
 	}, nil
 }
 
-func (a *LazadaAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
-	base := int64(6390000)
+func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
+	base := int64(6290000)
 	if source.LastPrice != nil && *source.LastPrice > 0 {
 		base = *source.LastPrice
 	}
@@ -84,7 +84,7 @@ func (a *LazadaAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 		currentPrice = base
 	}
 
-	shipping := int64(20000)
+	shipping := int64(15000)
 	if source.LastShippingFee != nil && *source.LastShippingFee >= 0 {
 		shipping = *source.LastShippingFee
 	}
