@@ -71,6 +71,39 @@ func (m *mockNotifRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status n
 	}
 	return nil
 }
+func (m *mockNotifRepo) UpdateStatusAndMsgID(ctx context.Context, id uuid.UUID, status notification.Status, msgID string, errorMessage *string) error {
+	for _, l := range m.logs {
+		if l.ID == id {
+			l.Status = status
+			l.MsgID = &msgID
+			l.ErrorMessage = errorMessage
+			return nil
+		}
+	}
+	return nil
+}
+func (m *mockNotifRepo) GetLogByMsgID(ctx context.Context, msgID string) (*notification.NotificationLog, error) {
+	for _, l := range m.logs {
+		if l.MsgID != nil && *l.MsgID == msgID {
+			return l, nil
+		}
+	}
+	return nil, nil
+}
+func (m *mockNotifRepo) UpdateDeliveryStatus(ctx context.Context, msgID string, status notification.Status, timestamp *time.Time) error {
+	for _, l := range m.logs {
+		if l.MsgID != nil && *l.MsgID == msgID {
+			l.Status = status
+			if status == notification.StatusDelivered && timestamp != nil {
+				l.DeliveredAt = timestamp
+			} else if status == notification.StatusRead && timestamp != nil {
+				l.ReadAt = timestamp
+			}
+			return nil
+		}
+	}
+	return nil
+}
 func (m *mockNotifRepo) CheckDedup(ctx context.Context, userID, alertRuleID uuid.UUID, within time.Duration) (bool, error) {
 	return false, nil // don't suppress
 }

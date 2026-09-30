@@ -95,6 +95,10 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 		r.Post("/products/{product_id}/auto-match", handler.TriggerAutoMatch)
 		r.Get("/tracked-products/{id}/match-suggestions", handler.GetTrackedProductMatchSuggestions)
 		r.Post("/tracked-products/{id}/auto-match", handler.TriggerTrackedProductAutoMatch)
+
+		// GAP-04: Zalo OA & ZNS Webhooks
+		r.Post("/webhooks/zalo", handler.HandleZaloWebhook)
+		r.Post("/notifications/webhook/zalo", handler.HandleZaloWebhook)
 	})
 
 	return r

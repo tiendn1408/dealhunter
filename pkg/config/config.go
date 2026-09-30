@@ -28,6 +28,8 @@ type Config struct {
 	ZaloTemplateID      string
 	ZaloAppID           string
 	ZaloOASecretKey     string
+	ZaloRefreshToken    string
+	ZaloWebhookSecret   string
 	ZaloEnabled         bool
 	CORSAllowedOrigins  string
 	JWTSecret           string
@@ -70,7 +72,9 @@ func Load() (*Config, error) {
 	zaloTemplate := getEnv("ZALO_TEMPLATE_ID", "")
 	zaloAppID := getEnv("ZALO_APP_ID", "")
 	zaloSecret := getEnv("ZALO_OA_SECRET_KEY", "")
-	zaloEnabled := getEnv("ZALO_ENABLED", "false") == "true" || zaloToken != ""
+	zaloRefreshToken := getEnv("ZALO_REFRESH_TOKEN", "")
+	zaloWebhookSecret := getEnv("ZALO_WEBHOOK_SECRET", zaloSecret)
+	zaloEnabled := getEnv("ZALO_ENABLED", "false") == "true" || zaloToken != "" || zaloRefreshToken != ""
 
 	return &Config{
 		AppEnv:              getEnv("APP_ENV", "development"),
@@ -91,6 +95,8 @@ func Load() (*Config, error) {
 		ZaloTemplateID:      zaloTemplate,
 		ZaloAppID:           zaloAppID,
 		ZaloOASecretKey:     zaloSecret,
+		ZaloRefreshToken:    zaloRefreshToken,
+		ZaloWebhookSecret:   zaloWebhookSecret,
 		ZaloEnabled:         zaloEnabled,
 		CORSAllowedOrigins:  getEnv("CORS_ALLOWED_ORIGINS", "*"),
 		JWTSecret:           getEnv("JWT_SECRET", "dealhunter-super-secret-jwt-key-32bytes-secure!"),

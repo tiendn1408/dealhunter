@@ -48,7 +48,7 @@ func (s *NotifierService) ProcessMessage(ctx context.Context, msg queue.Message)
 		"price_after":  fmt.Sprintf("%d", payload.PriceAfter),
 	}
 
-	err := s.zaloClient.SendMessage(ctx, payload.Recipient, s.templateID, params)
+	msgID, err := s.zaloClient.SendMessage(ctx, payload.Recipient, s.templateID, params)
 	if err != nil {
 		metrics.NotifierFailedTotal.Inc()
 		errMsg := err.Error()
@@ -56,8 +56,16 @@ func (s *NotifierService) ProcessMessage(ctx context.Context, msg queue.Message)
 		s.logger.Error("Failed to send Zalo notification", "recipient", payload.Recipient, "err", err)
 	} else {
 		metrics.NotifierSentTotal.Inc()
-		_ = s.repo.UpdateStatus(ctx, payload.NotificationLogID, StatusSent, nil)
-		s.logger.Info("Notification sent successfully", "recipient", payload.Recipient, "log_id", payload.NotificationLogID)
+		if msgID != "" {
+			if err := s.repo.UpdateStatusAndMsgID(ctx, payload.NotificationLogID, StatusSent, msgID, nil); err != nil {
+				s.logger.Error("Failed to update status and msg_id in db", "err", err, "id", payload.NotificationLogID)
+			}
+		} else {
+			if err := s.repo.UpdateStatus(ctx, payload.NotificationLogID, StatusSent, nil); err != nil {
+				s.logger.Error("Failed to update status in db", "err", err, "id", payload.NotificationLogID)
+			}
+		}
+		s.logger.Info("Notification sent successfully", "recipient", payload.Recipient, "log_id", payload.NotificationLogID, "msg_id", msgID)
 	}
 
 	_ = s.queue.Ack(ctx, msg.MsgID)

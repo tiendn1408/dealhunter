@@ -30,6 +30,7 @@ type Handler struct {
 	authService     *auth.AuthService
 	jwtManager      *auth.JWTManager
 	matchingService *matching.MatchingService
+	zaloWebhookSecret string
 }
 
 func NewHandler(ts *tracking.TrackingService, ps *pricing.PricingService) *Handler {
@@ -39,6 +40,10 @@ func NewHandler(ts *tracking.TrackingService, ps *pricing.PricingService) *Handl
 func (h *Handler) SetAlertAndNotificationRepos(ar alert.Repository, nr notification.Repository) {
 	h.alertRepo = ar
 	h.notifRepo = nr
+}
+
+func (h *Handler) SetZaloWebhookSecret(secret string) {
+	h.zaloWebhookSecret = secret
 }
 
 func (h *Handler) SetComparisonService(svc *comparison.ComparisonService) {

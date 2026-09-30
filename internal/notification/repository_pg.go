@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -35,10 +36,10 @@ func (r *PostgresRepository) InsertLog(ctx context.Context, log *NotificationLog
 
 	query := `
 		INSERT INTO notification_logs (
-			id, user_id, alert_rule_id, channel, recipient, status,
-			price_before, price_after, sent_at, read_at, error_message, created_at
+			id, user_id, alert_rule_id, channel, recipient, status, msg_id,
+			price_before, price_after, sent_at, delivered_at, read_at, error_message, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id, created_at;
 	`
 
@@ -49,9 +50,11 @@ func (r *PostgresRepository) InsertLog(ctx context.Context, log *NotificationLog
 		log.Channel,
 		log.Recipient,
 		log.Status,
+		log.MsgID,
 		log.PriceBefore,
 		log.PriceAfter,
 		log.SentAt,
+		log.DeliveredAt,
 		log.ReadAt,
 		log.ErrorMessage,
 		log.CreatedAt,
@@ -61,14 +64,104 @@ func (r *PostgresRepository) InsertLog(ctx context.Context, log *NotificationLog
 func (r *PostgresRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status Status, errorMessage *string) error {
 	query := `
 		UPDATE notification_logs
-		SET status = $1,
+		SET status = $1::text,
 		    error_message = $2,
-		    sent_at = CASE WHEN $1 = 'sent' THEN NOW() ELSE sent_at END
+		    sent_at = CASE WHEN $1::text = 'sent' AND sent_at IS NULL THEN NOW() ELSE sent_at END
 		WHERE id = $3;
 	`
 	_, err := r.pool.Exec(ctx, query, status, errorMessage, id)
 	if err != nil {
 		return fmt.Errorf("update notification status: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UpdateStatusAndMsgID(ctx context.Context, id uuid.UUID, status Status, msgID string, errorMessage *string) error {
+	query := `
+		UPDATE notification_logs
+		SET status = $1::text,
+		    msg_id = $2,
+		    error_message = $3,
+		    sent_at = CASE WHEN $1::text = 'sent' AND sent_at IS NULL THEN NOW() ELSE sent_at END
+		WHERE id = $4;
+	`
+	_, err := r.pool.Exec(ctx, query, status, msgID, errorMessage, id)
+	if err != nil {
+		return fmt.Errorf("update status and msg_id: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetLogByMsgID(ctx context.Context, msgID string) (*NotificationLog, error) {
+	query := `
+		SELECT id, user_id, alert_rule_id, channel, recipient, status, msg_id,
+		       price_before, price_after, sent_at, delivered_at, read_at, error_message, created_at
+		FROM notification_logs
+		WHERE msg_id = $1;
+	`
+	var n NotificationLog
+	err := r.pool.QueryRow(ctx, query, msgID).Scan(
+		&n.ID,
+		&n.UserID,
+		&n.AlertRuleID,
+		&n.Channel,
+		&n.Recipient,
+		&n.Status,
+		&n.MsgID,
+		&n.PriceBefore,
+		&n.PriceAfter,
+		&n.SentAt,
+		&n.DeliveredAt,
+		&n.ReadAt,
+		&n.ErrorMessage,
+		&n.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get log by msg_id: %w", err)
+	}
+	return &n, nil
+}
+
+func (r *PostgresRepository) UpdateDeliveryStatus(ctx context.Context, msgID string, status Status, timestamp *time.Time) error {
+	ts := time.Now()
+	if timestamp != nil && !timestamp.IsZero() {
+		ts = *timestamp
+	}
+
+	switch status {
+	case StatusDelivered:
+		query := `
+			UPDATE notification_logs
+			SET status = $1::varchar,
+			    delivered_at = COALESCE(delivered_at, $2)
+			WHERE msg_id = $3 AND status IN ('sent', 'queued');
+		`
+		if _, err := r.pool.Exec(ctx, query, status, ts, msgID); err != nil {
+			return fmt.Errorf("update delivery status: %w", err)
+		}
+	case StatusRead:
+		query := `
+			UPDATE notification_logs
+			SET status = $1::varchar,
+			    delivered_at = COALESCE(delivered_at, $2),
+			    read_at = COALESCE(read_at, $2)
+			WHERE msg_id = $3;
+		`
+		if _, err := r.pool.Exec(ctx, query, status, ts, msgID); err != nil {
+			return fmt.Errorf("update delivery status: %w", err)
+		}
+	default:
+		query := `
+			UPDATE notification_logs
+			SET status = $1::varchar
+			WHERE msg_id = $2 AND status IN ('sent', 'queued');
+		`
+		if _, err := r.pool.Exec(ctx, query, status, msgID); err != nil {
+			return fmt.Errorf("update delivery status: %w", err)
+		}
 	}
 	return nil
 }
@@ -98,8 +191,8 @@ func (r *PostgresRepository) ListUserNotifications(ctx context.Context, userID u
 	}
 
 	query := `
-		SELECT n.id, n.user_id, n.alert_rule_id, n.channel, n.recipient, n.status,
-		       n.price_before, n.price_after, n.sent_at, n.read_at, n.error_message, n.created_at,
+		SELECT n.id, n.user_id, n.alert_rule_id, n.channel, n.recipient, n.status, n.msg_id,
+		       n.price_before, n.price_after, n.sent_at, n.delivered_at, n.read_at, n.error_message, n.created_at,
 		       COALESCE(ps.raw_title, p.title, '') AS product_title,
 		       COALESCE(ps.platform, '') AS platform,
 		       COALESCE(ps.canonical_url, '') AS product_url
@@ -128,9 +221,11 @@ func (r *PostgresRepository) ListUserNotifications(ctx context.Context, userID u
 			&n.Channel,
 			&n.Recipient,
 			&n.Status,
+			&n.MsgID,
 			&n.PriceBefore,
 			&n.PriceAfter,
 			&n.SentAt,
+			&n.DeliveredAt,
 			&n.ReadAt,
 			&n.ErrorMessage,
 			&n.CreatedAt,
@@ -148,8 +243,8 @@ func (r *PostgresRepository) ListUserNotifications(ctx context.Context, userID u
 
 func (r *PostgresRepository) ListRuleLogs(ctx context.Context, alertRuleID uuid.UUID) ([]*NotificationLog, error) {
 	query := `
-		SELECT id, user_id, alert_rule_id, channel, recipient, status,
-		       price_before, price_after, sent_at, read_at, error_message, created_at
+		SELECT id, user_id, alert_rule_id, channel, recipient, status, msg_id,
+		       price_before, price_after, sent_at, delivered_at, read_at, error_message, created_at
 		FROM notification_logs
 		WHERE alert_rule_id = $1
 		ORDER BY created_at DESC;
@@ -171,9 +266,11 @@ func (r *PostgresRepository) ListRuleLogs(ctx context.Context, alertRuleID uuid.
 			&n.Channel,
 			&n.Recipient,
 			&n.Status,
+			&n.MsgID,
 			&n.PriceBefore,
 			&n.PriceAfter,
 			&n.SentAt,
+			&n.DeliveredAt,
 			&n.ReadAt,
 			&n.ErrorMessage,
 			&n.CreatedAt,
@@ -198,8 +295,8 @@ func (r *PostgresRepository) MarkAsRead(ctx context.Context, id uuid.UUID, userI
 
 func (r *PostgresRepository) GetLog(ctx context.Context, id uuid.UUID) (*NotificationLog, error) {
 	query := `
-		SELECT id, user_id, alert_rule_id, channel, recipient, status,
-		       price_before, price_after, sent_at, read_at, error_message, created_at
+		SELECT id, user_id, alert_rule_id, channel, recipient, status, msg_id,
+		       price_before, price_after, sent_at, delivered_at, read_at, error_message, created_at
 		FROM notification_logs
 		WHERE id = $1;
 	`
@@ -211,15 +308,17 @@ func (r *PostgresRepository) GetLog(ctx context.Context, id uuid.UUID) (*Notific
 		&n.Channel,
 		&n.Recipient,
 		&n.Status,
+		&n.MsgID,
 		&n.PriceBefore,
 		&n.PriceAfter,
 		&n.SentAt,
+		&n.DeliveredAt,
 		&n.ReadAt,
 		&n.ErrorMessage,
 		&n.CreatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get notification log: %w", err)

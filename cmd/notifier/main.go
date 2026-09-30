@@ -57,11 +57,22 @@ func main() {
 		logger.Warn("Redis consumer group init note", "err", err)
 	}
 
-	// 5. Zalo Client (falls back to mock client if Zalo credentials not configured)
+	// 5. Zalo Token Lifecycle Manager & Client
+	tokenManager := zalo.NewTokenManager(
+		cfg.ZaloAppID,
+		cfg.ZaloOASecretKey,
+		cfg.ZaloRefreshToken,
+		rdb,
+		logger,
+	)
+	tokenManager.StartAutoRefresh(ctx, zalo.DefaultRefreshWindow)
+
 	var zaloClient zalo.ZaloClient
-	if cfg.ZaloEnabled && cfg.ZaloOAAccessToken != "" {
-		logger.Info("Using real Zalo HTTP client")
-		zaloClient = zalo.NewHTTPZaloClient(cfg.ZaloOAAccessToken, rdb)
+	if cfg.ZaloEnabled && (cfg.ZaloOAAccessToken != "" || cfg.ZaloRefreshToken != "") {
+		logger.Info("Using real Zalo HTTP client with token manager")
+		httpCli := zalo.NewHTTPZaloClient(cfg.ZaloOAAccessToken, rdb)
+		httpCli.SetTokenManager(tokenManager)
+		zaloClient = httpCli
 	} else {
 		logger.Info("Using Mock Zalo client (sandbox/development mode)")
 		zaloClient = zalo.NewMockZaloClient()

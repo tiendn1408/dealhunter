@@ -87,6 +87,18 @@ func (m *mockNotifRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status n
 	return nil
 }
 
+func (m *mockNotifRepo) UpdateStatusAndMsgID(ctx context.Context, id uuid.UUID, status notification.Status, msgID string, errorMessage *string) error {
+	return nil
+}
+
+func (m *mockNotifRepo) GetLogByMsgID(ctx context.Context, msgID string) (*notification.NotificationLog, error) {
+	return nil, nil
+}
+
+func (m *mockNotifRepo) UpdateDeliveryStatus(ctx context.Context, msgID string, status notification.Status, timestamp *time.Time) error {
+	return nil
+}
+
 func (m *mockNotifRepo) CheckDedup(ctx context.Context, userID, alertRuleID uuid.UUID, within time.Duration) (bool, error) {
 	return false, nil
 }

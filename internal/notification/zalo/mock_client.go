@@ -3,9 +3,12 @@ package zalo
 import (
 	"context"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 type SentMessage struct {
+	MsgID      string
 	Recipient  string
 	TemplateID string
 	Params     map[string]string
@@ -24,20 +27,22 @@ func NewMockZaloClient() *MockZaloClient {
 	}
 }
 
-func (m *MockZaloClient) SendMessage(ctx context.Context, recipient string, templateID string, params map[string]string) error {
+func (m *MockZaloClient) SendMessage(ctx context.Context, recipient string, templateID string, params map[string]string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.ShouldFail && m.FailError != nil {
-		return m.FailError
+		return "", m.FailError
 	}
 
+	msgID := "mock-msg-" + uuid.NewString()
 	m.SentMessages = append(m.SentMessages, SentMessage{
+		MsgID:      msgID,
 		Recipient:  recipient,
 		TemplateID: templateID,
 		Params:     params,
 	})
-	return nil
+	return msgID, nil
 }
 
 func (m *MockZaloClient) CountSent() int {

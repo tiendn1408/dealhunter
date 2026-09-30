@@ -10,9 +10,11 @@ import (
 type Status string
 
 const (
-	StatusQueued Status = "queued"
-	StatusSent   Status = "sent"
-	StatusFailed Status = "failed"
+	StatusQueued    Status = "queued"
+	StatusSent      Status = "sent"
+	StatusDelivered Status = "delivered"
+	StatusRead      Status = "read"
+	StatusFailed    Status = "failed"
 )
 
 type NotificationLog struct {
@@ -22,9 +24,11 @@ type NotificationLog struct {
 	Channel      string     `json:"channel"`
 	Recipient    string     `json:"recipient"`
 	Status       Status     `json:"status"`
+	MsgID        *string    `json:"msg_id,omitempty"`
 	PriceBefore  int64      `json:"price_before"`
 	PriceAfter   int64      `json:"price_after"`
 	SentAt       *time.Time `json:"sent_at,omitempty"`
+	DeliveredAt  *time.Time `json:"delivered_at,omitempty"`
 	ReadAt       *time.Time `json:"read_at,omitempty"`
 	ErrorMessage *string    `json:"error_message,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -63,6 +67,9 @@ type UserProfile struct {
 type Repository interface {
 	InsertLog(ctx context.Context, log *NotificationLog) error
 	UpdateStatus(ctx context.Context, id uuid.UUID, status Status, errorMessage *string) error
+	UpdateStatusAndMsgID(ctx context.Context, id uuid.UUID, status Status, msgID string, errorMessage *string) error
+	GetLogByMsgID(ctx context.Context, msgID string) (*NotificationLog, error)
+	UpdateDeliveryStatus(ctx context.Context, msgID string, status Status, timestamp *time.Time) error
 	CheckDedup(ctx context.Context, userID, alertRuleID uuid.UUID, within time.Duration) (bool, error)
 	ListUserNotifications(ctx context.Context, userID uuid.UUID, limit int) ([]*EnrichedNotification, error)
 	ListRuleLogs(ctx context.Context, alertRuleID uuid.UUID) ([]*NotificationLog, error)

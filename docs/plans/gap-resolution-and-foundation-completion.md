@@ -148,17 +148,19 @@ Theo chỉ đạo của dự án, công việc đóng gói Docker toàn diện �
 
 ## 3. Thứ Tự Triển Khai Thực Hiện Trước Khi Qua Phase Mới
 
-Để đảm bảo hệ thống đạt độ tin cậy và không còn cảm giác "bị sót", thứ tự thực hiện được đề xuất như sau:
+Để đảm bảo hệ thống đạt độ tin cậy, không làm méo mó kiến trúc gốc và không bỏ sót tính năng, tính năng Kiếm tiền & Voucher được tách thành Phase 3.5 riêng biệt, giữ nguyên vẹn định nghĩa gốc của Phase 4, 5, 6:
 
 ```mermaid
 flowchart TD
-    Step1["1. Tiện ích khởi chạy 1 lệnh (GAP-05)<br/>scripts/dev-all.sh & Makefile"]
-    Step2["2. Hệ thống Auth thật & Migrate khách vãng lai (GAP-02)<br/>Google OAuth + JWT"]
-    Step3["3. Chuẩn hóa Scraper Engine thực tế (GAP-01)<br/>Bóc tách live API Shopee/Lazada"]
-    Step4["4. Bộ máy Auto-Matching Đa Sàn (GAP-03)<br/>Tìm kiếm & so khớp tự động"]
-    Step5["5. Chuẩn bị Zalo OA Production Ready (GAP-04)<br/>Cron refresh token & Webhook"]
-    Step6["6. Bước sang Phase 4: Price Intelligence<br/>Deal Score & Fake Discount Detector"]
-    Step7["7. Triển khai Phase 6: Đóng gói Docker toàn diện<br/>Full Stack Containerization & Deploy"]
+    Step1["1. Tiện ích khởi chạy 1 lệnh (GAP-05)<br/>scripts/dev-all.sh & Makefile (ĐÃ XONG)"]
+    Step2["2. Hệ thống Auth thật & Migrate khách vãng lai (GAP-02)<br/>Google OAuth + JWT (ĐÃ XONG)"]
+    Step3["3. Chuẩn hóa Scraper Engine thực tế (GAP-01)<br/>Bóc tách live API Shopee/Lazada (ĐÃ XONG)"]
+    Step4["4. Bộ máy Auto-Matching Đa Sàn (GAP-03)<br/>Tìm kiếm & so khớp tự động (ĐÃ XONG)"]
+    Step5["5. Chuẩn bị Zalo OA Production Ready (GAP-04)<br/>Cron refresh token & Webhook (ĐÃ XONG)"]
+    Step6["6. Phase 3.5: Monetization & Voucher Engine<br/>(3.5.1: Link Affiliate + 3.5.2: Combo Săn Voucher)"]
+    Step7["7. Phase 4: Price Intelligence (NGUYÊN BẢN)<br/>Deal Score 1-10 + Fake Discount + Volatility"]
+    Step8["8. Phase 5: Auto Hunt (NGUYÊN BẢN)<br/>Săn deal tự động theo từ khóa & ngân sách"]
+    Step9["9. Phase 6: Đóng gói Docker toàn diện (NGUYÊN BẢN)<br/>Full App Containerization & Deploy Cloud"]
 
     Step1 --> Step2
     Step2 --> Step3
@@ -166,6 +168,8 @@ flowchart TD
     Step4 --> Step5
     Step5 --> Step6
     Step6 --> Step7
+    Step7 --> Step8
+    Step8 --> Step9
 ```
 
 ---

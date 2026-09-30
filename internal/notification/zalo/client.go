@@ -13,13 +13,14 @@ import (
 )
 
 type ZaloClient interface {
-	SendMessage(ctx context.Context, recipient string, templateID string, params map[string]string) error
+	SendMessage(ctx context.Context, recipient string, templateID string, params map[string]string) (string, error)
 }
 
 type HTTPZaloClient struct {
-	accessToken string
-	httpClient  *http.Client
-	redisClient *redis.Client
+	accessToken  string
+	httpClient   *http.Client
+	redisClient  *redis.Client
+	tokenManager *TokenManager
 }
 
 func NewHTTPZaloClient(accessToken string, redisClient *redis.Client) *HTTPZaloClient {
@@ -30,6 +31,10 @@ func NewHTTPZaloClient(accessToken string, redisClient *redis.Client) *HTTPZaloC
 	}
 }
 
+func (c *HTTPZaloClient) SetTokenManager(tm *TokenManager) {
+	c.tokenManager = tm
+}
+
 type TemplateRequest struct {
 	Phone        string            `json:"phone,omitempty"`
 	ZaloID       string            `json:"user_id,omitempty"`
@@ -37,17 +42,25 @@ type TemplateRequest struct {
 	TemplateData map[string]string `json:"template_data"`
 }
 
-func (c *HTTPZaloClient) SendMessage(ctx context.Context, recipient string, templateID string, params map[string]string) error {
-	token := c.accessToken
-	// Check Redis cache for refreshed access token if available
-	if c.redisClient != nil {
-		if cachedToken, err := c.redisClient.Get(ctx, "zalo:oa:access_token").Result(); err == nil && cachedToken != "" {
+func (c *HTTPZaloClient) SendMessage(ctx context.Context, recipient string, templateID string, params map[string]string) (string, error) {
+	var token string
+	if c.tokenManager != nil {
+		t, err := c.tokenManager.GetAccessToken(ctx)
+		if err == nil && t != "" {
+			token = t
+		}
+	}
+	if token == "" && c.redisClient != nil {
+		if cachedToken, err := c.redisClient.Get(ctx, KeyZaloAccessToken).Result(); err == nil && cachedToken != "" {
 			token = cachedToken
 		}
 	}
+	if token == "" {
+		token = c.accessToken
+	}
 
 	if token == "" {
-		return fmt.Errorf("zalo access token is empty")
+		return "", fmt.Errorf("zalo access token is empty")
 	}
 
 	reqBody := TemplateRequest{
@@ -63,12 +76,12 @@ func (c *HTTPZaloClient) SendMessage(ctx context.Context, recipient string, temp
 
 	data, err := json.Marshal(reqBody)
 	if err != nil {
-		return fmt.Errorf("marshal zalo request: %w", err)
+		return "", fmt.Errorf("marshal zalo request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://business.openapi.zalo.me/message/template", bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("create zalo request: %w", err)
+		return "", fmt.Errorf("create zalo request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -76,24 +89,30 @@ func (c *HTTPZaloClient) SendMessage(ctx context.Context, recipient string, temp
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("execute zalo request: %w", err)
+		return "", fmt.Errorf("execute zalo request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("zalo API error HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+		return "", fmt.Errorf("zalo API error HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var zaloResp struct {
 		Error   int    `json:"error"`
 		Message string `json:"message"`
+		Data    struct {
+			MsgID string `json:"msg_id"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(bodyBytes, &zaloResp); err == nil {
 		if zaloResp.Error != 0 {
-			return fmt.Errorf("zalo business error %d: %s", zaloResp.Error, zaloResp.Message)
+			return "", fmt.Errorf("zalo business error %d: %s", zaloResp.Error, zaloResp.Message)
+		}
+		if zaloResp.Data.MsgID != "" {
+			return zaloResp.Data.MsgID, nil
 		}
 	}
 
-	return nil
+	return "", nil
 }

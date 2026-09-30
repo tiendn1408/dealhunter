@@ -108,6 +108,9 @@ func main() {
 	handler.SetComparisonService(comparisonSvc)
 	handler.SetAuthService(authSvc, jwtMgr)
 	handler.SetMatchingService(matchingSvc)
+	if cfg.ZaloWebhookSecret != "" {
+		handler.SetZaloWebhookSecret(cfg.ZaloWebhookSecret)
+	}
 	r := router.NewRouter(logger, handler)
 
 	srv := &http.Server{
