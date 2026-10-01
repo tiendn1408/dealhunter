@@ -14,15 +14,16 @@ import (
 )
 
 func getTestRedis(t *testing.T) *redis.Client {
+	redisAddr := "localhost:6380"
 	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: redisAddr,
 		DB:   15, // Isolated test DB
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		t.Skipf("Skipping test: Redis not reachable at localhost:6379: %v", err)
+		t.Skipf("Skipping test: Redis not reachable at %s: %v", redisAddr, err)
 	}
 	_ = rdb.FlushDB(ctx).Err()
 	return rdb

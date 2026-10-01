@@ -179,7 +179,7 @@ func (r *PostgresRepository) CheckDedup(ctx context.Context, userID, alertRuleID
 			WHERE user_id = $1
 			  AND alert_rule_id = $2
 			  AND created_at > NOW() - ($3 || ' seconds')::interval
-			  AND status IN ('queued', 'sent')
+			  AND status IN ('queued', 'sent', 'delivered', 'read')
 		);
 	`
 	var exists bool

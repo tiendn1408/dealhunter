@@ -54,6 +54,18 @@ func TestRegistryDetect(t *testing.T) {
 			shouldErr: true,
 		},
 		{
+			url:       "https://shopee.attacker.com/item/123",
+			shouldErr: true,
+		},
+		{
+			url:       "https://evil-shopee.org/item/123",
+			shouldErr: true,
+		},
+		{
+			url:       "ftp://shopee.vn/product/123/456",
+			shouldErr: true,
+		},
+		{
 			url:       "://invalid-url",
 			shouldErr: true,
 		},

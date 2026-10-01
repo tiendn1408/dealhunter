@@ -121,14 +121,6 @@ func (h *Handler) getAuthenticatedUserID(r *http.Request) (uuid.UUID, error) {
 	return claims.UserID, nil
 }
 
-func (h *Handler) getUserID(r *http.Request) uuid.UUID {
-	uid, err := h.resolveUserID(r)
-	if err != nil || uid == uuid.Nil {
-		return uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	}
-	return uid
-}
-
 type TrackRequest struct {
 	URL string `json:"url"`
 }

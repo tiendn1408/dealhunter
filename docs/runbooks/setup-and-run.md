@@ -31,7 +31,7 @@ cp .env.example .env
 | `APP_ENV` | `development` | Moi truong chay ung dung (`development` / `production`). |
 | `HTTP_PORT` | `8080` | Cong lang nghe cua API Server. |
 | `DATABASE_URL` | `postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable` | Chuoi ket noi PostgreSQL. |
-| `REDIS_URL` | `redis://localhost:6379` | Dia chi ket noi Redis (hang doi stream va cache). |
+| `REDIS_URL` | `redis://localhost:6380` | Dia chi ket noi Redis (hang doi stream va cache). |
 | `WORKER_CONCURRENCY`| `10` | So worker goroutine chay song song de xu ly fetch gia. |
 | `DEFAULT_POLL_INTERVAL` | `1800` | Chu ky mac dinh giua cac lan kiem tra gia (1800 = 30 phut). |
 | `FETCH_TIMEOUT` | `10s` | Thoi gian timeout toi da cho moi lan goi adapter lay gia. |
@@ -180,5 +180,5 @@ curl -X GET http://localhost:8080/api/v1/product-groups \
 
 3. **Chay test tich hop toan dien (E2E Integration Test)**:
    ```bash
-   DATABASE_URL="postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable" REDIS_URL="redis://localhost:6379" go test -tags=integration -v ./tests/integration/...
+   DATABASE_URL="postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable" REDIS_URL="redis://localhost:6380" go test -tags=integration -v ./tests/integration/...
    ```

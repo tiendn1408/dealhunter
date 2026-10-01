@@ -17,7 +17,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 	"github.com/tiendang/deal-hunter/internal/alert"
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/notification"
@@ -36,7 +35,7 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 	}
 	defer dbPool.Close()
 
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+	rdb := getTestRedisClient()
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Skipf("Skipping integration test: Redis not reachable: %v", err)
 	}

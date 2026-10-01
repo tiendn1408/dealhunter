@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 	"github.com/tiendang/deal-hunter/internal/alert"
 	"github.com/tiendang/deal-hunter/internal/comparison"
 	router "github.com/tiendang/deal-hunter/internal/http"
@@ -59,7 +58,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	}
 	defer dbPool.Close()
 
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+	rdb := getTestRedisClient()
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Skipf("Skipping integration test: Redis not reachable: %v", err)
 	}

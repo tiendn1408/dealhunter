@@ -2,7 +2,7 @@
 
 > **Mục tiêu tài liệu**: Đặc tả chi tiết các khoảng trống kỹ thuật (gaps), giải pháp kiến trúc và lộ trình giải quyết dứt điểm các thành phần còn thiếu hoặc đang ở mức giả lập (mock) trước khi bước sang các giai đoạn tiếp theo (Phase 4: Price Intelligence).
 > 
-> **Ghi chú đặc biệt về Docker**: Theo quyết định dự án, việc **đóng gói Docker toàn diện cho toàn bộ app** (bao gồm Dockerfile cho các service Go và Next.js) được **tạm hoãn và đưa vào kế hoạch triển khai tại Phase 6 (Deployment & Production Scale)**. Hiện tại môi trường local tiếp tục sử dụng Docker chỉ cho cơ sở dữ liệu (`postgres:5433` và `redis:6379`).
+> **Ghi chú đặc biệt về Docker**: Theo quyết định dự án, việc **đóng gói Docker toàn diện cho toàn bộ app** (bao gồm Dockerfile cho các service Go và Next.js) được **tạm hoãn và đưa vào kế hoạch triển khai tại Phase 6 (Deployment & Production Scale)**. Hiện tại môi trường local tiếp tục sử dụng Docker chỉ cho cơ sở dữ liệu (`postgres:5433` và `redis:6380`).
 
 ---
 
@@ -126,7 +126,7 @@ Do chưa đóng gói Docker toàn bộ app (theo kế hoạch hoãn đến Phase
 #### Giải pháp kỹ thuật mục tiêu
 Xây dựng công cụ điều phối tiến trình chạy đồng thời (Concurrent Process Runner) qua một script duy nhất:
 * Tạo file `scripts/dev-all.sh` và lệnh `make dev-all`:
-  * Tự động kiểm tra và khởi động Docker Database (`postgres:5433` và `redis:6379`).
+  * Tự động kiểm tra và khởi động Docker Database (`postgres:5433` và `redis:6380`).
   * Sử dụng công cụ chạy đa tiến trình nhẹ (như `concurrently` hoặc nền tảng background trap của Bash).
   * Chạy song song: `cmd/api`, `cmd/worker`, `cmd/scheduler`, `cmd/notifier` và `dealhunter-web` (`npm run dev`).
   * Gom log có màu sắc phân biệt theo từng service vào 1 cửa sổ terminal duy nhất.

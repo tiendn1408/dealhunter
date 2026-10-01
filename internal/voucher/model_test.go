@@ -140,3 +140,25 @@ func TestCalculateEffectivePrice_MultipleFreeship(t *testing.T) {
 		t.Errorf("expected BestFreeshipVoucher with 15k discount")
 	}
 }
+
+func TestCalculateEffectivePrice_ZeroPrice_MinOrderExcluded(t *testing.T) {
+	sourceID := uuid.New()
+	vouchers := []*ProductVoucher{
+		{
+			ID:              uuid.New(),
+			ProductSourceID: sourceID,
+			VoucherType:     VoucherTypeShop,
+			Title:           "Giam 100k cho don tu 1tr",
+			DiscountAmount:  100000,
+			MinOrderValue:   1000000,
+		},
+	}
+
+	calc := CalculateEffectivePrice(0, 0, vouchers)
+	if calc.ShopDiscount != 0 {
+		t.Errorf("expected 0 ShopDiscount when price is 0, got %d", calc.ShopDiscount)
+	}
+	if len(calc.AvailableVouchers) != 0 {
+		t.Errorf("expected 0 available vouchers when price is 0 and voucher has min order, got %d", len(calc.AvailableVouchers))
+	}
+}

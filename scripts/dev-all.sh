@@ -17,7 +17,7 @@ echo "=========================================================="
 echo "  Starting DealHunter Ecosystem (Local Development)"
 echo "=========================================================="
 
-# 1. Start Infrastructure (Postgres 5433 & Redis 6379)
+# 1. Start Infrastructure (Postgres 5433 & Redis 6380)
 echo "==> Ensuring Docker infra (Postgres & Redis) is running..."
 docker compose up -d postgres redis
 
@@ -77,7 +77,7 @@ echo "  DealHunter is LIVE!"
 echo "  - Web Frontend:  http://localhost:3000"
 echo "  - Backend API:   http://localhost:8080/api/v1/health"
 echo "  - Postgres Port: 5433"
-echo "  - Redis Port:    6379"
+echo "  - Redis Port:    6380"
 echo "  Press Ctrl+C to terminate all services."
 echo "=========================================================="
 

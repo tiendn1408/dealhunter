@@ -22,30 +22,42 @@ func (r *Registry) Register(m Marketplace) {
 
 func (r *Registry) Detect(productURL string) (Marketplace, error) {
 	parsed, err := url.Parse(productURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid url: %w", err)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("invalid url: %s", productURL)
 	}
 
-	host := strings.ToLower(parsed.Host)
-	
-	// Basic domain matching logic
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" {
+		return nil, fmt.Errorf("invalid host in url: %s", productURL)
+	}
+
+	// Domain matching logic with strict host/suffix verification
 	if strings.Contains(host, "mock") {
 		if m, ok := r.adapters["mock"]; ok {
 			return m, nil
 		}
-	} else if strings.Contains(host, "shopee.vn") || strings.Contains(host, "shopee") {
+	} else if isDomainMatch(host, "shopee.vn", "shopee.com", "shopeemobile.com") {
 		if m, ok := r.adapters["shopee"]; ok {
 			return m, nil
 		}
-	} else if strings.Contains(host, "lazada.vn") || strings.Contains(host, "lazada") {
+	} else if isDomainMatch(host, "lazada.vn", "lazada.com") {
 		if m, ok := r.adapters["lazada"]; ok {
 			return m, nil
 		}
-	} else if strings.Contains(host, "tiktok.com") || strings.Contains(host, "tiktok") {
+	} else if isDomainMatch(host, "tiktok.com") {
 		if m, ok := r.adapters["tiktok"]; ok {
 			return m, nil
 		}
 	}
 
 	return nil, fmt.Errorf("unsupported or unregistered platform for url: %s", productURL)
+}
+
+func isDomainMatch(host string, domains ...string) bool {
+	for _, d := range domains {
+		if host == d || strings.HasSuffix(host, "."+d) {
+			return true
+		}
+	}
+	return false
 }

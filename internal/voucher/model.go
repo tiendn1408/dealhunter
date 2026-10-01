@@ -68,7 +68,7 @@ func CalculateEffectivePrice(listedPrice, shippingFee int64, vouchers []*Product
 		if v.ExpiresAt != nil && v.ExpiresAt.Before(now) {
 			continue
 		}
-		if v.MinOrderValue > 0 && listedPrice > 0 && listedPrice < v.MinOrderValue {
+		if v.MinOrderValue > 0 && listedPrice < v.MinOrderValue {
 			continue
 		}
 

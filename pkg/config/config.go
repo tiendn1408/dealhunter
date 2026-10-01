@@ -76,7 +76,7 @@ func Load() (*Config, error) {
 	}
 
 	pgPort, _ := parseInt(getEnv("POSTGRES_PORT", "5433"))
-	redisPort, _ := parseInt(getEnv("REDIS_PORT", "6379"))
+	redisPort, _ := parseInt(getEnv("REDIS_PORT", "6380"))
 
 	zaloToken := getEnv("ZALO_OA_ACCESS_TOKEN", "")
 	zaloTemplate := getEnv("ZALO_TEMPLATE_ID", "")
@@ -95,7 +95,7 @@ func Load() (*Config, error) {
 		PostgresPassword:    getEnv("POSTGRES_PASSWORD", "dealpass"),
 		PostgresDB:          getEnv("POSTGRES_DB", "dealdb"),
 		PostgresPort:        pgPort,
-		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379"),
+		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6380"),
 		RedisPort:           redisPort,
 		WorkerConcurrency:   concurrency,
 		DefaultPollInterval: time.Duration(pollInterval) * time.Second,

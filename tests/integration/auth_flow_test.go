@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 	"github.com/tiendang/deal-hunter/internal/alert"
 	"github.com/tiendang/deal-hunter/internal/auth"
 	"github.com/tiendang/deal-hunter/internal/comparison"
@@ -40,10 +39,6 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	if dbURL == "" {
 		dbURL = "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable"
 	}
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379"
-	}
 
 	dbPool, err := database.NewPostgresPool(ctx, dbURL)
 	if err != nil {
@@ -51,7 +46,7 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	}
 	defer dbPool.Close()
 
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+	rdb := getTestRedisClient()
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Skipf("Skipping integration test: Redis not reachable: %v", err)
 	}
