@@ -12,7 +12,10 @@ import (
 )
 
 var (
-	ErrUserNotFound = errors.New("user not found")
+	ErrUserNotFound        = errors.New("user not found")
+	ErrCannotMigrateSelf   = errors.New("cannot migrate data to the same user account")
+	ErrInvalidGuestAccount = errors.New("cannot migrate data from an existing registered account")
+	ErrAlreadyMigrated     = errors.New("guest data has already been migrated")
 )
 
 type UserRepository interface {
@@ -85,8 +88,11 @@ func (r *PostgresUserRepository) UpsertUser(ctx context.Context, user *User) err
 }
 
 func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID uuid.UUID, targetUserID uuid.UUID) (*MigrationResult, error) {
-	if guestID == targetUserID || guestID == uuid.Nil || targetUserID == uuid.Nil {
-		return &MigrationResult{}, nil
+	if guestID == targetUserID {
+		return nil, ErrCannotMigrateSelf
+	}
+	if guestID == uuid.Nil || targetUserID == uuid.Nil {
+		return nil, errors.New("invalid guest_id or target_user_id")
 	}
 
 	tx, err := r.pool.Begin(ctx)
@@ -94,6 +100,24 @@ func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID u
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
+
+	// Validate guest account status and prevent hijacking registered accounts
+	var guestProvider string
+	err = tx.QueryRow(ctx, "SELECT auth_provider FROM users WHERE id = $1 FOR UPDATE", guestID).Scan(&guestProvider)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Guest user never tracked any product or alert (no record in users table)
+			return &MigrationResult{}, nil
+		}
+		return nil, fmt.Errorf("lookup guest user: %w", err)
+	}
+
+	if guestProvider == "migrated" {
+		return nil, ErrAlreadyMigrated
+	}
+	if guestProvider != "" && guestProvider != "guest" {
+		return nil, ErrInvalidGuestAccount
+	}
 
 	// 1. Delete duplicate tracked_products where target user already tracks the same source
 	deleteDupQuery := `
@@ -138,6 +162,16 @@ func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID u
 	tagLogs, err := tx.Exec(ctx, reassignLogsQuery, guestID, targetUserID)
 	if err != nil {
 		return nil, fmt.Errorf("reassign notification logs: %w", err)
+	}
+
+	// 5. Mark guest account as migrated
+	markMigratedQuery := `
+		UPDATE users
+		SET auth_provider = 'migrated', updated_at = NOW()
+		WHERE id = $1
+	`
+	if _, err := tx.Exec(ctx, markMigratedQuery, guestID); err != nil {
+		return nil, fmt.Errorf("mark guest migrated: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

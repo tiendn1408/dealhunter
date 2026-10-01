@@ -9,14 +9,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/tiendang/deal-hunter/pkg/affiliate"
 )
 
 type PostgresRepository struct {
-	pool *pgxpool.Pool
+	pool      *pgxpool.Pool
+	affiliate affiliate.LinkTransformer
 }
 
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
+}
+
+func (r *PostgresRepository) SetAffiliateTransformer(transformer affiliate.LinkTransformer) {
+	r.affiliate = transformer
 }
 
 func (r *PostgresRepository) InsertLog(ctx context.Context, log *NotificationLog) error {
@@ -195,7 +201,8 @@ func (r *PostgresRepository) ListUserNotifications(ctx context.Context, userID u
 		       n.price_before, n.price_after, n.sent_at, n.delivered_at, n.read_at, n.error_message, n.created_at,
 		       COALESCE(ps.raw_title, p.title, '') AS product_title,
 		       COALESCE(ps.platform, '') AS platform,
-		       COALESCE(ps.canonical_url, '') AS product_url
+		       COALESCE(ps.canonical_url, '') AS product_url,
+		       ps.product_id
 		FROM notification_logs n
 		JOIN alert_rules ar ON n.alert_rule_id = ar.id
 		JOIN product_sources ps ON ar.product_source_id = ps.id
@@ -214,6 +221,7 @@ func (r *PostgresRepository) ListUserNotifications(ctx context.Context, userID u
 	var notifs []*EnrichedNotification
 	for rows.Next() {
 		var n EnrichedNotification
+		var productID uuid.UUID
 		if err := rows.Scan(
 			&n.ID,
 			&n.UserID,
@@ -232,8 +240,13 @@ func (r *PostgresRepository) ListUserNotifications(ctx context.Context, userID u
 			&n.ProductTitle,
 			&n.Platform,
 			&n.ProductURL,
+			&productID,
 		); err != nil {
 			return nil, fmt.Errorf("scan user notification: %w", err)
+		}
+		if r.affiliate != nil && n.ProductURL != "" {
+			subID := affiliate.FormatSubID(userID, productID)
+			n.AffiliateURL = r.affiliate.Transform(n.ProductURL, n.Platform, subID)
 		}
 		notifs = append(notifs, &n)
 	}

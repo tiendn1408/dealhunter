@@ -136,20 +136,24 @@ func (s *TrackingService) GetTracking(ctx context.Context, id uuid.UUID) (*domai
 	return s.trackingRepo.GetTracking(ctx, id)
 }
 
+func (s *TrackingService) GetTrackingForUser(ctx context.Context, id, userID uuid.UUID) (*domain.TrackedProduct, error) {
+	return s.trackingRepo.GetTrackingForUser(ctx, id, userID)
+}
+
 func (s *TrackingService) ListTrackings(ctx context.Context, userID uuid.UUID) ([]*domain.TrackedProduct, error) {
 	return s.trackingRepo.ListTrackingsByUser(ctx, userID)
 }
 
-func (s *TrackingService) PauseTracking(ctx context.Context, id uuid.UUID) error {
-	return s.trackingRepo.SetTrackingActive(ctx, id, false)
+func (s *TrackingService) PauseTracking(ctx context.Context, id, userID uuid.UUID) error {
+	return s.trackingRepo.SetTrackingActiveForUser(ctx, id, userID, false)
 }
 
-func (s *TrackingService) ResumeTracking(ctx context.Context, id uuid.UUID) error {
+func (s *TrackingService) ResumeTracking(ctx context.Context, id, userID uuid.UUID) error {
 	// Set active to true and schedule fetch immediately
-	if err := s.trackingRepo.SetTrackingActive(ctx, id, true); err != nil {
+	if err := s.trackingRepo.SetTrackingActiveForUser(ctx, id, userID, true); err != nil {
 		return err
 	}
-	return s.trackingRepo.UpdateNextFetchAt(ctx, nil, id, time.Now())
+	return s.trackingRepo.UpdateNextFetchAtForUser(ctx, nil, id, userID, time.Now())
 }
 
 func (s *TrackingService) GetProductSource(ctx context.Context, id uuid.UUID) (*product.ProductSource, error) {

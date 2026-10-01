@@ -43,9 +43,21 @@ func (m *mockAlertRepo) ListRulesByUser(ctx context.Context, userID uuid.UUID) (
 func (m *mockAlertRepo) ListRulesBySource(ctx context.Context, productSourceID uuid.UUID) ([]*alert.AlertRule, error) {
 	return nil, nil
 }
+func (m *mockAlertRepo) ListRulesBySourceAndUser(ctx context.Context, productSourceID, userID uuid.UUID) ([]*alert.AlertRule, error) {
+	return nil, nil
+}
 func (m *mockAlertRepo) DeactivateRule(ctx context.Context, id uuid.UUID) error {
 	for _, r := range m.rules {
 		if r.ID == id {
+			r.Active = false
+			return nil
+		}
+	}
+	return nil
+}
+func (m *mockAlertRepo) DeactivateRuleForUser(ctx context.Context, id, userID uuid.UUID) error {
+	for _, r := range m.rules {
+		if r.ID == id && r.UserID == userID {
 			r.Active = false
 			return nil
 		}

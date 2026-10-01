@@ -6,12 +6,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tiendang/deal-hunter/pkg/affiliate"
 )
 
 // ComparisonService handles cross-platform price comparison logic and cache orchestration.
 type ComparisonService struct {
-	repo  ComparisonRepository
-	cache ComparisonCache
+	repo      ComparisonRepository
+	cache     ComparisonCache
+	affiliate affiliate.LinkTransformer
 }
 
 func NewComparisonService(repo ComparisonRepository, cache ComparisonCache) *ComparisonService {
@@ -19,6 +21,10 @@ func NewComparisonService(repo ComparisonRepository, cache ComparisonCache) *Com
 		repo:  repo,
 		cache: cache,
 	}
+}
+
+func (s *ComparisonService) SetAffiliateTransformer(transformer affiliate.LinkTransformer) {
+	s.affiliate = transformer
 }
 
 // BuildComparison queries latest data from database, computes best deal, persists snapshot, and updates cache.
@@ -30,6 +36,13 @@ func (s *ComparisonService) BuildComparison(ctx context.Context, productID uuid.
 
 	if sources == nil {
 		sources = []SourcePrice{}
+	}
+
+	if s.affiliate != nil {
+		for i := range sources {
+			subID := affiliate.FormatSubID(uuid.Nil, productID)
+			sources[i].AffiliateURL = s.affiliate.Transform(sources[i].CanonicalURL, sources[i].Platform, subID)
+		}
 	}
 
 	bestDeal := IdentifyBestDeal(sources)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,6 +65,16 @@ func (m *mockAlertRepo) ListRulesBySource(ctx context.Context, productSourceID u
 	return res, nil
 }
 
+func (m *mockAlertRepo) ListRulesBySourceAndUser(ctx context.Context, productSourceID, userID uuid.UUID) ([]*alert.AlertRule, error) {
+	var res []*alert.AlertRule
+	for _, r := range m.rules {
+		if r.ProductSourceID == productSourceID && r.UserID == userID {
+			res = append(res, r)
+		}
+	}
+	return res, nil
+}
+
 func (m *mockAlertRepo) DeactivateRule(ctx context.Context, id uuid.UUID) error {
 	for _, r := range m.rules {
 		if r.ID == id {
@@ -72,6 +83,16 @@ func (m *mockAlertRepo) DeactivateRule(ctx context.Context, id uuid.UUID) error 
 		}
 	}
 	return nil
+}
+
+func (m *mockAlertRepo) DeactivateRuleForUser(ctx context.Context, id, userID uuid.UUID) error {
+	for _, r := range m.rules {
+		if r.ID == id && r.UserID == userID {
+			r.Active = false
+			return nil
+		}
+	}
+	return errors.New("alert rule not found")
 }
 
 type mockNotifRepo struct {
@@ -233,9 +254,11 @@ func TestCreateAlert_InvalidType(t *testing.T) {
 func TestListAlerts(t *testing.T) {
 	r, alertRepo, _ := setupTestRouter()
 	sourceID := uuid.New()
+	defaultUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{
 		ID:              uuid.New(),
+		UserID:          defaultUserID,
 		ProductSourceID: sourceID,
 		RuleType:        alert.RuleTypeTargetPrice,
 		ThresholdValue:  1000000,
@@ -261,12 +284,51 @@ func TestListAlerts(t *testing.T) {
 	}
 }
 
+func TestListAlerts_Isolation(t *testing.T) {
+	r, alertRepo, _ := setupTestRouter()
+	sourceID := uuid.New()
+	userA := uuid.New()
+	userB := uuid.New()
+
+	// User A creates alert
+	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{
+		ID:              uuid.New(),
+		UserID:          userA,
+		ProductSourceID: sourceID,
+		RuleType:        alert.RuleTypeTargetPrice,
+		ThresholdValue:  900000,
+		Active:          true,
+	})
+
+	// User B queries alerts for the same source
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tracked-products/"+sourceID.String()+"/alerts", nil)
+	req.Header.Set("X-User-ID", userB.String())
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Data []*alert.AlertRule `json:"data"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if len(resp.Data) != 0 {
+		t.Fatalf("data leak: User B should not see User A's alerts, got %d rules", len(resp.Data))
+	}
+}
+
 func TestDeactivateAlert(t *testing.T) {
 	r, alertRepo, _ := setupTestRouter()
 	alertID := uuid.New()
+	defaultUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{
 		ID:     alertID,
+		UserID: defaultUserID,
 		Active: true,
 	})
 
@@ -281,6 +343,67 @@ func TestDeactivateAlert(t *testing.T) {
 
 	if alertRepo.rules[0].Active != false {
 		t.Errorf("expected rule to be deactivated")
+	}
+}
+
+func TestDeactivateAlert_Isolation(t *testing.T) {
+	r, alertRepo, _ := setupTestRouter()
+	alertID := uuid.New()
+	userA := uuid.New()
+	userB := uuid.New()
+
+	// Alert belongs to User A
+	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{
+		ID:     alertID,
+		UserID: userA,
+		Active: true,
+	})
+
+	// User B tries to deactivate User A's alert
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/alerts/"+alertID.String(), nil)
+	req.Header.Set("X-User-ID", userB.String())
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 Not Found for unauthorized deactivation, got %d", w.Code)
+	}
+
+	if !alertRepo.rules[0].Active {
+		t.Errorf("IDOR vulnerability: User B was able to deactivate User A's alert rule")
+	}
+}
+
+func TestGetAlertLogs_Isolation(t *testing.T) {
+	r, alertRepo, notifRepo := setupTestRouter()
+	alertID := uuid.New()
+	userA := uuid.New()
+	userB := uuid.New()
+
+	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{
+		ID:     alertID,
+		UserID: userA,
+		Active: true,
+	})
+
+	notifRepo.logs = append(notifRepo.logs, &notification.NotificationLog{
+		ID:          uuid.New(),
+		UserID:      userA,
+		AlertRuleID: alertID,
+		Recipient:   "0987654321",
+		Status:      notification.StatusSent,
+	})
+
+	// User B attempts to access User A's alert logs
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/alerts/"+alertID.String()+"/logs", nil)
+	req.Header.Set("X-User-ID", userB.String())
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 for unauthorized alert logs access, got %d", w.Code)
 	}
 }
 

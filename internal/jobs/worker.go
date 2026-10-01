@@ -312,6 +312,8 @@ func (w *Worker) evaluateAlerts(ctx context.Context, source *product.ProductSour
 				ProductSourceID:   source.ID,
 				PriceBefore:       oldPrice,
 				PriceAfter:        newPrice,
+				ProductURL:        source.CanonicalURL,
+				Platform:          source.Platform,
 			})
 			if err != nil {
 				w.logger.Error("Failed to marshal notification queue payload", "err", err)

@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -58,8 +59,8 @@ func (h *Handler) MigrateGuestData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetUserID := h.getUserID(r)
-	if targetUserID == uuid.Nil {
+	targetUserID, err := h.getAuthenticatedUserID(r)
+	if err != nil || targetUserID == uuid.Nil {
 		http.Error(w, "unauthorized: valid session required", http.StatusUnauthorized)
 		return
 	}
@@ -72,6 +73,12 @@ func (h *Handler) MigrateGuestData(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.authService.MigrateGuestData(r.Context(), req.GuestUserID, targetUserID)
 	if err != nil {
+		if errors.Is(err, auth.ErrInvalidGuestAccount) ||
+			errors.Is(err, auth.ErrCannotMigrateSelf) ||
+			errors.Is(err, auth.ErrAlreadyMigrated) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -87,7 +94,12 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	user, err := h.authService.GetProfile(r.Context(), userID)
 	if err != nil {
 		// Return guest fallback profile if user record doesn't exist in DB yet

@@ -20,5 +20,7 @@ type Repository interface {
 	ListActiveRulesBySource(ctx context.Context, productSourceID uuid.UUID) ([]*AlertRule, error)
 	ListRulesByUser(ctx context.Context, userID uuid.UUID) ([]*AlertRule, error)
 	ListRulesBySource(ctx context.Context, productSourceID uuid.UUID) ([]*AlertRule, error)
+	ListRulesBySourceAndUser(ctx context.Context, productSourceID, userID uuid.UUID) ([]*AlertRule, error)
 	DeactivateRule(ctx context.Context, id uuid.UUID) error
+	DeactivateRuleForUser(ctx context.Context, id, userID uuid.UUID) error
 }

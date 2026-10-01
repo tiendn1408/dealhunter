@@ -34,6 +34,16 @@ type Config struct {
 	CORSAllowedOrigins  string
 	JWTSecret           string
 	GoogleClientID      string
+
+	// Affiliate Marketing (Phase 3.5.1)
+	AffiliateEnabled           bool
+	ShopeeAffiliateID          string
+	ShopeeAffiliateURLTemplate string
+	LazadaAffiliateID          string
+	LazadaAffiliateURLTemplate string
+	TikTokAffiliateID          string
+	TikTokAffiliateURLTemplate string
+	AccessTradeDeeplinkURL     string
 }
 
 func Load() (*Config, error) {
@@ -101,6 +111,16 @@ func Load() (*Config, error) {
 		CORSAllowedOrigins:  getEnv("CORS_ALLOWED_ORIGINS", "*"),
 		JWTSecret:           getEnv("JWT_SECRET", "dealhunter-super-secret-jwt-key-32bytes-secure!"),
 		GoogleClientID:      getEnv("GOOGLE_CLIENT_ID", ""),
+
+		// Affiliate Marketing
+		AffiliateEnabled:           getEnv("AFFILIATE_ENABLED", "true") == "true",
+		ShopeeAffiliateID:          getEnv("SHOPEE_AFFILIATE_ID", ""),
+		ShopeeAffiliateURLTemplate: getEnv("SHOPEE_AFFILIATE_URL_TEMPLATE", "https://s.shopee.vn/universal-link?url={URL}&sub_id={SUB_ID}"),
+		LazadaAffiliateID:          getEnv("LAZADA_AFFILIATE_ID", ""),
+		LazadaAffiliateURLTemplate: getEnv("LAZADA_AFFILIATE_URL_TEMPLATE", "https://s.lazada.vn/s.xxxx?url={URL}&aff_sub={SUB_ID}"),
+		TikTokAffiliateID:          getEnv("TIKTOK_AFFILIATE_ID", ""),
+		TikTokAffiliateURLTemplate: getEnv("TIKTOK_AFFILIATE_URL_TEMPLATE", "https://vt.tiktok.com/xxxx?url={URL}&sub_id={SUB_ID}"),
+		AccessTradeDeeplinkURL:     getEnv("ACCESSTRADE_DEEPLINK_URL", ""),
 	}, nil
 }
 

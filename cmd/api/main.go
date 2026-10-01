@@ -29,6 +29,8 @@ import (
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
 	"github.com/tiendang/deal-hunter/internal/tracking"
+	"github.com/tiendang/deal-hunter/internal/voucher"
+	"github.com/tiendang/deal-hunter/pkg/affiliate"
 	"github.com/tiendang/deal-hunter/pkg/config"
 	"github.com/tiendang/deal-hunter/pkg/database"
 )
@@ -81,6 +83,7 @@ func main() {
 	notifRepo := notification.NewPostgresRepository(dbPool)
 	comparisonRepo := comparison.NewPostgresRepository(dbPool)
 	authRepo := auth.NewPostgresUserRepository(dbPool)
+	voucherRepo := voucher.NewPostgresRepository(dbPool)
 
 	// 5. Queue
 	q := queue.NewRedisStreamQueue(rdb, "dh:stream:price-fetch", "price-workers")
@@ -102,12 +105,29 @@ func main() {
 	linker := &trackingLinker{trackingSvc: trackingSvc}
 	matchingSvc := matching.NewMatchingService(matchingRepo, searcher, linker, comparisonSvc)
 
+	// Phase 3.5.1: Affiliate Link Engine
+	affiliateCfg := affiliate.Config{
+		Enabled:             cfg.AffiliateEnabled,
+		ShopeeID:            cfg.ShopeeAffiliateID,
+		ShopeeTemplate:      cfg.ShopeeAffiliateURLTemplate,
+		LazadaID:            cfg.LazadaAffiliateID,
+		LazadaTemplate:      cfg.LazadaAffiliateURLTemplate,
+		TikTokID:            cfg.TikTokAffiliateID,
+		TikTokTemplate:      cfg.TikTokAffiliateURLTemplate,
+		AccessTradeTemplate: cfg.AccessTradeDeeplinkURL,
+	}
+	affiliateTr := affiliate.NewTransformer(affiliateCfg)
+	comparisonSvc.SetAffiliateTransformer(affiliateTr)
+	notifRepo.SetAffiliateTransformer(affiliateTr)
+
 	// 7. HTTP Handlers & Router
 	handler := router.NewHandler(trackingSvc, pricingSvc)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
 	handler.SetComparisonService(comparisonSvc)
 	handler.SetAuthService(authSvc, jwtMgr)
 	handler.SetMatchingService(matchingSvc)
+	handler.SetAffiliateTransformer(affiliateTr)
+	handler.SetVoucherRepository(voucherRepo)
 	if cfg.ZaloWebhookSecret != "" {
 		handler.SetZaloWebhookSecret(cfg.ZaloWebhookSecret)
 	}

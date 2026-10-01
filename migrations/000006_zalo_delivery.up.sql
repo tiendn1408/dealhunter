@@ -12,3 +12,9 @@ ALTER TABLE notification_logs
 CREATE INDEX IF NOT EXISTS idx_notif_logs_msg_id
     ON notification_logs(msg_id)
     WHERE msg_id IS NOT NULL;
+
+-- Ensure phone numbers cannot be claimed by multiple users
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_unique
+    ON users(phone)
+    WHERE phone IS NOT NULL;
+

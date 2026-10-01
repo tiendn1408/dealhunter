@@ -13,6 +13,7 @@ type SourcePrice struct {
 	Platform       string     `json:"platform"`
 	SellerName     string     `json:"seller_name"`
 	CanonicalURL   string     `json:"canonical_url"`
+	AffiliateURL   string     `json:"affiliate_url,omitempty"`
 	ListedPrice    int64      `json:"listed_price"`
 	ShippingFee    int64      `json:"shipping_fee"`
 	EffectivePrice int64      `json:"effective_price"`

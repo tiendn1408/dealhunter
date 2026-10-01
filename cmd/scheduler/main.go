@@ -14,6 +14,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/queue"
 	"github.com/tiendang/deal-hunter/internal/tracking"
+	"github.com/tiendang/deal-hunter/internal/voucher"
 	"github.com/tiendang/deal-hunter/pkg/config"
 	"github.com/tiendang/deal-hunter/pkg/database"
 )
@@ -84,6 +85,23 @@ func main() {
 			case <-ticker.C:
 				if err := comparisonSvc.RefreshAllActiveProducts(ctx); err != nil {
 					logger.Error("Comparison refresh error", "err", err)
+				}
+			}
+		}
+	}()
+
+	// 7. Phase 3.5.2: Clean up expired vouchers every hour
+	voucherRepo := voucher.NewPostgresRepository(dbPool)
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := voucherRepo.DeleteExpiredVouchers(ctx); err != nil {
+					logger.Error("Failed to clean up expired vouchers", "err", err)
 				}
 			}
 		}

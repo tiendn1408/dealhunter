@@ -25,9 +25,12 @@ type TrackedProduct struct {
 type TrackingRepository interface {
 	CreateTracking(ctx context.Context, t *TrackedProduct) error
 	GetTracking(ctx context.Context, id uuid.UUID) (*TrackedProduct, error)
+	GetTrackingForUser(ctx context.Context, id, userID uuid.UUID) (*TrackedProduct, error)
 	GetTrackingBySource(ctx context.Context, userID, sourceID uuid.UUID) (*TrackedProduct, error)
 	ListTrackingsByUser(ctx context.Context, userID uuid.UUID) ([]*TrackedProduct, error)
 	UpdateNextFetchAt(ctx context.Context, tx pgx.Tx, id uuid.UUID, nextFetch time.Time) error
+	UpdateNextFetchAtForUser(ctx context.Context, tx pgx.Tx, id, userID uuid.UUID, nextFetch time.Time) error
 	ClaimDueTrackings(ctx context.Context, limit int) ([]*TrackedProduct, error)
 	SetTrackingActive(ctx context.Context, id uuid.UUID, active bool) error
+	SetTrackingActiveForUser(ctx context.Context, id, userID uuid.UUID, active bool) error
 }

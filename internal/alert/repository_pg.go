@@ -2,6 +2,7 @@ package alert
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -195,6 +196,43 @@ func (r *PostgresRepository) ListRulesBySource(ctx context.Context, productSourc
 	return rules, rows.Err()
 }
 
+func (r *PostgresRepository) ListRulesBySourceAndUser(ctx context.Context, productSourceID, userID uuid.UUID) ([]*AlertRule, error) {
+	query := `
+		SELECT id, user_id, product_source_id, rule_type, threshold_value,
+		       active, expires_at, created_at, updated_at
+		FROM alert_rules
+		WHERE product_source_id = $1 AND user_id = $2
+		ORDER BY created_at DESC;
+	`
+
+	rows, err := r.pool.Query(ctx, query, productSourceID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list rules by source and user: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []*AlertRule
+	for rows.Next() {
+		var rule AlertRule
+		if err := rows.Scan(
+			&rule.ID,
+			&rule.UserID,
+			&rule.ProductSourceID,
+			&rule.RuleType,
+			&rule.ThresholdValue,
+			&rule.Active,
+			&rule.ExpiresAt,
+			&rule.CreatedAt,
+			&rule.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan alert rule: %w", err)
+		}
+		rules = append(rules, &rule)
+	}
+
+	return rules, rows.Err()
+}
+
 func (r *PostgresRepository) DeactivateRule(ctx context.Context, id uuid.UUID) error {
 	query := `
 		UPDATE alert_rules
@@ -203,4 +241,20 @@ func (r *PostgresRepository) DeactivateRule(ctx context.Context, id uuid.UUID) e
 	`
 	_, err := r.pool.Exec(ctx, query, id)
 	return err
+}
+
+func (r *PostgresRepository) DeactivateRuleForUser(ctx context.Context, id, userID uuid.UUID) error {
+	query := `
+		UPDATE alert_rules
+		SET active = FALSE, updated_at = NOW()
+		WHERE id = $1 AND user_id = $2;
+	`
+	res, err := r.pool.Exec(ctx, query, id, userID)
+	if err != nil {
+		return fmt.Errorf("deactivate rule for user: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return errors.New("alert rule not found")
+	}
+	return nil
 }

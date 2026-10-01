@@ -40,6 +40,7 @@ type EnrichedNotification struct {
 	ProductTitle string `json:"product_title,omitempty"`
 	Platform     string `json:"platform,omitempty"`
 	ProductURL   string `json:"product_url,omitempty"`
+	AffiliateURL string `json:"affiliate_url,omitempty"`
 }
 
 // QueuePayload is serialized into Redis Stream dh:stream:notifications
@@ -52,6 +53,8 @@ type QueuePayload struct {
 	ProductSourceID   uuid.UUID `json:"product_source_id"`
 	PriceBefore       int64     `json:"price_before"`
 	PriceAfter        int64     `json:"price_after"`
+	ProductURL        string    `json:"product_url,omitempty"`
+	Platform          string    `json:"platform,omitempty"`
 }
 
 // UserProfile represents user profile and connection info

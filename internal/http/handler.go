@@ -19,22 +19,34 @@ import (
 	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/tracking"
+	"github.com/tiendang/deal-hunter/internal/voucher"
+	"github.com/tiendang/deal-hunter/pkg/affiliate"
 )
 
 type Handler struct {
-	trackingService *tracking.TrackingService
-	pricingService  *pricing.PricingService
-	alertRepo       alert.Repository
-	notifRepo       notification.Repository
-	comparisonSvc   *comparison.ComparisonService
-	authService     *auth.AuthService
-	jwtManager      *auth.JWTManager
-	matchingService *matching.MatchingService
-	zaloWebhookSecret string
+	trackingService      *tracking.TrackingService
+	pricingService       *pricing.PricingService
+	alertRepo            alert.Repository
+	notifRepo            notification.Repository
+	comparisonSvc        *comparison.ComparisonService
+	authService          *auth.AuthService
+	jwtManager           *auth.JWTManager
+	matchingService      *matching.MatchingService
+	zaloWebhookSecret    string
+	affiliateTransformer affiliate.LinkTransformer
+	voucherRepo          voucher.Repository
 }
 
 func NewHandler(ts *tracking.TrackingService, ps *pricing.PricingService) *Handler {
 	return &Handler{trackingService: ts, pricingService: ps}
+}
+
+func (h *Handler) SetAffiliateTransformer(transformer affiliate.LinkTransformer) {
+	h.affiliateTransformer = transformer
+}
+
+func (h *Handler) SetVoucherRepository(vr voucher.Repository) {
+	h.voucherRepo = vr
 }
 
 func (h *Handler) SetAlertAndNotificationRepos(ar alert.Repository, nr notification.Repository) {
@@ -59,31 +71,62 @@ func (h *Handler) SetMatchingService(svc *matching.MatchingService) {
 	h.matchingService = svc
 }
 
-func (h *Handler) getUserID(r *http.Request) uuid.UUID {
+var (
+	ErrUnauthorized            = errors.New("unauthorized")
+	ErrImpersonationDisallowed = errors.New("unauthorized: registered member impersonation is prohibited")
+)
+
+func (h *Handler) resolveUserID(r *http.Request) (uuid.UUID, error) {
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 		if h.jwtManager != nil {
-			if claims, err := h.jwtManager.ValidateToken(tokenStr); err == nil && claims.UserID != uuid.Nil {
-				return claims.UserID
+			claims, err := h.jwtManager.ValidateToken(tokenStr)
+			if err != nil || claims == nil || claims.UserID == uuid.Nil {
+				return uuid.Nil, ErrUnauthorized
 			}
+			return claims.UserID, nil
 		}
+		return uuid.Nil, ErrUnauthorized
 	}
 
 	val := r.Header.Get("X-User-ID")
 	if parsed, err := uuid.Parse(val); err == nil && parsed != uuid.Nil {
-		return parsed
+		// Prevent impersonating a registered member without a valid Bearer token
+		if h.authService != nil {
+			user, err := h.authService.GetProfile(r.Context(), parsed)
+			if err == nil && user != nil && user.AuthProvider != "" && user.AuthProvider != "guest" {
+				return uuid.Nil, ErrImpersonationDisallowed
+			}
+		}
+		return parsed, nil
 	}
-	// Fallback to a deterministic demo anonymous user ID
-	return uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+	return uuid.MustParse("00000000-0000-0000-0000-000000000001"), nil
 }
 
-func getUserID(r *http.Request) uuid.UUID {
-	val := r.Header.Get("X-User-ID")
-	if parsed, err := uuid.Parse(val); err == nil {
-		return parsed
+func (h *Handler) getAuthenticatedUserID(r *http.Request) (uuid.UUID, error) {
+	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return uuid.Nil, errors.New("authorization header required")
 	}
-	return uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+	if h.jwtManager == nil {
+		return uuid.Nil, errors.New("jwt manager not configured")
+	}
+	claims, err := h.jwtManager.ValidateToken(tokenStr)
+	if err != nil || claims == nil || claims.UserID == uuid.Nil {
+		return uuid.Nil, errors.New("invalid or expired token")
+	}
+	return claims.UserID, nil
+}
+
+func (h *Handler) getUserID(r *http.Request) uuid.UUID {
+	uid, err := h.resolveUserID(r)
+	if err != nil || uid == uuid.Nil {
+		return uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	}
+	return uid
 }
 
 type TrackRequest struct {
@@ -97,10 +140,21 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	tracked, err := h.trackingService.TrackURL(r.Context(), userID, req.URL)
 	if err != nil {
+		if strings.Contains(err.Error(), "unsupported or unregistered platform") ||
+			strings.Contains(err.Error(), "invalid url") ||
+			strings.Contains(err.Error(), "detect platform") ||
+			strings.Contains(err.Error(), "cannot parse") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -153,6 +207,7 @@ type EnrichedTracking struct {
 	Title                  string    `json:"Title,omitempty"`
 	Platform               string    `json:"Platform,omitempty"`
 	CanonicalURL           string    `json:"CanonicalURL,omitempty"`
+	AffiliateURL           string    `json:"AffiliateURL,omitempty"`
 	SellerName             string    `json:"SellerName,omitempty"`
 	LastPrice              *int64    `json:"LastPrice,omitempty"`
 	LastEffectivePrice     *int64    `json:"LastEffectivePrice,omitempty"`
@@ -185,13 +240,22 @@ func (h *Handler) enrichTracking(r *http.Request, t *domain.TrackedProduct) Enri
 		enriched.LastPrice = source.LastPrice
 		enriched.LastEffectivePrice = source.LastEffectivePrice
 		enriched.LastInStock = source.LastInStock
+
+		if h.affiliateTransformer != nil && enriched.CanonicalURL != "" {
+			subID := affiliate.FormatSubID(t.UserID, enriched.ProductID)
+			enriched.AffiliateURL = h.affiliateTransformer.Transform(enriched.CanonicalURL, enriched.Platform, subID)
+		}
 	}
 
 	return enriched
 }
 
 func (h *Handler) ListTrackings(w http.ResponseWriter, r *http.Request) {
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	trackings, err := h.trackingService.ListTrackings(r.Context(), userID)
 	if err != nil {
@@ -218,7 +282,13 @@ func (h *Handler) GetTracking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tracked, err := h.trackingService.GetTracking(r.Context(), id)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	tracked, err := h.trackingService.GetTrackingForUser(r.Context(), id, userID)
 	if err == nil && tracked != nil {
 		enriched := h.enrichTracking(r, tracked)
 		w.Header().Set("Content-Type", "application/json")
@@ -245,6 +315,10 @@ func (h *Handler) GetTracking(w http.ResponseWriter, r *http.Request) {
 		if source.SellerName != nil {
 			enriched.SellerName = *source.SellerName
 		}
+		if h.affiliateTransformer != nil && enriched.CanonicalURL != "" {
+			subID := affiliate.FormatSubID(userID, source.ProductID)
+			enriched.AffiliateURL = h.affiliateTransformer.Transform(enriched.CanonicalURL, enriched.Platform, subID)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(enriched)
 		return
@@ -261,9 +335,20 @@ func (h *Handler) GetTrackingPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	// Resolve to productSourceID if the passed ID is a tracked_product ID
-	if tracked, err := h.trackingService.GetTracking(r.Context(), sourceID); err == nil && tracked != nil {
+	if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), sourceID, userID); err == nil && tracked != nil {
 		sourceID = tracked.ProductSourceID
+	} else if h.trackingService != nil {
+		if source, err := h.trackingService.GetProductSource(r.Context(), sourceID); err != nil || source == nil {
+			http.Error(w, "tracking not found", http.StatusNotFound)
+			return
+		}
 	}
 
 	to := time.Now()
@@ -301,8 +386,14 @@ func (h *Handler) PauseTracking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.trackingService.PauseTracking(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.trackingService.PauseTracking(r.Context(), id, userID); err != nil {
+		http.Error(w, "tracking not found", http.StatusNotFound)
 		return
 	}
 
@@ -321,8 +412,14 @@ func (h *Handler) ResumeTracking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.trackingService.ResumeTracking(r.Context(), id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.trackingService.ResumeTracking(r.Context(), id, userID); err != nil {
+		http.Error(w, "tracking not found", http.StatusNotFound)
 		return
 	}
 
@@ -352,10 +449,21 @@ func (h *Handler) CreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	// Resolve to productSourceID if the passed ID is a tracked_product ID
 	if h.trackingService != nil {
-		if tracked, err := h.trackingService.GetTracking(r.Context(), sourceID); err == nil && tracked != nil {
+		if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), sourceID, userID); err == nil && tracked != nil {
 			sourceID = tracked.ProductSourceID
+		} else {
+			if source, err := h.trackingService.GetProductSource(r.Context(), sourceID); err != nil || source == nil {
+				http.Error(w, "product not found", http.StatusNotFound)
+				return
+			}
 		}
 	}
 
@@ -375,7 +483,6 @@ func (h *Handler) CreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
 	now := time.Now()
 
 	var expiresAt *time.Time
@@ -419,13 +526,24 @@ func (h *Handler) ListAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	if h.trackingService != nil {
-		if tracked, err := h.trackingService.GetTracking(r.Context(), sourceID); err == nil && tracked != nil {
+		if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), sourceID, userID); err == nil && tracked != nil {
 			sourceID = tracked.ProductSourceID
+		} else {
+			if source, err := h.trackingService.GetProductSource(r.Context(), sourceID); err != nil || source == nil {
+				http.Error(w, "product not found", http.StatusNotFound)
+				return
+			}
 		}
 	}
 
-	rules, err := h.alertRepo.ListRulesBySource(r.Context(), sourceID)
+	rules, err := h.alertRepo.ListRulesBySourceAndUser(r.Context(), sourceID, userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -455,8 +573,14 @@ func (h *Handler) DeactivateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.alertRepo.DeactivateRule(r.Context(), alertID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.alertRepo.DeactivateRuleForUser(r.Context(), alertID, userID); err != nil {
+		http.Error(w, "alert rule not found", http.StatusNotFound)
 		return
 	}
 
@@ -478,6 +602,21 @@ func (h *Handler) GetAlertLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "invalid alert_id", http.StatusBadRequest)
 		return
+	}
+
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Verify alert rule ownership
+	if h.alertRepo != nil {
+		rule, err := h.alertRepo.GetRule(r.Context(), alertID)
+		if err != nil || rule == nil || rule.UserID != userID {
+			http.Error(w, "alert rule not found", http.StatusNotFound)
+			return
+		}
 	}
 
 	logs, err := h.notifRepo.ListRuleLogs(r.Context(), alertID)
@@ -503,7 +642,12 @@ func (h *Handler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	limit := 30
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
@@ -540,7 +684,12 @@ func (h *Handler) MarkNotificationAsRead(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	if err := h.notifRepo.MarkAsRead(r.Context(), notifID, userID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -559,7 +708,12 @@ func (h *Handler) ListUserAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	rules, err := h.alertRepo.ListRulesByUser(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -582,7 +736,12 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	profile, err := h.notifRepo.GetUserProfile(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -615,8 +774,19 @@ func (h *Handler) ConnectZalo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	if err := h.notifRepo.UpdateUserZalo(r.Context(), userID, req.ZaloID, req.Phone); err != nil {
+		if strings.Contains(err.Error(), "duplicate key") ||
+			strings.Contains(err.Error(), "23505") ||
+			strings.Contains(err.Error(), "unique constraint") {
+			http.Error(w, "Zalo ID hoặc số điện thoại đã được liên kết với một tài khoản khác", http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -635,7 +805,12 @@ func (h *Handler) DisconnectZalo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	if err := h.notifRepo.DisconnectUserZalo(r.Context(), userID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -723,7 +898,12 @@ func (h *Handler) LinkProductSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	source, err := h.trackingService.LinkSourceToProduct(r.Context(), userID, productID, req.URL)
 	if err != nil {
 		if errors.Is(err, tracking.ErrSourceAlreadyLinked) {
@@ -755,7 +935,12 @@ func (h *Handler) ListProductGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := h.getUserID(r)
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	groups, err := h.comparisonSvc.GetUserMultiSourceProducts(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -785,8 +970,22 @@ func (h *Handler) GetTrackedProductComparison(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	productID, err := h.resolveCanonicalProductID(r.Context(), rawID)
+	userID, err := h.resolveUserID(r)
 	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var productID uuid.UUID
+	if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), rawID, userID); err == nil && tracked != nil {
+		if source, err := h.trackingService.GetProductSource(r.Context(), tracked.ProductSourceID); err == nil && source != nil {
+			productID = source.ProductID
+		}
+	} else if source, err := h.trackingService.GetProductSource(r.Context(), rawID); err == nil && source != nil {
+		productID = source.ProductID
+	}
+
+	if productID == uuid.Nil {
 		http.Error(w, "tracking not found", http.StatusNotFound)
 		return
 	}

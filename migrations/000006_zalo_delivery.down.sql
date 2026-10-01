@@ -1,4 +1,5 @@
 -- 000006_zalo_delivery.down.sql
+DROP INDEX IF EXISTS idx_users_phone_unique;
 DROP INDEX IF EXISTS idx_notif_logs_msg_id;
 
 ALTER TABLE notification_logs

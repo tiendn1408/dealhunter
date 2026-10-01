@@ -99,6 +99,10 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 		// GAP-04: Zalo OA & ZNS Webhooks
 		r.Post("/webhooks/zalo", handler.HandleZaloWebhook)
 		r.Post("/notifications/webhook/zalo", handler.HandleZaloWebhook)
+
+		// Phase 3.5.2: Voucher Intelligence & 2-Step Combo
+		r.Get("/tracked-products/{id}/vouchers", handler.GetTrackedProductVouchers)
+		r.Post("/tracked-products/{id}/vouchers", handler.CreateTrackedProductVoucher)
 	})
 
 	return r

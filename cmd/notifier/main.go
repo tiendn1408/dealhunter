@@ -12,6 +12,8 @@ import (
 	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/notification/zalo"
 	"github.com/tiendang/deal-hunter/internal/queue"
+	"github.com/tiendang/deal-hunter/internal/voucher"
+	"github.com/tiendang/deal-hunter/pkg/affiliate"
 	"github.com/tiendang/deal-hunter/pkg/config"
 	"github.com/tiendang/deal-hunter/pkg/database"
 )
@@ -78,7 +80,22 @@ func main() {
 		zaloClient = zalo.NewMockZaloClient()
 	}
 
-	// 6. Notifier Service
+	// 6. Affiliate Link Engine
+	affiliateCfg := affiliate.Config{
+		Enabled:             cfg.AffiliateEnabled,
+		ShopeeID:            cfg.ShopeeAffiliateID,
+		ShopeeTemplate:      cfg.ShopeeAffiliateURLTemplate,
+		LazadaID:            cfg.LazadaAffiliateID,
+		LazadaTemplate:      cfg.LazadaAffiliateURLTemplate,
+		TikTokID:            cfg.TikTokAffiliateID,
+		TikTokTemplate:      cfg.TikTokAffiliateURLTemplate,
+		AccessTradeTemplate: cfg.AccessTradeDeeplinkURL,
+	}
+	affiliateTr := affiliate.NewTransformer(affiliateCfg)
+	notifRepo.SetAffiliateTransformer(affiliateTr)
+
+	// 7. Notifier Service
+	voucherRepo := voucher.NewPostgresRepository(dbPool)
 	notifier := notification.NewNotifierService(
 		notifRepo,
 		q,
@@ -86,6 +103,8 @@ func main() {
 		cfg.ZaloTemplateID,
 		logger,
 	)
+	notifier.SetAffiliateTransformer(affiliateTr)
+	notifier.SetVoucherRepository(voucherRepo)
 
 	go func() {
 		sig := make(chan os.Signal, 1)

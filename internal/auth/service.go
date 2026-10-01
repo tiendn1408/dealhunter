@@ -169,6 +169,9 @@ func (s *AuthService) MigrateGuestData(ctx context.Context, guestID, targetUserI
 	if guestID == uuid.Nil || targetUserID == uuid.Nil {
 		return nil, errors.New("invalid guest_id or target_user_id")
 	}
+	if guestID == targetUserID {
+		return nil, ErrCannotMigrateSelf
+	}
 
 	// Ensure target user exists
 	if _, err := s.repo.GetByID(ctx, targetUserID); err != nil {
