@@ -30,3 +30,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Chrome Extension
+extension/node_modules/
+extension/dist/

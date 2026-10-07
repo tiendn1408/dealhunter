@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "DealHunter Assistant - Fast Voucher Clicker",
+  "version": "1.0.0",
+  "description": "Client-Side Fast Voucher Clicker and Price Intelligence for Shopee Vietnam",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.shopee.vn/*",
+    "https://api.dealhunter.vn/*",
+    "http://localhost:8080/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.shopee.vn/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "DealHunter Assistant"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

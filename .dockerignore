@@ -45,3 +45,6 @@ Thumbs.db
 
 # README
 README.md
+
+# Extension (client-side only, not needed in Go backend image)
+extension/
