@@ -13,6 +13,44 @@
 
 ---
 
+## Việc Cần Làm Tiếp (bàn giao cuối ngày 2026-10-07)
+
+**Trạng thái**: Bước 1 (bảo mật xác thực) và Bước 1.5 (loại bỏ toàn bộ mock) đã xong và đã kiểm chứng. Code **chưa commit** (backend ~46 file, web ~25 file).
+
+**Việc đầu tiên khi làm tiếp**
+1. Commit thay đổi Bước 1 + 1.5 ở cả 2 repo (`dealhunter`, `dealhunter-web`).
+2. Chọn hướng: **(A)** GAP-01b/01c — tầng headless browser / proxy cho scraper (hiện Shopee trả 403, Lazada trả captcha ⇒ chưa theo dõi được sản phẩm thật nào), hoặc **(B)** tiếp Bước 2 theo kế hoạch. Khuyến nghị: A trước nếu cần demo với dữ liệu thật; B trước nếu ưu tiên an toàn trước khi deploy.
+
+**Bước 2 — Phân quyền & validate input** (chưa làm)
+- [ ] SEC-07: `link-source` di chuyển source của người khác — kiểm tra quyền sở hữu.
+- [ ] SEC-08: accept/dismiss match suggestion là IDOR; `product_id` trên path bị bỏ qua.
+- [ ] SEC-09: `POST /tracked-products/{id}/vouchers` — ai cũng tạo được voucher; validate type/percent/amount/`collect_url` (chỉ https + host sàn), bắt buộc hạn dùng.
+- [ ] `GET /products/{id}/comparison` và `/products/{id}/match-suggestions` chưa yêu cầu token, đọc được tracking ID của người khác.
+- [ ] SEC-11 (phần còn lại): giới hạn kích thước body cho các endpoint JSON khác.
+- [ ] SEC-12: không trả lỗi DB cho client; mask số điện thoại trong log.
+- [ ] Rate limit `POST /auth/guest` (mỗi lần gọi tạo 1 user).
+
+**Bước 3 → 9** (chi tiết ở các mục 2–8 bên dưới)
+- [ ] Bước 3 — Queue/worker: REL-01 (XAUTOCLAIM reclaim), REL-02 (retry/backoff, `pkg/retry`), REL-03 (claim nguyên tử), REL-04 (lập lịch theo product_source), REL-05 (alert trùng), REL-06/07 (outbox, fetch ngay khi track), REL-10 (Consume quay vòng CPU).
+- [ ] Bước 4 — Notifier/Zalo: REL-08/09/11/12, DATA-13 (payload ZNS đúng template), webhook: sự kiện `user_seen_message` + `msg_ids`, không bỏ qua lỗi `UpdateDeliveryStatus`, guard trạng thái `read`.
+- [ ] Bước 5 — Dữ liệu: DATA-05 (encode URL affiliate, nhận diện host), DATA-06 (SubID đúng spec), DATA-07 (một hàm EffectivePrice), DATA-08 (cột voucher trong snapshot), DATA-09 (mô hình voucher), các lỗi nhỏ nhóm DATA.
+- [ ] Bước 6 — Matching: DATA-10 (dương tính giả model code), phần còn lại DATA-11 (lưu giá khi track / chạy auto-match trong worker sau lần fetch đầu — hiện auto-match nền đang **tắt** vì chưa có giá), GAP-03a/b.
+- [ ] Bước 7 — Production: OPS-03 (bind 127.0.0.1, `/metrics` nội bộ), OPS-04 (TARGETARCH), OPS-05 (mật khẩu Postgres/Redis), OPS-06 (healthcheck), OPS-08/09; chạy `make prod-up` toàn stack.
+- [ ] Bước 8 — PERF-01 → 08. Bước 9 — DOC-01, 02, 04, 05.
+
+**Cần kiểm chứng với hệ thống thật (chưa làm được)**
+- [ ] Đăng nhập Google thật trên trình duyệt: tạo OAuth Client ID (Web), thêm origin `http://localhost:3000`, đặt `GOOGLE_CLIENT_ID` (backend) và `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (web).
+- [ ] Chữ ký webhook Zalo `sha256(appId + body + timestamp + OASecretKey)` với một callback thật.
+
+**Ghi chú môi trường / nợ kỹ thuật nhỏ phát hiện trong ngày**
+- DB local đã sạch dữ liệu giả sau migration `000010` (không còn sản phẩm nào) — cần sản phẩm thật sau khi có tầng scraper A.
+- Cổng 3000 trên máy đang bị một container Docker khác chiếm; khi chạy thử web local dùng `npx next dev -p 3100` và đặt `CORS_ALLOWED_ORIGINS=http://localhost:3100` cho API.
+- `internal/notification/zalo/token_manager_test.go` gọi `FlushDB` trên Redis test (cổng 6380, dùng chung với dev) — nên đổi sang DB/namespace riêng.
+- `internal/marketplace/shopee/adapter_test.go` vẫn gọi API Shopee thật (URL `i.111.222`) — nên chặn mạng trong unit test.
+- Script E2E trình duyệt (Chrome headless + puppeteer-core) đã lưu tại `dealhunter-web/e2e/` (`session.mjs`, `member.mjs`, `nomock.mjs`, hướng dẫn trong `README.md`) — chạy lại sau mỗi bước.
+
+---
+
 ## 0. Tiến Độ Thực Hiện
 
 > **Nguyên tắc từ 2026-10-07: KHÔNG dữ liệu mock.** Không demo login, token giả, catalog seed, voucher bịa, adapter sàn giả, Zalo client giả hay nút "giả lập" trong code sản phẩm (kể cả sau cờ dev). Khi dữ liệu thật không có, hệ thống báo lỗi / hiển thị trạng thái rỗng thay vì thay bằng dữ liệu giả. Test double chỉ được phép trong `*_test.go` / `tests/`.
