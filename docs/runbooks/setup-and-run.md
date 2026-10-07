@@ -64,10 +64,14 @@ Dam bao ca 2 container `postgres` va `redis` deu o trang thai `Up` hoac `healthy
 
 ## 4. Chay Database Migrations
 
-He thong gom 3 phien ban migration:
+He thong gom 7 phien ban migration (ap dung day du tu Phase 1 den Phase 3.5):
 - `000001_init`: Khoi tao bang `users`, `products`, `product_sources`, `tracked_products`, `price_snapshots`, `fetch_jobs`.
 - `000002_alerts`: Bo sung thong tin Zalo, tao bang `alert_rules`, `notification_logs`.
 - `000003_cross_platform`: Tao bang `comparison_snapshots`, bo sung cot `is_primary` cho `tracked_products`.
+- `000004_auth`: Tao bang `auth_identities`, bo sung cot xac thuc cho `users`.
+- `000005_matching`: Tao bang `match_candidates`, `match_suggestions` cho bo may auto-matching.
+- `000006_zalo_delivery`: Bo sung cac cot tracking webhook trang thai gui tin Zalo.
+- `000007_vouchers`: Tao bang `product_vouchers`, bo sung cot `shop_discount` va `platform_coupon` vao `price_snapshots`.
 
 Chay migration UP toan bo:
 
@@ -82,14 +86,15 @@ go run cmd/migrate/main.go up
 
 ## 5. Van hanh cac Dich vu (Services)
 
-Deal Hunter gom 4 tien trinh (processes) doc lap:
+Deal Hunter gom cac tien trinh doc lap:
 
 1. **API Server (`cmd/api`)**: Tiep nhan request tu nguoi dung va giao dien frontend.
 2. **Scheduler (`cmd/scheduler`)**: Quet cac san pham den han kiem tra gia va refresh snapshot so sanh gia dinh ky 10 phut.
 3. **Worker Pool (`cmd/worker`)**: Nhan job tu Redis Streams, goi Adapter lay gia, ghi snapshot, danh gia luat canh bao va xoa cache Redis.
 4. **Notifier (`cmd/notifier`)**: Nhan su kien thong bao tu Redis Streams va gui tin nhan Zalo OA / ZNS.
+5. **Migrate Tool (`cmd/migrate`)**: Cong cu chay migration database khi deploy.
 
-Mo **4 cua so terminal rieng biet** tai thu muc du an de chay ca 4 dich vu:
+Mo **4 cua so terminal rieng biet** tai thu muc du an de chay ca 4 dich vu (hoac chay 1 lenh `make dev-all`):
 
 ### Terminal 1: Chay API Server
 ```bash
@@ -162,6 +167,45 @@ curl -X POST http://localhost:8080/api/v1/products/<product_id>/link-source \
 ```bash
 curl -X GET http://localhost:8080/api/v1/product-groups \
   -H "X-User-ID: <user_uuid>"
+```
+
+### 6.7. Xac thuc & Dang nhap Demo / Google (GAP-02)
+```bash
+# Dang nhap Demo 1-click nhan JWT Token:
+curl -X POST http://localhost:8080/api/v1/auth/demo-login \
+  -H "Content-Type: application/json" \
+  -d '{"role": "user"}'
+
+# Lay thong tin tai khoan nguoi dung hien tai:
+curl -X GET http://localhost:8080/api/v1/auth/me \
+  -H "Authorization: Bearer <jwt_token>"
+```
+
+### 6.8. Tu dong goi y so khop da san Auto-Matching (GAP-03)
+```bash
+# Kich hoat tim kiem ung vien tu dong tren cac san:
+curl -X POST http://localhost:8080/api/v1/products/<product_id>/auto-match \
+  -H "Authorization: Bearer <jwt_token>"
+
+# Lay danh sach goi y so khop:
+curl -X GET http://localhost:8080/api/v1/products/<product_id>/match-suggestions \
+  -H "Authorization: Bearer <jwt_token>"
+```
+
+### 6.9. Quan ly Voucher & Gia Ve Tay EffectivePrice (Phase 3.5)
+```bash
+# Xem danh sach voucher kha dung cua san pham:
+curl -X GET http://localhost:8080/api/v1/tracked-products/<id>/vouchers
+
+# Thu cong them voucher moi:
+curl -X POST http://localhost:8080/api/v1/tracked-products/<id>/vouchers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "voucher_type": "shop_voucher",
+    "title": "Ma giam 50k don tu 500k",
+    "discount_amount": 50000,
+    "min_order_value": 500000
+  }'
 ```
 
 ---

@@ -4,7 +4,7 @@ Deal Hunter is a cross-platform e-commerce deal tracking and price comparison en
 The system covers product link ingestion, periodic automated scraping, atomic price history snapshot logging, smart alert rules, Zalo notification delivery, and real-time cross-platform price comparison across Shopee, Lazada, and TikTok Shop.
 
 ## Tech Stack
-- **Language**: Go 1.23+ (`chi` router, `slog`, `prometheus`)
+- **Language**: Go 1.26+ (`chi` router, `slog`, `prometheus`)
 - **Database**: PostgreSQL 15 (`pgx/v5`, connection pooling via `pgxpool`, migrations via `golang-migrate`)
 - **Queue & Cache**: Redis 7 (`Redis Streams` consumer groups `XREADGROUP` / `XACK`, string caching for comparison results with TTL)
 - **Marketplace Adapters**: Shopee Vietnam, Lazada Vietnam, TikTok Shop Vietnam, Mock Adapter
@@ -24,7 +24,7 @@ The system is organized as a Modular Monolith with Clean Architecture (Ports & A
 docker compose up -d postgres redis
 ```
 
-### 2. Run Database Migrations (Migrations 000001, 000002, 000003)
+### 2. Run Database Migrations (Migrations 000001 to 000007)
 ```bash
 go mod tidy
 go run cmd/migrate/main.go up
@@ -82,10 +82,23 @@ go run cmd/notifier/main.go
   - `GET /api/v1/product-groups`: List multi-source product groups
 - [x] End-to-End Full Flow Integration Tests (`tests/integration/http_phase3_flow_test.go`, `TestPhase3FullHTTPFlow`)
 
+### Phase 3.5: Monetization & Voucher Engine [100% Completed]
+- [x] Affiliate Link Transformer (`pkg/affiliate`): Shopee, Lazada, TikTok, AccessTrade affiliate URL conversion
+- [x] SubID Tracking Parameter: Format `u_{user_id}_p_{product_id}` for cross-platform attribution
+- [x] Database Schema & Migrations (`migrations/000007_vouchers.up.sql`): `product_vouchers`, discount columns
+- [x] Voucher Intelligence Domain (`internal/voucher`): Shop vouchers, platform coupons, freeship codes
+- [x] Dynamic Effective Price calculation: `ListedPrice - ShopDiscount - PlatformCoupon + ShippingFee`
+- [x] Voucher API Endpoints (`GET/POST /api/v1/tracked-products/{id}/vouchers`)
+- [x] Production Docker Packaging: Multi-stage Dockerfile for Go & Next.js standalone, `docker-compose.prod.yml`, `.dockerignore`
+- [x] Production Deployment Guide (`docs/deployment/production-deployment-guide.md`)
+
 ## Documentation
 Chi tiet tai lieu he thong duoc quan ly trong thu muc [`docs/`](docs/README.md):
+- [**Cam nang Trien khai San xuat**](docs/deployment/production-deployment-guide.md): Huong dan trien khai Production (Docker Compose Prod, Systemd, Nginx SSL, Backup).
+- [**Dac ta REST API Toan Dien**](docs/api/rest-api-reference.md): Danh muc 24+ HTTP endpoints, payload, auth va curl examples.
 - [**Kien truc He thong**](docs/architecture/overview.md): Tong quan Modular Monolith, Ports & Adapters va Caching Pipeline.
-- [**Cam nang Van hanh**](docs/runbooks/setup-and-run.md): Huong dan cai dat, cau hinh .env va chay 4 service Go.
+- [**Cam nang Van hanh Local**](docs/runbooks/setup-and-run.md): Huong dan cai dat, cau hinh .env va chay cac service Go o moi truong local dev.
 - [**Ke hoach Phase 1**](docs/plans/phase-1-core-tracking.md): Dac ta nghiep vu va Definition of Done Phase 1.
 - [**Ke hoach Phase 2**](docs/plans/phase-2-alert-and-zalo.md): Thiet ke Alert Engine & Zalo Notification.
 - [**Ke hoach Phase 3**](docs/plans/phase-3-cross-platform.md): Thiet ke So Sanh Gia Da Nen Tang & Bao cao kiem dinh.
+- [**Ke hoach Phase 3.5**](docs/plans/phase-3-5-monetization-and-voucher-engine.md): Affiliate Link Engine & Voucher Intelligence 2 Buoc.

@@ -1,0 +1,47 @@
+# .dockerignore — DealHunter Backend
+# Prevent unnecessary files from being sent to Docker build context
+
+# Version control
+.git
+.gitignore
+
+# Local environment secrets (never bake into image)
+.env
+.env.local
+
+# Compiled output (rebuilt inside image)
+bin/
+dist/
+
+# Test artifacts
+*.test
+*.out
+coverage.html
+tests/
+
+# Documentation (not needed in production image)
+docs/
+
+# Development scripts (not needed in production image)
+scripts/
+
+# Docker files themselves (avoid recursive include)
+Dockerfile
+docker-compose*.yml
+
+# OS junk
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# README
+README.md

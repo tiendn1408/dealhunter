@@ -83,6 +83,9 @@ dealhunter/
 │   ├── comparison/           # Sub-domain So sanh gia da nen tang & Best Deal (Phase 3)
 │   ├── alert/                # Sub-domain Canh bao gia va danh gia luat (Phase 2)
 │   ├── notification/         # Sub-domain Gui thong bao Zalo OA / ZNS (Phase 2)
+│   ├── auth/                 # Xac thuc nguoi dung: Google OAuth 2.0, JWT 7 ngay, migrate guest (GAP-02)
+│   ├── matching/             # Bo may tu dong so khop da san: Query Normalizer, Scoring, Searcher (GAP-03)
+│   ├── voucher/              # Engine voucher & tinh EffectivePrice toan dien (Phase 3.5)
 │   ├── tracking/             # Service tiep nhan URL va quan ly tracking
 │   ├── jobs/                 # Worker pool logic, Scheduler logic, Job Repo PG
 │   ├── marketplace/          # Port & Adapter san TMDT (Registry, Shopee, Lazada, TikTok, Mock)
@@ -90,12 +93,20 @@ dealhunter/
 │   └── http/                 # Delivery HTTP (Chi Router, Handlers, Middleware, CORS)
 │
 ├── pkg/                      # Thu vien ky thuat dung chung (Domain-agnostic)
+│   ├── affiliate/            # Affiliate Link Transformer: sinh deeplink hoa hong (Phase 3.5)
 │   ├── config/               # Load bien moi truong tu .env
 │   ├── database/             # Quan ly connection pool PostgreSQL (pgxpool)
 │   ├── metrics/              # Prometheus Metrics exporter
 │   └── retry/                # Exponential backoff retry logic
 │
-├── migrations/               # Schema DDL versioned (000001, 000002, 000003)
+├── migrations/               # Schema DDL versioned (7 phien ban: 000001 den 000007)
+│   ├── 000001_init           # Users, Products, ProductSources, TrackedProducts, PriceSnapshots, FetchJobs
+│   ├── 000002_alerts         # AlertRules, NotificationLogs, Zalo fields
+│   ├── 000003_cross_platform # ComparisonSnapshots, is_primary flag
+│   ├── 000004_auth           # Auth tokens, Google OAuth fields
+│   ├── 000005_matching       # Matching candidates & suggestions tables
+│   ├── 000006_zalo_delivery  # Zalo webhook delivery status tracking
+│   └── 000007_vouchers       # ProductVouchers, shop_discount & platform_coupon columns
 └── tests/                    # Integration tests (E2E flow, Idempotency replay, Comparison full flow)
 ```
 

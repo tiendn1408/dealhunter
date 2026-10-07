@@ -24,7 +24,19 @@ Chua tai lieu PRD, dac ta BA/PM va ke hoach trien khai chi tiet cho tung giai do
 
 ### 3. Cam Nang Van Hanh & Huong Dan (`docs/runbooks/`)
 Chua cac huong dan cai dat moi truong, chay ung dung, cau hinh va xu ly su co:
-- [**setup-and-run.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/runbooks/setup-and-run.md): Huong dan cau hinh moi truong (.env), chay Docker Compose, migration va khoi dong cac tien trinh Go.
+- [**setup-and-run.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/runbooks/setup-and-run.md): Huong dan cau hinh moi truong (.env), chay Docker Compose, migration va khoi dong cac tien trinh Go o moi truong local dev.
+
+---
+
+### 4. Trien Khai He Thong San Xuat (`docs/deployment/`)
+Chua huong dan trien khai moi truong Production thuc te, dong goi Docker, bao mat va sao luu:
+- [**production-deployment-guide.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/deployment/production-deployment-guide.md): Cam nang trien khai Production toan dien (Docker Compose Prod, Systemd, Nginx SSL, Migration Runbook, Monitoring & Backup).
+
+---
+
+### 5. Dac Ta Giao Dien Lap Trinh REST API (`docs/api/`)
+Chua danh muc day du tat ca cac endpoint HTTP API, tham so va vi du curl:
+- [**rest-api-reference.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/api/rest-api-reference.md): Dac ta chi tiet 24+ endpoint (Health, Auth, Tracking, Pricing, Alerts, Notifications, Comparison, Auto-Matching, Vouchers, Webhook).
 
 ---
 
