@@ -74,7 +74,6 @@ func TestValidateAPI_Production(t *testing.T) {
 		"default jwt secret": func(c *Config) { c.JWTSecret = DevJWTSecret },
 		"short jwt secret":   func(c *Config) { c.JWTSecret = "short" },
 		"no google client":   func(c *Config) { c.GoogleClientID = "" },
-		"dev login enabled":  func(c *Config) { c.DevLoginEnabled = true },
 		"insecure cookie":    func(c *Config) { c.AuthCookieSecure = false },
 		"wildcard cors":      func(c *Config) { c.CORSAllowedOrigins = "*" },
 		"empty cors":         func(c *Config) { c.CORSAllowedOrigins = "" },
@@ -99,5 +98,33 @@ func TestValidateAPI_DevelopmentRejectsEmptySecret(t *testing.T) {
 	c.JWTSecret = DevJWTSecret
 	if err := c.ValidateAPI(); err != nil {
 		t.Fatalf("expected dev default secret to be allowed in development, got %v", err)
+	}
+}
+
+// Strict rules apply to every APP_ENV other than development/test
+func TestValidateAPI_NonDevelopmentEnvsAreStrict(t *testing.T) {
+	for _, env := range []string{"staging", "Production", "prod", ""} {
+		c := &Config{AppEnv: env, JWTSecret: DevJWTSecret, AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour, CORSAllowedOrigins: "*"}
+		if err := c.ValidateAPI(); err == nil {
+			t.Errorf("APP_ENV=%q: expected insecure config to be rejected", env)
+		}
+	}
+	for _, env := range []string{"development", "test", "Development"} {
+		c := &Config{AppEnv: env, JWTSecret: DevJWTSecret, AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour}
+		if err := c.ValidateAPI(); err != nil {
+			t.Errorf("APP_ENV=%q: expected relaxed rules, got %v", env, err)
+		}
+	}
+}
+
+func TestZaloWebhookSecretFallsBackWhenEmpty(t *testing.T) {
+	t.Setenv("ZALO_WEBHOOK_SECRET", "")
+	t.Setenv("ZALO_OA_SECRET_KEY", "oa-secret")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ZaloWebhookSecret != "oa-secret" {
+		t.Fatalf("expected fallback to ZALO_OA_SECRET_KEY, got %q", cfg.ZaloWebhookSecret)
 	}
 }

@@ -15,25 +15,30 @@
 
 ## 0. Tiến Độ Thực Hiện
 
-| Bước | Trạng thái | Hạng mục đã xong | Ghi chú |
-|---|---|---|---|
-| **1. Bảo mật xác thực** | ✅ Hoàn thành (2026-10-07) | SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-10, OPS-01, OPS-02, OPS-07 (API), GAP-02a, GAP-02c, DOC-03; thêm: chống payload webhook quá lớn (một phần SEC-11), thuật toán chữ ký Zalo (từ nhóm DATA) | Xem chi tiết bên dưới |
-| 2. Phân quyền & validate input | ⏳ Chưa bắt đầu | | |
-| 3 → 9 | ⏳ Chưa bắt đầu | | |
+> **Nguyên tắc từ 2026-10-07: KHÔNG dữ liệu mock.** Không demo login, token giả, catalog seed, voucher bịa, adapter sàn giả, Zalo client giả hay nút "giả lập" trong code sản phẩm (kể cả sau cờ dev). Khi dữ liệu thật không có, hệ thống báo lỗi / hiển thị trạng thái rỗng thay vì thay bằng dữ liệu giả. Test double chỉ được phép trong `*_test.go` / `tests/`.
 
-**Chi tiết Bước 1**:
-- Định danh chỉ lấy từ access token (`Authorization: Bearer`), JWT 15 phút có claim `role` (`guest`/`user`), kiểm tra `iss` và `exp`. `X-User-ID` và user mặc định `...0001` đã bị loại bỏ.
-- Refresh token 30 ngày trong cookie `dh_refresh` (HttpOnly, SameSite=Lax, Secure ở production), lưu hash SHA-256 trong bảng `refresh_tokens` (migration `000008`), xoay vòng mỗi lần refresh, phát hiện dùng lại (thu hồi toàn bộ phiên) với 30 giây ân hạn cho nhiều tab.
-- Endpoint mới: `POST /auth/guest`, `/auth/refresh`, `/auth/logout`. Đã gỡ `POST /auth/migrate`; di trú guest chỉ xảy ra khi đăng nhập kèm access token guest của chính người dùng, sau đó phiên guest bị thu hồi.
-- Demo login và token `mock-google-*` chỉ hoạt động khi `ENABLE_DEV_LOGIN=true`; demo login không bao giờ trả về tài khoản Google có sẵn (409).
-- Google login kiểm tra `aud == GOOGLE_CLIENT_ID`, `iss`, `email_verified`.
-- `cfg.ValidateAPI()`: API từ chối khởi động ở production nếu JWT secret yếu/mặc định, thiếu `GOOGLE_CLIENT_ID`, CORS rỗng hoặc `*`, bật dev login, cookie không Secure, hoặc bật Zalo mà thiếu thông tin ký webhook. `docker-compose.prod.yml` bắt buộc các biến này.
-- CORS đọc từ `CORS_ALLOWED_ORIGINS`, chỉ cấp `Allow-Credentials` cho origin được cấu hình.
-- Webhook Zalo: secret chỉ lấy từ cấu hình (thiếu → 503), chữ ký `sha256(appId + body + timestamp + OASecretKey)`, từ chối timestamp lệch quá 15 phút, giới hạn body 64KB.
-- `migrate down` chỉ lùi 1 bước (`-steps N`); `down-all` bắt buộc `-force`.
-- Frontend (`dealhunter-web`): access token chỉ trong bộ nhớ, tự khôi phục phiên bằng `/auth/refresh` hoặc tạo phiên guest, tự refresh và thử lại 1 lần khi gặp 401; nút Google Sign-In thật (Google Identity Services); nút demo/mock chỉ hiện ở môi trường dev.
+| Bước | Trạng thái | Hạng mục đã xong |
+|---|---|---|
+| **1. Bảo mật xác thực** | ✅ Hoàn thành + rà soát độc lập (2026-10-07) | SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-10, OPS-01, OPS-02, OPS-07 (API), GAP-02a, GAP-02c, DOC-03; một phần SEC-11 (webhook) |
+| **1.5. Loại bỏ toàn bộ mock (NOMOCK)** | ⏳ Kế tiếp | Xem mục 8b |
+| 2. Phân quyền & validate input | ⏳ Chưa bắt đầu | |
+| 3 → 9 | ⏳ Chưa bắt đầu | |
 
-**Còn mở sau Bước 1**: chưa kiểm thử frontend trên trình duyệt thật với Google Client ID thật; chưa có rate limit cho `POST /auth/guest`.
+**Kết quả Bước 1**:
+- Định danh chỉ từ access token (`Authorization: Bearer`): JWT 15 phút, claim `role` (`guest`/`user`), bắt buộc `iss` + `exp`. Không còn `X-User-ID` hay user mặc định `...0001`. Token guest bị từ chối ngay khi guest đã được di trú.
+- Refresh token 30 ngày (cookie `dh_refresh` HttpOnly, SameSite=Lax, Secure ngoài môi trường dev), lưu hash SHA-256 theo **họ token** (`family_id`, migration `000009`). Xoay vòng **nghiêm ngặt** — dùng lại token đã xoay vòng ⇒ thu hồi mọi phiên; token bị thu hồi do logout chỉ đơn giản là không hợp lệ. Logout thu hồi cả họ token. Dọn token hết hạn/thu hồi > 7 ngày mỗi giờ. Frontend tuần tự hoá refresh giữa các tab bằng Web Locks API.
+- **Không còn demo login hay token giả.** Đăng nhập duy nhất qua Google (Google Identity Services): kiểm tra `aud`, `iss`, `email_verified`, `sub`; tài khoản gắn với Google `sub` (email bị cấp lại cho người khác không kế thừa tài khoản ⇒ `409`); upsert nguyên tử theo email. Migration `000009` xoá toàn bộ tài khoản `demo` cũ (115 tài khoản ở DB local).
+- Di trú guest chỉ khi đăng nhập kèm token guest của chính người dùng; chuyển cả Zalo/phone, bỏ alert rule trùng, thu hồi phiên guest. `POST /auth/migrate` đã gỡ.
+- Liên kết Zalo chỉ dành cho thành viên (`403` với guest) — guest không thể chiếm số điện thoại người khác.
+- Chống CSRF cho `POST /auth/*`: bắt buộc `application/json` (`415`) và Origin hợp lệ (`403`).
+- `cfg.ValidateAPI()`: mọi `APP_ENV` khác `development`/`test` (kể cả `staging`, `Production`) áp dụng quy tắc nghiêm ngặt: JWT secret mạnh, có `GOOGLE_CLIENT_ID`, CORS cụ thể, cookie Secure, đủ thông tin ký webhook khi bật Zalo. `docker-compose.prod.yml` bắt buộc các biến này và `NEXT_PUBLIC_API_URL`.
+- Webhook Zalo: secret chỉ từ cấu hình (thiếu ⇒ 503; `ZALO_WEBHOOK_SECRET` rỗng dùng `ZALO_OA_SECRET_KEY`), chữ ký `sha256(appId + body + timestamp + OASecretKey)`, từ chối timestamp lệch > 15 phút, body ≤ 64KB.
+- `migrate down` lùi 1 bước (`-steps N`); `down-all` bắt buộc `-force`.
+- Frontend: access token chỉ trong bộ nhớ (có theo dõi hạn), tự khôi phục phiên; khi phiên thành viên hết hạn **không** gửi lại request dưới danh nghĩa guest mà báo "Phiên đăng nhập đã hết hạn"; đổi danh tính ⇒ reset toàn bộ cache (không lộ dữ liệu người trước); logout thất bại thì báo lỗi, không giả vờ thành công; Docker image web build được.
+
+**Kiểm chứng Bước 1**: unit test (`-race`), 10 integration test với Postgres/Redis thật (25 test + subtest, gồm mọi kịch bản tấn công SEC), E2E trình duyệt thật (Chrome headless, 23 kiểm tra: tạo guest, khôi phục phiên qua reload, 2 tab refresh đồng thời, logout, phiên thành viên khôi phục từ cookie, phiên thành viên hết hạn trong tab, chặn guest kết nối Zalo, không có `X-User-ID`, cookie không đọc được bằng JS). Hai reviewer độc lập (backend, frontend) đã rà soát; mọi phát hiện đã xử lý trừ các mục chuyển sang bước sau dưới đây.
+
+**Chuyển sang bước sau**: `GET /products/{id}/comparison` và `/match-suggestions` chưa yêu cầu token (→ Bước 2, SEC-07/08); `POST /tracked-products/{id}/vouchers` vẫn cho mọi người dùng tạo voucher (→ Bước 2, SEC-09); chưa có rate limit cho `POST /auth/guest` (→ Bước 2); chưa kiểm thử với Google Client ID thật trên trình duyệt.
 
 ---
 
@@ -48,17 +53,17 @@
 
 | Nhóm | Phạm vi | Số hạng mục | Ưu tiên |
 |---|---|---|---|
-| **1. SEC** | Bảo mật, xác thực, phân quyền | 12 | 🔴 Bắt buộc trước deploy |
-| **2. REL** | Độ tin cậy job queue, worker, scheduler, notifier | 12 | 🔴 Bắt buộc trước deploy |
-| **3. DATA** | Tính đúng đắn dữ liệu, giá, voucher, affiliate, matching | 13 | 🟠 Trước Phase 4 |
-| **4. OPS** | Docker, cấu hình production, tài liệu vận hành | 9 | 🟠 Trước deploy |
-| **5. PERF** | Tối ưu truy vấn, index, retention | 8 | 🟢 Có thể làm song song |
-| **6. DOC** | Đồng bộ tài liệu API và plan | 5 | 🟢 Cuối đợt |
-| **7. DOD-GAP** | Tính năng spec yêu cầu nhưng chưa làm | 10 | 🟡 Quyết định làm / dời |
+| **1. SEC** | Bảo mật, xác thực, phân quyền | 12 | [CRITICAL] Bắt buộc trước deploy |
+| **2. REL** | Độ tin cậy job queue, worker, scheduler, notifier | 12 | [CRITICAL] Bắt buộc trước deploy |
+| **3. DATA** | Tính đúng đắn dữ liệu, giá, voucher, affiliate, matching | 13 | [HIGH] Trước Phase 4 |
+| **4. OPS** | Docker, cấu hình production, tài liệu vận hành | 9 | [HIGH] Trước deploy |
+| **5. PERF** | Tối ưu truy vấn, index, retention | 8 | [LOW] Có thể làm song song |
+| **6. DOC** | Đồng bộ tài liệu API và plan | 5 | [LOW] Cuối đợt |
+| **7. DOD-GAP** | Tính năng spec yêu cầu nhưng chưa làm | 10 | [MEDIUM] Quyết định làm / dời |
 
 ---
 
-## 2. Nhóm 1 — Bảo Mật & Phân Quyền (SEC) 🔴
+## 2. Nhóm 1 — Bảo Mật & Phân Quyền (SEC) [CRITICAL]
 
 | ID | Vấn đề | Vị trí | Kịch bản lỗi | Giải pháp |
 |---|---|---|---|---|
@@ -83,7 +88,7 @@
 
 ---
 
-## 3. Nhóm 2 — Độ Tin Cậy Job Queue, Worker, Notifier (REL) 🔴
+## 3. Nhóm 2 — Độ Tin Cậy Job Queue, Worker, Notifier (REL) [CRITICAL]
 
 | ID | Vấn đề | Vị trí | Kịch bản lỗi | Giải pháp |
 |---|---|---|---|---|
@@ -216,11 +221,37 @@ Các mục này cần **quyết định làm ngay hay dời** sang phase sau; kh
 
 ---
 
+## 8b. Nhóm NOMOCK — Loại Bỏ Toàn Bộ Dữ Liệu Mock 🔴
+
+Theo yêu cầu "dữ liệu thật, việc thật". Phần auth (demo login, token `mock-google-*`, nút demo) **đã xoá ở Bước 1**. Còn lại:
+
+| ID | Mock còn lại | Vị trí | Thay bằng |
+|---|---|---|---|
+| **NOMOCK-01** | Adapter sàn giả `mock` được đăng ký trong binary; registry chuyển mọi host chứa "mock" tới adapter giả (giá sinh ra) | `cmd/api/main.go:75`, `cmd/worker/main.go:62`, `internal/marketplace/registry.go:35`, `internal/marketplace/mock/` | Bỏ đăng ký khỏi `cmd/*`; adapter giả chỉ dùng trong test; dọn `products`/`product_sources` có URL `mock.dealhunter.vn` |
+| **NOMOCK-02** | Notifier dùng `MockZaloClient` khi thiếu token (đánh dấu `sent` dù không gửi) | `cmd/notifier/main.go:79-80`, `internal/notification/zalo/mock_client.go` | Thiếu cấu hình Zalo ⇒ không gửi, ghi trạng thái `failed`/`skipped` rõ ràng, log cảnh báo |
+| **NOMOCK-03** | TokenManager ghi token giả `mock_zalo_access_token_active` vào Redis | `internal/notification/zalo/token_manager.go:86-93` | Trả lỗi cấu hình; không ghi đè token thật |
+| **NOMOCK-04** | Voucher bịa (`SHOP15K`, `PLAT24K`, freeship) sinh và lưu khi GET | `internal/http/voucher_handler.go:80-81,125-211` | = DATA-03: xoá; GET chỉ đọc; migration dọn voucher giả đã lưu |
+| **NOMOCK-05** | Scraper trả giá lần trước như lần đo mới khi bị chặn; `ResolveProduct` trả tiêu đề placeholder, giá 0 | `internal/marketplace/{shopee,lazada,tiktok}/adapter.go` | = DATA-01/02: trả lỗi thật |
+| **NOMOCK-06** | Catalog seed trong tìm kiếm auto-match (TikTok luôn seed) | `internal/matching/searcher.go:92-140` | = DATA-12: bị chặn ⇒ không có ứng viên |
+| **NOMOCK-07** | Template affiliate placeholder `s.lazada.vn/s.xxxx`, `vt.tiktok.com/xxxx` | `pkg/config/config.go:140-142` | = DATA-04: mặc định rỗng, giữ link gốc |
+| **NOMOCK-08** | Trang chủ: link mẫu `mock.dealhunter.vn` với giá/giảm giá cứng; thẻ minh hoạ Sony với giá cứng; tham số `?sample=`; tiến trình tải giả bằng timer | `dealhunter-web/app/page.tsx:46,64-65,85-113,257-297,495-516,591` | Xoá link/giá mẫu; minh hoạ không chứa số liệu giả; tiến trình theo trạng thái thật |
+| **NOMOCK-09** | EmptyState: 3 sản phẩm mẫu `mock.dealhunter.vn` | `dealhunter-web/components/ui/EmptyState.tsx:29-45,70-77` | Hướng dẫn dán link thật |
+| **NOMOCK-10** | Nút "Giả lập giảm giá 12%" chèn thông báo giả vào cache | `dealhunter-web/app/notifications/page.tsx:187-211` | Xoá |
+| **NOMOCK-11** | Nút "Dùng số thử nghiệm (Sandbox)" điền số `0988123456` | `dealhunter-web/components/settings/ZaloConnectModal.tsx:70-73,176-186` | Xoá |
+| **NOMOCK-12** | Platform `"mock"` / badge "Mock Store"; biến `NEXT_PUBLIC_ENABLE_MOCK_SANDBOX` | `dealhunter-web/lib/formatting.ts:163,213-220`, `.env.example` | Xoá |
+| **NOMOCK-13** | Cài đặt chu kỳ quét chỉ lưu localStorage, báo "đã lưu" nhưng backend không dùng | `dealhunter-web/app/settings/page.tsx:43-57` | Lưu thật qua API hoặc xoá tuỳ chọn |
+| **NOMOCK-14** | Chuỗi i18n cho tính năng mẫu/giả lập | `dealhunter-web/lib/i18n/dictionaries/{vi,en}.ts` | Xoá cùng các mục trên |
+
+**DoD NOMOCK**: `grep -riE "mock|sandbox|seed|simulat|sample|fake"` trên code sản phẩm (ngoài `*_test.go`, `tests/`) không còn kết quả mang nghĩa dữ liệu giả; binary không đăng ký adapter giả; khi sàn/Zalo không khả dụng, UI và API báo lỗi thật.
+
+---
+
 ## 9. Thứ Tự Thực Hiện Đề Xuất
 
 | Bước | Nội dung | Hạng mục |
 |---|---|---|
-| **1** | Bảo mật xác thực | SEC-01 → SEC-06, SEC-10, OPS-01, OPS-07, GAP-02a/c |
+| **1** | Bảo mật xác thực ✅ | SEC-01 → SEC-06, SEC-10, OPS-01, OPS-07, GAP-02a/c |
+| **1.5** | Loại bỏ toàn bộ mock | NOMOCK-01 → NOMOCK-14 (gồm DATA-01/02/03/04/12) |
 | **2** | Phân quyền & validate input | SEC-07 → SEC-09, SEC-11, SEC-12 |
 | **3** | Độ tin cậy queue & worker | REL-01 → REL-07, REL-10 |
 | **4** | Notifier & Zalo | REL-08, REL-09, REL-11, REL-12, DATA-13, các lỗi webhook Zalo |

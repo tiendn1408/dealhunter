@@ -13,6 +13,7 @@ type User struct {
 	Name         *string   `json:"name,omitempty"`
 	AvatarURL    *string   `json:"avatar_url,omitempty"`
 	AuthProvider string    `json:"auth_provider"`
+	GoogleSub    *string   `json:"-"`
 	ZaloID       *string   `json:"zalo_id,omitempty"`
 	Phone        *string   `json:"phone,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -40,11 +41,6 @@ type Session struct {
 	Migration        *MigrationResult `json:"migration,omitempty"`
 	RefreshToken     string           `json:"-"`
 	RefreshExpiresAt time.Time        `json:"-"`
-}
-
-type DemoLoginRequest struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
 }
 
 type GoogleLoginRequest struct {

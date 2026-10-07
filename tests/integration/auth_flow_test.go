@@ -72,8 +72,7 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	pricingSvc := pricing.NewPricingService(pricingRepo)
 	compSvc := comparison.NewComparisonService(comparisonRepo, nil)
 	jwtMgr := auth.NewJWTManager("test-auth-integration-secret-32-bytes!!", 1*time.Hour)
-	authSvc := auth.NewAuthService(authRepo, jwtMgr, "")
-	authSvc.SetDevLoginEnabled(true)
+	authSvc := newTestAuthService(t, authRepo, jwtMgr)
 
 	handler := router.NewHandler(trackingSvc, pricingSvc)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
@@ -104,13 +103,8 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	resp.Body.Close()
 
 	// Step 2: Login while presenting the guest token migrates the guest data automatically
-	loginResp, authResult, loginCookie := postSession(t, server.URL+"/api/v1/auth/demo-login", map[string]string{
-		"email": fmt.Sprintf("user-%s@dealhunter.vn", uuid.New().String()[:8]),
-		"name":  "DealHunter Explorer",
-	}, guestBearer, nil)
-	if authResult == nil {
-		t.Fatalf("Demo login failed, status: %d", loginResp.StatusCode)
-	}
+	_, authResult, loginCookie := googleLogin(t, server.URL,
+		fmt.Sprintf("user-%s@dealhunter.vn", uuid.New().String()[:8]), guestBearer)
 	if authResult.AccessToken == "" || loginCookie == nil || !loginCookie.HttpOnly {
 		t.Fatal("Expected access token and HttpOnly refresh cookie")
 	}
@@ -129,9 +123,7 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	if refreshed.User.ID != authUserID {
 		t.Fatalf("Refresh returned wrong user %s", refreshed.User.ID)
 	}
-	// Replay after the concurrent-tab grace window is treated as theft
-	_, _ = dbPool.Exec(ctx, "UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL '5 minutes' WHERE token_hash = $1",
-		auth.HashRefreshToken(loginCookie.Value))
+	// Replaying the rotated cookie is treated as theft (strict rotation)
 	if replay, _, _ := postSession(t, server.URL+"/api/v1/auth/refresh", nil, "", loginCookie); replay.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("Expected 401 replaying rotated refresh token, got %d", replay.StatusCode)
 	}
@@ -149,9 +141,9 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 
 	// Logout revokes the member session (the replay above already revoked this token family,
 	// so use a fresh login)
-	_, _, freshCookie := postSession(t, server.URL+"/api/v1/auth/demo-login",
-		map[string]string{"email": *authResult.User.Email}, "", nil)
+	_, _, freshCookie := googleLogin(t, server.URL, *authResult.User.Email, "")
 	logoutReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/logout", nil)
+	logoutReq.Header.Set("Content-Type", "application/json")
 	logoutReq.AddCookie(freshCookie)
 	logoutResp, err := http.DefaultClient.Do(logoutReq)
 	if err != nil || logoutResp.StatusCode != http.StatusNoContent {
@@ -197,7 +189,7 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	if me.ID != authUserID {
 		t.Errorf("Expected me.ID %s, got %s", authUserID, me.ID)
 	}
-	if me.AuthProvider != "demo" {
-		t.Errorf("Expected auth_provider 'demo', got %s", me.AuthProvider)
+	if me.AuthProvider != "google" {
+		t.Errorf("Expected auth_provider 'google', got %s", me.AuthProvider)
 	}
 }

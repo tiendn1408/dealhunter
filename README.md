@@ -102,4 +102,5 @@ Chi tiet tai lieu he thong duoc quan ly trong thu muc [`docs/`](docs/README.md):
 - [**Ke hoach Phase 2**](docs/plans/phase-2-alert-and-zalo.md): Thiet ke Alert Engine & Zalo Notification.
 - [**Ke hoach Phase 3**](docs/plans/phase-3-cross-platform.md): Thiet ke So Sanh Gia Da Nen Tang & Bao cao kiem dinh.
 - [**Ke hoach Phase 3.5**](docs/plans/phase-3-5-monetization-and-voucher-engine.md): Affiliate Link Engine & Voucher Intelligence 2 Buoc.
+- [**Ke hoach Chrome Extension Assistant**](docs/plans/chrome-extension-assistant-and-fast-clicker.md): Thiet ke Client-Side Fast Voucher Clicker & Price Intelligence In-Page.
 - [**Ke hoach Gia co truoc Phase 4**](docs/plans/hardening-before-phase-4.md): Danh sach day du loi bao mat, do tin cay va du lieu can sua truoc khi deploy production.

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -76,15 +77,41 @@ func startGuest(t *testing.T, serverURL string) (string, *auth.Session, *http.Co
 	return "Bearer " + sess.AccessToken, sess, cookie
 }
 
-// demoLogin logs in through demo-login, migrating the guest identified by guestBearer (if any).
-func demoLogin(t *testing.T, serverURL, email, guestBearer string) (string, *auth.Session) {
+const testGoogleClientID = "integration-test.apps.googleusercontent.com"
+
+// newTestAuthService wires the auth service to a fake of Google's tokeninfo endpoint (test-only):
+// the ID token "valid:<email>" verifies as <email>; any other token is rejected like Google does.
+func newTestAuthService(t *testing.T, repo auth.UserRepository, jwtMgr *auth.JWTManager) *auth.AuthService {
 	t.Helper()
-	resp, sess, _ := postSession(t, serverURL+"/api/v1/auth/demo-login",
-		map[string]string{"email": email, "name": "Integration User"}, guestBearer, nil)
+	google := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.URL.Query().Get("id_token")
+		if !strings.HasPrefix(token, "valid:") {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		email := strings.TrimPrefix(token, "valid:")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"aud": testGoogleClientID, "iss": "https://accounts.google.com", "sub": "sub-" + strings.ToLower(email),
+			"email": email, "email_verified": "true", "name": "Integration " + email,
+		})
+	}))
+	t.Cleanup(google.Close)
+
+	svc := auth.NewAuthService(repo, jwtMgr, testGoogleClientID)
+	svc.SetGoogleTokenInfoURL(google.URL)
+	return svc
+}
+
+// googleLogin signs in through POST /auth/google, migrating the guest identified by guestBearer (if any).
+func googleLogin(t *testing.T, serverURL, email, guestBearer string) (string, *auth.Session, *http.Cookie) {
+	t.Helper()
+	resp, sess, cookie := postSession(t, serverURL+"/api/v1/auth/google",
+		map[string]string{"id_token": "valid:" + email}, guestBearer, nil)
 	if sess == nil {
-		t.Fatalf("demo login failed: status %d", resp.StatusCode)
+		t.Fatalf("google login failed: status %d", resp.StatusCode)
 	}
-	return "Bearer " + sess.AccessToken, sess
+	return "Bearer " + sess.AccessToken, sess, cookie
 }
 
 const (

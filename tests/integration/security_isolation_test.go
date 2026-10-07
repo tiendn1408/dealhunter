@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,8 +74,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	pricingSvc := pricing.NewPricingService(pricingRepo)
 	compSvc := comparison.NewComparisonService(comparisonRepo, nil)
 	jwtMgr := auth.NewJWTManager("test-security-isolation-secret-32b!", 1*time.Hour)
-	authSvc := auth.NewAuthService(authRepo, jwtMgr, "")
-	authSvc.SetDevLoginEnabled(true)
+	authSvc := newTestAuthService(t, authRepo, jwtMgr)
 
 	handler := router.NewHandler(trackingSvc, pricingSvc)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
@@ -97,17 +97,8 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// Setup Two Separate Users: User A (Registered Member) and User B (Guest / Attacker)
 	// -------------------------------------------------------------------------
 	userAEmail := fmt.Sprintf("user-a-%s@dealhunter.vn", uuid.New().String()[:8])
-	loginBody, _ := json.Marshal(map[string]string{
-		"email": userAEmail,
-		"name":  "User A DealHunter",
-	})
-	loginResp, err := client.Post(server.URL+"/api/v1/auth/demo-login", "application/json", bytes.NewBuffer(loginBody))
-	if err != nil || loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("Failed to login User A: %v, status: %d", err, loginResp.StatusCode)
-	}
-	var loginData auth.Session
-	_ = json.NewDecoder(loginResp.Body).Decode(&loginData)
-	loginResp.Body.Close()
+	_, loginDataPtr, _ := googleLogin(t, server.URL, userAEmail, "")
+	loginData := *loginDataPtr
 
 	userAToken := loginData.AccessToken
 	userAID := loginData.User.ID
@@ -429,7 +420,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// 5. Vulnerability 5 Test: Registered Member Impersonation via X-User-ID
 	// -------------------------------------------------------------------------
 	t.Run("Vulnerability5_RegisteredMemberImpersonationPrevention", func(t *testing.T) {
-		// User A is a registered member (auth_provider = "demo").
+		// User A is a registered member (auth_provider = "google").
 		// An attacker attempts to impersonate User A by sending X-User-ID: User A ID without JWT
 
 		// Attacker attempts GET /api/v1/auth/me
@@ -544,8 +535,8 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// Logging in while naming the victim guest through X-User-ID migrates nothing
 		attackerEmail := fmt.Sprintf("attacker-%s@dealhunter.vn", uuid.New().String()[:8])
-		loginReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/demo-login",
-			bytes.NewBufferString(fmt.Sprintf(`{"email":%q}`, attackerEmail)))
+		loginReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/google",
+			bytes.NewBufferString(fmt.Sprintf(`{"id_token":%q}`, "valid:"+attackerEmail)))
 		loginReq.Header.Set("Content-Type", "application/json")
 		loginReq.Header.Set("X-User-ID", userBID.String())
 		loginResp, err := client.Do(loginReq)
@@ -570,7 +561,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	t.Run("Vulnerability7_RegisteredUserMigrationTheftBlocked", func(t *testing.T) {
 		// User C logs in presenting User A's member token as if it were a guest token
 		userCEmail := fmt.Sprintf("user-c-%s@dealhunter.vn", uuid.New().String()[:8])
-		_, sessC := demoLogin(t, server.URL, userCEmail, "Bearer "+userAToken)
+		_, sessC, _ := googleLogin(t, server.URL, userCEmail, "Bearer "+userAToken)
 
 		if sessC.Migration != nil {
 			t.Fatalf("SECURITY BREACH: registered member data migrated to another account: %+v", sessC.Migration)
@@ -598,14 +589,14 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 		respTrackGuest.Body.Close()
 
 		// User A logs in from guest D's browser: guest D's data is migrated to A
-		_, sessA := demoLogin(t, server.URL, userAEmail, guestDBearer)
+		_, sessA, _ := googleLogin(t, server.URL, userAEmail, guestDBearer)
 		if sessA.Migration == nil || sessA.Migration.MigratedProducts != 1 {
 			t.Fatalf("Expected 1 migrated product, got %+v", sessA.Migration)
 		}
 
 		// Replaying guest D's (still unexpired) access token into another account migrates nothing
 		replayEmail := fmt.Sprintf("replay-%s@dealhunter.vn", uuid.New().String()[:8])
-		_, sessReplay := demoLogin(t, server.URL, replayEmail, guestDBearer)
+		_, sessReplay, _ := googleLogin(t, server.URL, replayEmail, guestDBearer)
 		if sessReplay.Migration != nil {
 			t.Fatalf("Expected no migration on replay, got %+v", sessReplay.Migration)
 		}
@@ -620,29 +611,104 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// 9. Vulnerability 9 Test: Migration to Self Prevented
 	// -------------------------------------------------------------------------
 	t.Run("Vulnerability9_MigrationToSelfPrevented", func(t *testing.T) {
-		_, sess := demoLogin(t, server.URL, userAEmail, "Bearer "+userAToken)
+		_, sess, _ := googleLogin(t, server.URL, userAEmail, "Bearer "+userAToken)
 		if sess.Migration != nil {
 			t.Fatalf("Expected no self-migration, got %+v", sess.Migration)
 		}
 	})
 
 	// -------------------------------------------------------------------------
-	// 9b. Production-mode Dev Login Disabled (SEC-01, SEC-02)
+	// 9b. No Demo / Mock Login Paths Exist (SEC-01, SEC-02)
 	// -------------------------------------------------------------------------
-	t.Run("Vulnerability9b_DevLoginDisabledInProduction", func(t *testing.T) {
-		authSvc.SetDevLoginEnabled(false)
-		defer authSvc.SetDevLoginEnabled(true)
-
+	t.Run("Vulnerability9b_NoDemoOrMockLogin", func(t *testing.T) {
 		demoResp, demoSess, _ := postSession(t, server.URL+"/api/v1/auth/demo-login",
 			map[string]string{"email": userAEmail}, "", nil)
-		if demoSess != nil || demoResp.StatusCode != http.StatusNotFound {
-			t.Fatalf("SECURITY BREACH: demo-login available with dev login disabled (status %d)", demoResp.StatusCode)
+		if demoSess != nil || demoResp.StatusCode == http.StatusOK {
+			t.Fatalf("SECURITY BREACH: demo-login endpoint still exists (status %d)", demoResp.StatusCode)
 		}
 
-		mockResp, mockSess, _ := postSession(t, server.URL+"/api/v1/auth/google",
-			map[string]string{"id_token": "mock-google-" + userAEmail}, "", nil)
-		if mockSess != nil || mockResp.StatusCode == http.StatusOK {
-			t.Fatalf("SECURITY BREACH: mock Google token accepted with dev login disabled (status %d)", mockResp.StatusCode)
+		for _, token := range []string{"mock-google-" + userAEmail, "demo-" + userAEmail} {
+			mockResp, mockSess, _ := postSession(t, server.URL+"/api/v1/auth/google",
+				map[string]string{"id_token": token}, "", nil)
+			if mockSess != nil || mockResp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("SECURITY BREACH: mock token %q accepted (status %d)", token, mockResp.StatusCode)
+			}
+		}
+	})
+
+	// -------------------------------------------------------------------------
+	// 9c. Step 1 review follow-ups
+	// -------------------------------------------------------------------------
+	t.Run("Vulnerability9c_GuestCannotClaimPhone", func(t *testing.T) {
+		guestBearer, _, _ := startGuest(t, server.URL)
+		body, _ := json.Marshal(map[string]string{"phone": fmt.Sprintf("08%08d", time.Now().UnixNano()%100000000)})
+		req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/users/me/zalo", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", guestBearer)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("SECURITY BREACH: guest connected a phone number (status %d)", resp.StatusCode)
+		}
+	})
+
+	t.Run("Vulnerability9d_MigratedGuestTokenRejected", func(t *testing.T) {
+		guestBearer, _, _ := startGuest(t, server.URL)
+		googleLogin(t, server.URL, fmt.Sprintf("migrate-%s@dealhunter.vn", uuid.New().String()[:8]), guestBearer)
+
+		// The guest's access token is still a valid JWT, but the guest no longer exists as such
+		req, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/tracked-products", nil)
+		req.Header.Set("Authorization", guestBearer)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("expected 401 for migrated guest token, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Vulnerability9e_LoginCSRFBlocked", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/guest", strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "text/plain")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnsupportedMediaType || len(resp.Cookies()) != 0 {
+			t.Fatalf("expected 415 without cookie for form-style auth POST, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Vulnerability9g_GuestPhoneMovesOnMigration", func(t *testing.T) {
+		guestBearer, guestSess, _ := startGuest(t, server.URL)
+		phone := fmt.Sprintf("07%08d", time.Now().UnixNano()%100000000)
+		// Legacy guest rows may still carry a phone from before guests were blocked from Zalo
+		if _, err := dbPool.Exec(ctx, "UPDATE users SET phone = $2 WHERE id = $1", guestSess.User.ID, phone); err != nil {
+			t.Fatal(err)
+		}
+		_, member, _ := googleLogin(t, server.URL, fmt.Sprintf("phone-%s@dealhunter.vn", uuid.New().String()[:8]), guestBearer)
+
+		var memberPhone, guestPhone *string
+		_ = dbPool.QueryRow(ctx, "SELECT phone FROM users WHERE id = $1", member.User.ID).Scan(&memberPhone)
+		_ = dbPool.QueryRow(ctx, "SELECT phone FROM users WHERE id = $1", guestSess.User.ID).Scan(&guestPhone)
+		if memberPhone == nil || *memberPhone != phone || guestPhone != nil {
+			t.Fatalf("expected phone moved to member, got member=%v guest=%v", memberPhone, guestPhone)
+		}
+	})
+
+	t.Run("Vulnerability9f_NoDemoAccountsRemain", func(t *testing.T) {
+		var demo int
+		if err := dbPool.QueryRow(ctx, "SELECT COUNT(*) FROM users WHERE auth_provider = 'demo'").Scan(&demo); err != nil {
+			t.Fatal(err)
+		}
+		if demo != 0 {
+			t.Fatalf("expected no demo accounts, found %d", demo)
 		}
 	})
 
@@ -708,10 +774,11 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 		}
 		respZalo1.Body.Close()
 
-		// User B attempts to connect the same phone number
+		// Another member attempts to connect the same phone number
+		otherMemberBearer, _, _ := googleLogin(t, server.URL, fmt.Sprintf("member-x-%s@dealhunter.vn", uuid.New().String()[:8]), "")
 		reqZalo2, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/users/me/zalo", bytes.NewBuffer(zaloBody1))
 		reqZalo2.Header.Set("Content-Type", "application/json")
-		reqZalo2.Header.Set("Authorization", userBBearer)
+		reqZalo2.Header.Set("Authorization", otherMemberBearer)
 		respZalo2, err := client.Do(reqZalo2)
 		if err != nil {
 			t.Fatalf("Duplicate Zalo connection request error: %v", err)

@@ -54,13 +54,13 @@ CORS_ALLOWED_ORIGINS=https://dealhunter.vn,https://www.dealhunter.vn
 
 # 2. AUTHENTICATION & SECURITY (BAT BUOC THAY DOI)
 # Tao chuoi ngau nhien it nhat 32 bytes: openssl rand -base64 32
+# Moi APP_ENV khac "development"/"test" (vi du production, staging) deu ap dung quy tac nghiem ngat ben duoi.
 # API se TU CHOI KHOI DONG neu: JWT_SECRET < 32 ky tu hoac la gia tri mac dinh cua dev, thieu GOOGLE_CLIENT_ID,
-# CORS_ALLOWED_ORIGINS rong hoac chua "*", ENABLE_DEV_LOGIN=true, AUTH_COOKIE_SECURE=false.
+# CORS_ALLOWED_ORIGINS rong hoac chua "*", AUTH_COOKIE_SECURE=false.
 JWT_SECRET=THAY_THE_BANG_CHUOI_BI_MAT_NGAU_NHIEN_IT_NHAT_32_KY_TU_CHO_PROD
 GOOGLE_CLIENT_ID=your-production-google-client-id.apps.googleusercontent.com
 ACCESS_TOKEN_TTL=15m
 REFRESH_TOKEN_TTL=720h
-ENABLE_DEV_LOGIN=false
 AUTH_COOKIE_SECURE=true
 # Luu y: cookie refresh dung SameSite=Lax, vi vay Web va API phai cung "site"
 # (vi du dealhunter.vn va api.dealhunter.vn). Frontend can NEXT_PUBLIC_GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID.

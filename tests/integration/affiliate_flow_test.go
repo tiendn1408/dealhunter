@@ -76,8 +76,7 @@ func TestAffiliateLinkEngineFlow(t *testing.T) {
 	compCache := comparison.NewRedisCache(rdb)
 	compSvc := comparison.NewComparisonService(comparisonRepo, compCache)
 	jwtMgr := auth.NewJWTManager("test-affiliate-secret-key-32b!", 1*time.Hour)
-	authSvc := auth.NewAuthService(authRepo, jwtMgr, "")
-	authSvc.SetDevLoginEnabled(true)
+	authSvc := newTestAuthService(t, authRepo, jwtMgr)
 
 	// Configure Affiliate Transformer
 	affCfg := affiliate.Config{
@@ -110,17 +109,8 @@ func TestAffiliateLinkEngineFlow(t *testing.T) {
 
 	// 1. Create a user session
 	userID := uuid.New()
-	loginBody, _ := json.Marshal(map[string]string{
-		"email": fmt.Sprintf("affiliate-%s@dealhunter.vn", userID.String()[:8]),
-		"name":  "Affiliate Tester",
-	})
-	loginResp, err := client.Post(server.URL+"/api/v1/auth/demo-login", "application/json", bytes.NewBuffer(loginBody))
-	if err != nil || loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("Login failed: %v", err)
-	}
-	var loginData auth.Session
-	_ = json.NewDecoder(loginResp.Body).Decode(&loginData)
-	loginResp.Body.Close()
+	_, loginDataPtr, _ := googleLogin(t, server.URL, fmt.Sprintf("affiliate-%s@dealhunter.vn", userID.String()[:8]), "")
+	loginData := *loginDataPtr
 	userToken := loginData.AccessToken
 	authUserID := loginData.User.ID
 

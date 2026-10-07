@@ -107,10 +107,17 @@ func (h *Handler) bearerClaims(r *http.Request) (*auth.UserClaims, error) {
 }
 
 // resolveUserID returns the caller's user ID from a guest or member access token.
+// A guest token stops working as soon as that guest has been migrated into an account.
 func (h *Handler) resolveUserID(r *http.Request) (uuid.UUID, error) {
 	claims, err := h.bearerClaims(r)
 	if err != nil {
 		return uuid.Nil, err
+	}
+	if claims.Role == auth.RoleGuest && h.authService != nil {
+		user, err := h.authService.GetProfile(r.Context(), claims.UserID)
+		if err != nil || user.AuthProvider != "guest" {
+			return uuid.Nil, ErrUnauthorized
+		}
 	}
 	return claims.UserID, nil
 }
@@ -125,6 +132,21 @@ func (h *Handler) getAuthenticatedUserID(r *http.Request) (uuid.UUID, error) {
 		return uuid.Nil, ErrMemberRequired
 	}
 	return claims.UserID, nil
+}
+
+// requireMember writes 401 (no/invalid token) or 403 (guest) and returns false unless the caller
+// is a signed-in member.
+func (h *Handler) requireMember(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	userID, err := h.getAuthenticatedUserID(r)
+	switch {
+	case errors.Is(err, ErrMemberRequired):
+		http.Error(w, "đăng nhập tài khoản để sử dụng tính năng này", http.StatusForbidden)
+		return uuid.Nil, false
+	case err != nil:
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return uuid.Nil, false
+	}
+	return userID, true
 }
 
 type TrackRequest struct {
@@ -772,9 +794,8 @@ func (h *Handler) ConnectZalo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.resolveUserID(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	userID, ok := h.requireMember(w, r)
+	if !ok {
 		return
 	}
 
@@ -803,9 +824,8 @@ func (h *Handler) DisconnectZalo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.resolveUserID(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	userID, ok := h.requireMember(w, r)
+	if !ok {
 		return
 	}
 

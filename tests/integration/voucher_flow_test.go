@@ -78,8 +78,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	compCache := comparison.NewRedisCache(rdb)
 	compSvc := comparison.NewComparisonService(comparisonRepo, compCache)
 	jwtMgr := auth.NewJWTManager("test-voucher-secret-key-32b-ok!", 1*time.Hour)
-	authSvc := auth.NewAuthService(authRepo, jwtMgr, "")
-	authSvc.SetDevLoginEnabled(true)
+	authSvc := newTestAuthService(t, authRepo, jwtMgr)
 
 	// Affiliate Transformer
 	affCfg := affiliate.Config{
@@ -104,17 +103,8 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	client := server.Client()
 
 	// 1. Authenticate user
-	loginBody, _ := json.Marshal(map[string]string{
-		"email": fmt.Sprintf("voucher-user-%s@dealhunter.vn", uuid.New().String()[:8]),
-		"name":  "Voucher Hunter",
-	})
-	loginResp, err := client.Post(server.URL+"/api/v1/auth/demo-login", "application/json", bytes.NewBuffer(loginBody))
-	if err != nil || loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("Login failed: %v", err)
-	}
-	var loginData auth.Session
-	_ = json.NewDecoder(loginResp.Body).Decode(&loginData)
-	loginResp.Body.Close()
+	_, loginDataPtr, _ := googleLogin(t, server.URL, fmt.Sprintf("voucher-user-%s@dealhunter.vn", uuid.New().String()[:8]), "")
+	loginData := *loginDataPtr
 	userToken := loginData.AccessToken
 	userID := loginData.User.ID
 

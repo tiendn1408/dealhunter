@@ -16,17 +16,27 @@ var (
 	ErrCannotMigrateSelf   = errors.New("cannot migrate data to the same user account")
 	ErrInvalidGuestAccount = errors.New("cannot migrate data from an existing registered account")
 	ErrAlreadyMigrated     = errors.New("guest data has already been migrated")
+	ErrAccountConflict     = errors.New("email is linked to a different account")
 )
+
+// GoogleIdentity is the verified subset of a Google ID token.
+type GoogleIdentity struct {
+	Sub     string
+	Email   string
+	Name    string
+	Picture string
+}
 
 type UserRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	UpsertUser(ctx context.Context, user *User) error
+	UpsertGoogleUser(ctx context.Context, id GoogleIdentity) (*User, error)
 	MigrateGuestData(ctx context.Context, guestID uuid.UUID, targetUserID uuid.UUID) (*MigrationResult, error)
 
 	CreateRefreshToken(ctx context.Context, rt *RefreshToken) error
 	RotateRefreshToken(ctx context.Context, oldHash string, next *RefreshToken) (uuid.UUID, error)
-	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	RevokeRefreshFamily(ctx context.Context, tokenHash string) error
 }
 
 type PostgresUserRepository struct {
@@ -36,6 +46,8 @@ type PostgresUserRepository struct {
 func NewPostgresUserRepository(pool *pgxpool.Pool) *PostgresUserRepository {
 	return &PostgresUserRepository{pool: pool}
 }
+
+const userColumns = `id, email, name, avatar_url, auth_provider, zalo_id, phone, created_at, updated_at`
 
 func (r *PostgresUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*User, error) {
 	query := `
@@ -91,6 +103,48 @@ func (r *PostgresUserRepository) UpsertUser(ctx context.Context, user *User) err
 	return nil
 }
 
+// UpsertGoogleUser finds or creates the account for a verified Google identity, atomically.
+// Accounts are matched by Google `sub`; an existing email row is linked only if it is a Google account
+// without a different `sub` (a reassigned email never inherits another person's account).
+func (r *PostgresUserRepository) UpsertGoogleUser(ctx context.Context, id GoogleIdentity) (*User, error) {
+	if id.Sub == "" || id.Email == "" {
+		return nil, errors.New("google identity requires sub and email")
+	}
+
+	row := r.pool.QueryRow(ctx, `
+		UPDATE users SET
+			email = $2,
+			name = COALESCE(NULLIF($3, ''), name),
+			avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
+			updated_at = NOW()
+		WHERE google_sub = $1
+		RETURNING `+userColumns, id.Sub, id.Email, id.Name, id.Picture)
+	user, err := scanUser(row)
+	if err == nil {
+		return user, nil
+	}
+	if !errors.Is(err, ErrUserNotFound) {
+		return nil, err
+	}
+
+	row = r.pool.QueryRow(ctx, `
+		INSERT INTO users (id, email, name, avatar_url, auth_provider, google_sub, created_at, updated_at)
+		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), 'google', $5, NOW(), NOW())
+		ON CONFLICT (email) DO UPDATE SET
+			google_sub = EXCLUDED.google_sub,
+			name = COALESCE(EXCLUDED.name, users.name),
+			avatar_url = COALESCE(EXCLUDED.avatar_url, users.avatar_url),
+			updated_at = NOW()
+		WHERE users.auth_provider = 'google' AND users.google_sub IS NULL
+		RETURNING `+userColumns, uuid.New(), id.Email, id.Name, id.Picture, id.Sub)
+	user, err = scanUser(row)
+	if errors.Is(err, ErrUserNotFound) {
+		// The email belongs to a non-Google account or to a different Google `sub`
+		return nil, ErrAccountConflict
+	}
+	return user, err
+}
+
 func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID uuid.UUID, targetUserID uuid.UUID) (*MigrationResult, error) {
 	if guestID == targetUserID {
 		return nil, ErrCannotMigrateSelf
@@ -135,6 +189,19 @@ func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID u
 		return nil, fmt.Errorf("clean duplicate guest trackings: %w", err)
 	}
 
+	// 1b. Drop guest alert rules that duplicate an identical rule the target user already has
+	deleteDupAlertsQuery := `
+		DELETE FROM alert_rules g
+		USING alert_rules m
+		WHERE g.user_id = $1 AND m.user_id = $2
+		  AND g.product_source_id = m.product_source_id
+		  AND g.rule_type = m.rule_type
+		  AND g.threshold_value = m.threshold_value
+	`
+	if _, err := tx.Exec(ctx, deleteDupAlertsQuery, guestID, targetUserID); err != nil {
+		return nil, fmt.Errorf("clean duplicate guest alert rules: %w", err)
+	}
+
 	// 2. Reassign remaining tracked_products from guest to target user
 	reassignTrackingQuery := `
 		UPDATE tracked_products
@@ -166,6 +233,22 @@ func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID u
 	tagLogs, err := tx.Exec(ctx, reassignLogsQuery, guestID, targetUserID)
 	if err != nil {
 		return nil, fmt.Errorf("reassign notification logs: %w", err)
+	}
+
+	// 4b. Move the guest's Zalo/phone link to the target if it has none (both columns are unique,
+	// so clear the guest row first)
+	var guestZalo, guestPhone *string
+	if err := tx.QueryRow(ctx,
+		`UPDATE users g SET zalo_id = NULL, phone = NULL FROM users old WHERE g.id = $1 AND old.id = g.id RETURNING old.zalo_id, old.phone`,
+		guestID).Scan(&guestZalo, &guestPhone); err != nil {
+		return nil, fmt.Errorf("detach guest zalo link: %w", err)
+	}
+	if guestZalo != nil || guestPhone != nil {
+		if _, err := tx.Exec(ctx,
+			`UPDATE users SET zalo_id = COALESCE(zalo_id, $2), phone = COALESCE(phone, $3), updated_at = NOW() WHERE id = $1`,
+			targetUserID, guestZalo, guestPhone); err != nil {
+			return nil, fmt.Errorf("move guest zalo link: %w", err)
+		}
 	}
 
 	// 5. Invalidate every guest session so the guest identity cannot be reused

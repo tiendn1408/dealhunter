@@ -68,7 +68,6 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
       ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-720h}
-      ENABLE_DEV_LOGIN: "false"
       AUTH_COOKIE_SECURE: "true"
       AFFILIATE_ENABLED: ${AFFILIATE_ENABLED:-true}
       SHOPEE_AFFILIATE_ID: ${SHOPEE_AFFILIATE_ID}
@@ -178,7 +177,7 @@ services:
       context: ../dealhunter-web
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080/api/v1}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required (e.g. https://dealhunter.vn/api/v1)}
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
     restart: always
     ports:

@@ -16,7 +16,10 @@ Header `X-User-ID` **khong con duoc chap nhan** (bi bo qua); request khong co to
 
 - **Access token**: JWT HS256, song **15 phut** (`ACCESS_TOKEN_TTL`), claim `role` = `guest` hoac `user`. Frontend chi luu trong bo nho.
 - **Refresh token**: cookie `dh_refresh` (HttpOnly, SameSite=Lax, Secure o production, Path `/api/v1/auth`), song **30 ngay** (`REFRESH_TOKEN_TTL`).
-  Moi lan refresh se xoay vong token; dung lai token cu (sau 30 giay an han cho nhieu tab) bi coi la danh cap va thu hoi toan bo phien.
+  Moi lan refresh se xoay vong token (nghiem ngat, khong co thoi gian an han); dung lai token da xoay vong bi coi la danh cap va thu hoi toan bo phien.
+  Frontend tuan tu hoa refresh giua cac tab bang Web Locks API. Logout thu hoi ca "ho" token cua lan dang nhap do.
+- **Chong CSRF cho `/auth/*`**: moi `POST /auth/*` bat buoc `Content-Type: application/json` (`415` neu khong) va neu co header `Origin` thi phai nam trong `CORS_ALLOWED_ORIGINS` (`403` neu khong).
+- **Guest vs thanh vien**: token guest dung duoc cho cac API theo doi gia; lien ket Zalo (`POST/DELETE /users/me/zalo`) chi danh cho thanh vien da dang nhap (`403` voi guest). Token guest het hieu luc ngay khi guest da duoc di tru vao tai khoan.
 - **Khach vang lai**: goi `POST /auth/guest` de nhan phien guest do server ky (khong tu sinh UUID phia client).
 - Frontend goi API voi `credentials: "include"` cho cac endpoint `/auth/*`; khi gap `401`, goi `/auth/refresh` mot lan roi thu lai.
 
@@ -86,12 +89,8 @@ Tat ca endpoint dang nhap / refresh tra ve cung dinh dang **Session** va dat coo
 - Backend kiem tra `aud == GOOGLE_CLIENT_ID`, `iss` la Google, `email_verified == true`.
 - **Ma loi**: `401` token khong hop le; `503` chua cau hinh `GOOGLE_CLIENT_ID`.
 
-### 3.3. Dang Nhap Demo (chi moi truong phat trien)
-- **Endpoint**: `POST /api/v1/auth/demo-login`
-- **Kha dung khi**: `ENABLE_DEV_LOGIN=true` (khong bao gio o production); nguoc lai tra ve `404`.
-- **Request Body** (tuy chon): `{ "email": "tester@dealhunter.vn", "name": "Tester" }`
-- **Ma loi**: `409` neu email thuoc tai khoan da dang ky bang Google.
-- Token `"mock-google-<email>"` cho `/auth/google` cung chi hoat dong khi `ENABLE_DEV_LOGIN=true`.
+### 3.3. Khong Co Dang Nhap Demo / Token Gia
+He thong **khong** co `demo-login` hay token gia lap (`mock-google-*`); Google la phuong thuc dang nhap duy nhat.
 
 ### 3.3a. Lam Moi Phien
 - **Endpoint**: `POST /api/v1/auth/refresh` (gui kem cookie `dh_refresh`)

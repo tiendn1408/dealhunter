@@ -14,8 +14,6 @@ import (
 )
 
 var (
-	ErrDevLoginDisabled    = errors.New("demo and mock logins are disabled in this environment")
-	ErrEmailRegistered     = errors.New("email belongs to a registered account")
 	ErrGoogleNotConfigured = errors.New("google login is not configured")
 	ErrInvalidGoogleToken  = errors.New("invalid google id_token")
 )
@@ -45,13 +43,12 @@ type AuthService struct {
 	jwtManager         *JWTManager
 	googleClientID     string
 	googleTokenInfoURL string
-	devLoginEnabled    bool
 	refreshTokenTTL    time.Duration
 	httpClient         *http.Client
 }
 
-// NewAuthService creates the auth service. Demo and mock-Google logins stay disabled
-// until SetDevLoginEnabled(true) is called (never in production).
+// NewAuthService creates the auth service. Google is the only login method; there are no
+// demo or mock logins.
 func NewAuthService(repo UserRepository, jwtManager *JWTManager, googleClientID string) *AuthService {
 	return &AuthService{
 		repo:               repo,
@@ -63,16 +60,13 @@ func NewAuthService(repo UserRepository, jwtManager *JWTManager, googleClientID 
 	}
 }
 
-func (s *AuthService) SetDevLoginEnabled(enabled bool) {
-	s.devLoginEnabled = enabled
-}
-
 func (s *AuthService) SetRefreshTokenTTL(ttl time.Duration) {
 	if ttl > 0 {
 		s.refreshTokenTTL = ttl
 	}
 }
 
+// SetGoogleTokenInfoURL overrides Google's tokeninfo endpoint (tests only).
 func (s *AuthService) SetGoogleTokenInfoURL(u string) {
 	s.googleTokenInfoURL = u
 }
@@ -89,47 +83,6 @@ func (s *AuthService) StartGuestSession(ctx context.Context) (*Session, error) {
 	return s.issueSession(ctx, user, nil)
 }
 
-// DemoLogin signs into (or creates) a demo account. Dev environments only, and it never
-// returns an account that was registered through a real provider.
-func (s *AuthService) DemoLogin(ctx context.Context, req DemoLoginRequest, guestID uuid.UUID) (*Session, error) {
-	if !s.devLoginEnabled {
-		return nil, ErrDevLoginDisabled
-	}
-
-	email := strings.TrimSpace(strings.ToLower(req.Email))
-	if email == "" {
-		email = "demo@dealhunter.vn"
-	}
-
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		name = "Demo DealHunter"
-	}
-
-	avatar := "https://api.dicebear.com/7.x/bottts/svg?seed=" + email
-
-	user, err := s.repo.GetByEmail(ctx, email)
-	if err != nil {
-		if !errors.Is(err, ErrUserNotFound) {
-			return nil, fmt.Errorf("lookup demo user: %w", err)
-		}
-		user = &User{
-			ID:           uuid.New(),
-			Email:        &email,
-			Name:         &name,
-			AvatarURL:    &avatar,
-			AuthProvider: "demo",
-		}
-		if err := s.repo.UpsertUser(ctx, user); err != nil {
-			return nil, fmt.Errorf("create demo user: %w", err)
-		}
-	} else if user.AuthProvider != "demo" {
-		return nil, ErrEmailRegistered
-	}
-
-	return s.loginAs(ctx, user, guestID)
-}
-
 // GoogleLogin verifies a Google ID token and signs the user in, migrating the caller's
 // guest data when guestID is set (taken from the caller's own guest access token).
 func (s *AuthService) GoogleLogin(ctx context.Context, idToken string, guestID uuid.UUID) (*Session, error) {
@@ -138,40 +91,21 @@ func (s *AuthService) GoogleLogin(ctx context.Context, idToken string, guestID u
 		return nil, ErrInvalidGoogleToken
 	}
 
-	var email, name, picture string
+	info, err := s.verifyGoogleIDToken(ctx, idToken)
+	if err != nil {
+		return nil, err
+	}
 
-	if s.devLoginEnabled && strings.HasPrefix(idToken, "mock-google-") {
-		email = strings.ToLower(strings.TrimPrefix(idToken, "mock-google-"))
-		if !strings.Contains(email, "@") {
-			email = email + "@gmail.com"
-		}
-		name = "Google User " + strings.Split(email, "@")[0]
-		picture = "https://api.dicebear.com/7.x/bottts/svg?seed=" + email
-	} else {
-		info, err := s.verifyGoogleIDToken(ctx, idToken)
-		if err != nil {
+	user, err := s.repo.UpsertGoogleUser(ctx, GoogleIdentity{
+		Sub:     info.Sub,
+		Email:   strings.ToLower(info.Email),
+		Name:    info.Name,
+		Picture: info.Picture,
+	})
+	if err != nil {
+		if errors.Is(err, ErrAccountConflict) {
 			return nil, err
 		}
-		email = strings.ToLower(info.Email)
-		name = info.Name
-		picture = info.Picture
-	}
-
-	user, err := s.repo.GetByEmail(ctx, email)
-	if err != nil {
-		if !errors.Is(err, ErrUserNotFound) {
-			return nil, fmt.Errorf("lookup user by email: %w", err)
-		}
-		user = &User{
-			ID:    uuid.New(),
-			Email: &email,
-		}
-	}
-	user.Name = &name
-	user.AvatarURL = &picture
-	user.AuthProvider = "google"
-
-	if err := s.repo.UpsertUser(ctx, user); err != nil {
 		return nil, fmt.Errorf("upsert google user: %w", err)
 	}
 
@@ -206,7 +140,7 @@ func (s *AuthService) verifyGoogleIDToken(ctx context.Context, idToken string) (
 	}
 
 	if info.Aud != s.googleClientID || !googleIssuers[info.Iss] ||
-		info.EmailVerified != "true" || info.Email == "" {
+		info.EmailVerified != "true" || info.Email == "" || info.Sub == "" {
 		return nil, ErrInvalidGoogleToken
 	}
 	return &info, nil
@@ -218,7 +152,7 @@ func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*Ses
 		return nil, ErrInvalidRefreshToken
 	}
 
-	raw, next, err := newRefreshToken(uuid.Nil, s.refreshTokenTTL)
+	raw, next, err := newRefreshToken(uuid.Nil, uuid.Nil, s.refreshTokenTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -239,11 +173,12 @@ func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*Ses
 	return s.buildSession(user, raw, next.ExpiresAt, nil)
 }
 
+// Logout ends the login the refresh token belongs to (every token in its family).
 func (s *AuthService) Logout(ctx context.Context, rawRefreshToken string) error {
 	if rawRefreshToken == "" {
 		return nil
 	}
-	return s.repo.RevokeRefreshToken(ctx, HashRefreshToken(rawRefreshToken))
+	return s.repo.RevokeRefreshFamily(ctx, HashRefreshToken(rawRefreshToken))
 }
 
 func (s *AuthService) loginAs(ctx context.Context, user *User, guestID uuid.UUID) (*Session, error) {
@@ -263,7 +198,7 @@ func (s *AuthService) loginAs(ctx context.Context, user *User, guestID uuid.UUID
 }
 
 func (s *AuthService) issueSession(ctx context.Context, user *User, migration *MigrationResult) (*Session, error) {
-	raw, rt, err := newRefreshToken(user.ID, s.refreshTokenTTL)
+	raw, rt, err := newRefreshToken(user.ID, uuid.Nil, s.refreshTokenTTL)
 	if err != nil {
 		return nil, err
 	}

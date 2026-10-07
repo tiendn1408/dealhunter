@@ -29,6 +29,12 @@ func authAs(req *http.Request, userID uuid.UUID) {
 	req.Header.Set("Authorization", "Bearer "+token)
 }
 
+// authAsMember attaches a valid registered-member access token for userID.
+func authAsMember(req *http.Request, userID uuid.UUID) {
+	token, _ := testJWTManager.GenerateAccessToken(&auth.User{ID: userID, AuthProvider: "google"})
+	req.Header.Set("Authorization", "Bearer "+token)
+}
+
 // newTestHandler returns a handler that validates tokens from testJWTManager.
 func newTestHandler() *Handler {
 	return &Handler{jwtManager: testJWTManager}
@@ -532,20 +538,31 @@ func TestUserProfileAndZaloConnect(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", w.Code)
 	}
 
-	// 2. Connect Zalo
+	// 2. Guests cannot claim a phone number
 	connectBody, _ := json.Marshal(map[string]interface{}{
 		"phone": "0912345678",
 	})
+	guestReq := httptest.NewRequest(http.MethodPost, "/api/v1/users/me/zalo", bytes.NewReader(connectBody))
+	guestReq.Header.Set("Content-Type", "application/json")
+	wGuest := httptest.NewRecorder()
+	r.ServeHTTP(wGuest, guestReq)
+	if wGuest.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for guest Zalo connect, got %d", wGuest.Code)
+	}
+
+	// 3. Members can connect Zalo
 	connectReq := httptest.NewRequest(http.MethodPost, "/api/v1/users/me/zalo", bytes.NewReader(connectBody))
 	connectReq.Header.Set("Content-Type", "application/json")
+	authAsMember(connectReq, defaultUserID)
 	wConnect := httptest.NewRecorder()
 	r.ServeHTTP(wConnect, connectReq)
 	if wConnect.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d: %s", wConnect.Code, wConnect.Body.String())
 	}
 
-	// 3. Disconnect Zalo
+	// 4. Disconnect Zalo
 	disconnectReq := httptest.NewRequest(http.MethodDelete, "/api/v1/users/me/zalo", nil)
+	authAsMember(disconnectReq, defaultUserID)
 	wDisconnect := httptest.NewRecorder()
 	r.ServeHTTP(wDisconnect, disconnectReq)
 	if wDisconnect.Code != http.StatusOK {

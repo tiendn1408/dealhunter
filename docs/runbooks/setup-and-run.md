@@ -124,7 +124,7 @@ go run cmd/notifier/main.go
 
 ## 6. Kiem tra & Kiem thu He thong (Verification)
 
-Moi API du lieu yeu cau access token. Lay token guest (hoac dang nhap demo o muc 6.7) truoc khi goi cac lenh ben duoi:
+Moi API du lieu yeu cau access token. Lay token guest (hoac dang nhap Google tren giao dien web, xem muc 6.7) truoc khi goi cac lenh ben duoi:
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/guest | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 ```
@@ -180,13 +180,12 @@ curl -X GET http://localhost:8080/api/v1/product-groups \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### 6.7. Xac thuc & Dang nhap Demo / Google (GAP-02)
+### 6.7. Xac thuc Google (GAP-02)
+Dang nhap duy nhat qua Google (khong co demo-login hay token gia). Can tao OAuth Client ID loai Web tren
+Google Cloud Console, them `http://localhost:3000` vao Authorized JavaScript origins, roi dat cung gia tri cho
+`GOOGLE_CLIENT_ID` (backend) va `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (web). Dang nhap tren giao dien web; frontend gui
+ID token len `POST /api/v1/auth/google`.
 ```bash
-# Dang nhap Demo (chi khi ENABLE_DEV_LOGIN=true), nhan access_token:
-curl -X POST http://localhost:8080/api/v1/auth/demo-login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "tester@dealhunter.vn"}'
-
 # Lay thong tin tai khoan nguoi dung hien tai:
 curl -X GET http://localhost:8080/api/v1/auth/me \
   -H "Authorization: Bearer $TOKEN"

@@ -36,7 +36,6 @@ type Config struct {
 	GoogleClientID      string
 	AccessTokenTTL      time.Duration
 	RefreshTokenTTL     time.Duration
-	DevLoginEnabled     bool
 	AuthCookieSecure    bool
 
 	// Affiliate Marketing (Phase 3.5.1)
@@ -87,11 +86,15 @@ func Load() (*Config, error) {
 	zaloAppID := getEnv("ZALO_APP_ID", "")
 	zaloSecret := getEnv("ZALO_OA_SECRET_KEY", "")
 	zaloRefreshToken := getEnv("ZALO_REFRESH_TOKEN", "")
-	zaloWebhookSecret := getEnv("ZALO_WEBHOOK_SECRET", zaloSecret)
+	// Compose passes unset variables as "", so an empty override falls back to the OA secret key
+	zaloWebhookSecret := getEnv("ZALO_WEBHOOK_SECRET", "")
+	if zaloWebhookSecret == "" {
+		zaloWebhookSecret = zaloSecret
+	}
 	zaloEnabled := getEnv("ZALO_ENABLED", "false") == "true" || zaloToken != "" || zaloRefreshToken != ""
 
 	appEnv := getEnv("APP_ENV", "development")
-	isDev := appEnv == "development"
+	isDev := !isStrictEnv(appEnv)
 
 	accessTTL, err := time.ParseDuration(getEnv("ACCESS_TOKEN_TTL", "15m"))
 	if err != nil {
@@ -129,7 +132,6 @@ func Load() (*Config, error) {
 		GoogleClientID:      getEnv("GOOGLE_CLIENT_ID", ""),
 		AccessTokenTTL:      accessTTL,
 		RefreshTokenTTL:     refreshTTL,
-		DevLoginEnabled:     getEnv("ENABLE_DEV_LOGIN", strconv.FormatBool(isDev)) == "true",
 		AuthCookieSecure:    getEnv("AUTH_COOKIE_SECURE", strconv.FormatBool(!isDev)) == "true",
 
 		// Affiliate Marketing
@@ -147,8 +149,18 @@ func Load() (*Config, error) {
 // DevJWTSecret is the public development default. It is rejected in production.
 const DevJWTSecret = "dealhunter-super-secret-jwt-key-32bytes-secure!"
 
+// isStrictEnv reports whether production-grade rules apply. Only an explicit "development" or "test"
+// is relaxed; any other value (production, staging, Production, typos) is treated as production.
+func isStrictEnv(appEnv string) bool {
+	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	case "development", "test":
+		return false
+	}
+	return true
+}
+
 func (c *Config) IsProduction() bool {
-	return c.AppEnv == "production"
+	return isStrictEnv(c.AppEnv)
 }
 
 // CORSOrigins returns the comma-separated CORS_ALLOWED_ORIGINS as a list.
@@ -180,9 +192,6 @@ func (c *Config) ValidateAPI() error {
 		}
 		if c.GoogleClientID == "" {
 			problems = append(problems, "GOOGLE_CLIENT_ID is required")
-		}
-		if c.DevLoginEnabled {
-			problems = append(problems, "ENABLE_DEV_LOGIN must be false")
 		}
 		if !c.AuthCookieSecure {
 			problems = append(problems, "AUTH_COOKIE_SECURE must be true")

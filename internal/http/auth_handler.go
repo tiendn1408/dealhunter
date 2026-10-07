@@ -31,33 +31,6 @@ func (h *Handler) StartGuestSession(w http.ResponseWriter, r *http.Request) {
 	h.writeSession(w, sess)
 }
 
-// DemoLogin is only available when dev login is enabled (APP_ENV != production).
-// POST /api/v1/auth/demo-login
-func (h *Handler) DemoLogin(w http.ResponseWriter, r *http.Request) {
-	if h.authService == nil {
-		http.Error(w, "auth service not initialized", http.StatusInternalServerError)
-		return
-	}
-
-	var req auth.DemoLoginRequest
-	// Body is optional for demo-login
-	_ = json.NewDecoder(r.Body).Decode(&req)
-
-	sess, err := h.authService.DemoLogin(r.Context(), req, h.guestIDFromRequest(r))
-	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrDevLoginDisabled):
-			http.NotFound(w, r)
-		case errors.Is(err, auth.ErrEmailRegistered):
-			http.Error(w, err.Error(), http.StatusConflict)
-		default:
-			http.Error(w, "demo login failed", http.StatusInternalServerError)
-		}
-		return
-	}
-	h.writeSession(w, sess)
-}
-
 // GoogleLogin verifies a Google ID token. If the request carries a guest access token,
 // that guest's data is migrated into the account.
 // POST /api/v1/auth/google
@@ -147,7 +120,11 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.authService.GetProfile(r.Context(), userID)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if errors.Is(err, auth.ErrUserNotFound) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, "could not load user", http.StatusInternalServerError)
 		return
 	}
 

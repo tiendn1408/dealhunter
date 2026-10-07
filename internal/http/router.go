@@ -39,8 +39,8 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 
 		// Phase 1 Foundation / GAP-02: Authentication & Guest Data Migration
 		r.Route("/auth", func(r chi.Router) {
+			r.Use(authCSRFGuard(handler.corsAllowedOrigins))
 			r.Post("/guest", handler.StartGuestSession)
-			r.Post("/demo-login", handler.DemoLogin)
 			r.Post("/google", handler.GoogleLogin)
 			r.Post("/refresh", handler.RefreshSession)
 			r.Post("/logout", handler.Logout)
@@ -99,12 +99,32 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 	return r
 }
 
-// corsMiddleware allows credentialed requests (refresh-token cookie) from the configured origins only.
-// "*" in the list echoes any origin and must only be used in development.
-func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+// authCSRFGuard blocks cross-site login/logout CSRF on POST /auth/*: the request must be JSON
+// (an HTML form cannot send application/json without a CORS preflight) and, when the browser
+// sends an Origin, it must be an allowed origin.
+func authCSRFGuard(allowedOrigins []string) func(http.Handler) http.Handler {
+	allowAny, allowed := parseOrigins(allowedOrigins)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				if origin := r.Header.Get("Origin"); origin != "" && !allowAny && !allowed[origin] {
+					http.Error(w, "origin not allowed", http.StatusForbidden)
+					return
+				}
+				if mt := strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0]); !strings.EqualFold(mt, "application/json") {
+					http.Error(w, "content-type must be application/json", http.StatusUnsupportedMediaType)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func parseOrigins(origins []string) (bool, map[string]bool) {
 	allowAny := false
-	allowed := make(map[string]bool, len(allowedOrigins))
-	for _, o := range allowedOrigins {
+	allowed := make(map[string]bool, len(origins))
+	for _, o := range origins {
 		o = strings.TrimRight(strings.TrimSpace(o), "/")
 		if o == "*" {
 			allowAny = true
@@ -112,6 +132,13 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			allowed[o] = true
 		}
 	}
+	return allowAny, allowed
+}
+
+// corsMiddleware allows credentialed requests (refresh-token cookie) from the configured origins only.
+// "*" in the list echoes any origin and must only be used in development.
+func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	allowAny, allowed := parseOrigins(allowedOrigins)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

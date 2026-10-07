@@ -102,10 +102,7 @@ func main() {
 	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.AccessTokenTTL)
 	authSvc := auth.NewAuthService(authRepo, jwtMgr, cfg.GoogleClientID)
 	authSvc.SetRefreshTokenTTL(cfg.RefreshTokenTTL)
-	authSvc.SetDevLoginEnabled(cfg.DevLoginEnabled)
-	if cfg.DevLoginEnabled {
-		logger.Warn("Dev login (demo-login, mock Google tokens) is ENABLED; never use this in production")
-	}
+	go purgeRefreshTokens(ctx, authRepo, logger)
 
 	// GAP-03: Matching Service
 	matchingRepo := matching.NewPostgresMatchingRepository(dbPool)
@@ -167,6 +164,24 @@ func main() {
 		logger.Error("Server shutdown failed", "err", err)
 	}
 	logger.Info("API server stopped")
+}
+
+// purgeRefreshTokens hourly deletes refresh tokens that expired or were revoked more than 7 days ago.
+func purgeRefreshTokens(ctx context.Context, repo *auth.PostgresUserRepository, logger *slog.Logger) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		if n, err := repo.PurgeRefreshTokens(ctx, 7*24*time.Hour); err != nil {
+			logger.Error("Refresh token purge failed", "err", err)
+		} else if n > 0 {
+			logger.Info("Purged old refresh tokens", "count", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 type trackingLinker struct {
