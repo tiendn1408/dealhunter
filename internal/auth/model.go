@@ -8,26 +8,38 @@ import (
 )
 
 type User struct {
-	ID           uuid.UUID  `json:"id"`
-	Email        *string    `json:"email,omitempty"`
-	Name         *string    `json:"name,omitempty"`
-	AvatarURL    *string    `json:"avatar_url,omitempty"`
-	AuthProvider string     `json:"auth_provider"`
-	ZaloID       *string    `json:"zalo_id,omitempty"`
-	Phone        *string    `json:"phone,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID           uuid.UUID `json:"id"`
+	Email        *string   `json:"email,omitempty"`
+	Name         *string   `json:"name,omitempty"`
+	AvatarURL    *string   `json:"avatar_url,omitempty"`
+	AuthProvider string    `json:"auth_provider"`
+	ZaloID       *string   `json:"zalo_id,omitempty"`
+	Phone        *string   `json:"phone,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
+
+const (
+	RoleGuest = "guest"
+	RoleUser  = "user"
+)
 
 type UserClaims struct {
 	UserID uuid.UUID `json:"user_id"`
 	Email  string    `json:"email,omitempty"`
+	Role   string    `json:"role"`
 	jwt.RegisteredClaims
 }
 
-type LoginResponse struct {
-	Token string `json:"token"`
-	User  *User  `json:"user"`
+// Session is the result of any login, guest bootstrap or refresh.
+// RefreshToken is delivered to the client only as an HttpOnly cookie.
+type Session struct {
+	AccessToken      string           `json:"access_token"`
+	ExpiresIn        int64            `json:"expires_in"`
+	User             *User            `json:"user"`
+	Migration        *MigrationResult `json:"migration,omitempty"`
+	RefreshToken     string           `json:"-"`
+	RefreshExpiresAt time.Time        `json:"-"`
 }
 
 type DemoLoginRequest struct {
@@ -37,10 +49,6 @@ type DemoLoginRequest struct {
 
 type GoogleLoginRequest struct {
 	IDToken string `json:"id_token"`
-}
-
-type MigrateRequest struct {
-	GuestUserID uuid.UUID `json:"guest_user_id"`
 }
 
 type MigrationResult struct {

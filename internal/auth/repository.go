@@ -23,6 +23,10 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	UpsertUser(ctx context.Context, user *User) error
 	MigrateGuestData(ctx context.Context, guestID uuid.UUID, targetUserID uuid.UUID) (*MigrationResult, error)
+
+	CreateRefreshToken(ctx context.Context, rt *RefreshToken) error
+	RotateRefreshToken(ctx context.Context, oldHash string, next *RefreshToken) (uuid.UUID, error)
+	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 }
 
 type PostgresUserRepository struct {
@@ -164,7 +168,12 @@ func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID u
 		return nil, fmt.Errorf("reassign notification logs: %w", err)
 	}
 
-	// 5. Mark guest account as migrated
+	// 5. Invalidate every guest session so the guest identity cannot be reused
+	if _, err := tx.Exec(ctx, `UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`, guestID); err != nil {
+		return nil, fmt.Errorf("revoke guest sessions: %w", err)
+	}
+
+	// 6. Mark guest account as migrated
 	markMigratedQuery := `
 		UPDATE users
 		SET auth_provider = 'migrated', updated_at = NOW()

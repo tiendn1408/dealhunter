@@ -32,7 +32,10 @@ type Handler struct {
 	authService          *auth.AuthService
 	jwtManager           *auth.JWTManager
 	matchingService      *matching.MatchingService
+	zaloAppID            string
 	zaloWebhookSecret    string
+	authCookieSecure     bool
+	corsAllowedOrigins   []string
 	affiliateTransformer affiliate.LinkTransformer
 	voucherRepo          voucher.Repository
 }
@@ -54,8 +57,21 @@ func (h *Handler) SetAlertAndNotificationRepos(ar alert.Repository, nr notificat
 	h.notifRepo = nr
 }
 
-func (h *Handler) SetZaloWebhookSecret(secret string) {
+// SetZaloWebhookCredentials configures webhook signature verification
+// (Zalo signs with the OA app ID and OA secret key).
+func (h *Handler) SetZaloWebhookCredentials(appID, secret string) {
+	h.zaloAppID = appID
 	h.zaloWebhookSecret = secret
+}
+
+// SetAuthCookieSecure marks the refresh-token cookie Secure (HTTPS only).
+func (h *Handler) SetAuthCookieSecure(secure bool) {
+	h.authCookieSecure = secure
+}
+
+// SetCORSAllowedOrigins restricts browser origins. "*" allows any origin (development only).
+func (h *Handler) SetCORSAllowedOrigins(origins []string) {
+	h.corsAllowedOrigins = origins
 }
 
 func (h *Handler) SetComparisonService(svc *comparison.ComparisonService) {
@@ -72,51 +88,41 @@ func (h *Handler) SetMatchingService(svc *matching.MatchingService) {
 }
 
 var (
-	ErrUnauthorized            = errors.New("unauthorized")
-	ErrImpersonationDisallowed = errors.New("unauthorized: registered member impersonation is prohibited")
+	ErrUnauthorized   = errors.New("unauthorized")
+	ErrMemberRequired = errors.New("unauthorized: registered account required")
 )
 
-func (h *Handler) resolveUserID(r *http.Request) (uuid.UUID, error) {
+// bearerClaims validates the access token in the Authorization header.
+// Identity is never taken from client-supplied headers such as X-User-ID.
+func (h *Handler) bearerClaims(r *http.Request) (*auth.UserClaims, error) {
 	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-		if h.jwtManager != nil {
-			claims, err := h.jwtManager.ValidateToken(tokenStr)
-			if err != nil || claims == nil || claims.UserID == uuid.Nil {
-				return uuid.Nil, ErrUnauthorized
-			}
-			return claims.UserID, nil
-		}
-		return uuid.Nil, ErrUnauthorized
+	if !strings.HasPrefix(authHeader, "Bearer ") || h.jwtManager == nil {
+		return nil, ErrUnauthorized
 	}
-
-	val := r.Header.Get("X-User-ID")
-	if parsed, err := uuid.Parse(val); err == nil && parsed != uuid.Nil {
-		// Prevent impersonating a registered member without a valid Bearer token
-		if h.authService != nil {
-			user, err := h.authService.GetProfile(r.Context(), parsed)
-			if err == nil && user != nil && user.AuthProvider != "" && user.AuthProvider != "guest" {
-				return uuid.Nil, ErrImpersonationDisallowed
-			}
-		}
-		return parsed, nil
+	claims, err := h.jwtManager.ValidateToken(strings.TrimPrefix(authHeader, "Bearer "))
+	if err != nil || claims == nil || claims.UserID == uuid.Nil {
+		return nil, ErrUnauthorized
 	}
-
-	return uuid.MustParse("00000000-0000-0000-0000-000000000001"), nil
+	return claims, nil
 }
 
+// resolveUserID returns the caller's user ID from a guest or member access token.
+func (h *Handler) resolveUserID(r *http.Request) (uuid.UUID, error) {
+	claims, err := h.bearerClaims(r)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return claims.UserID, nil
+}
+
+// getAuthenticatedUserID only accepts access tokens of registered (non-guest) accounts.
 func (h *Handler) getAuthenticatedUserID(r *http.Request) (uuid.UUID, error) {
-	authHeader := r.Header.Get("Authorization")
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return uuid.Nil, errors.New("authorization header required")
+	claims, err := h.bearerClaims(r)
+	if err != nil {
+		return uuid.Nil, err
 	}
-	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-	if h.jwtManager == nil {
-		return uuid.Nil, errors.New("jwt manager not configured")
-	}
-	claims, err := h.jwtManager.ValidateToken(tokenStr)
-	if err != nil || claims == nil || claims.UserID == uuid.Nil {
-		return uuid.Nil, errors.New("invalid or expired token")
+	if claims.Role != auth.RoleUser {
+		return uuid.Nil, ErrMemberRequired
 	}
 	return claims.UserID, nil
 }

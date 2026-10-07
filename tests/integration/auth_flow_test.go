@@ -73,6 +73,7 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	compSvc := comparison.NewComparisonService(comparisonRepo, nil)
 	jwtMgr := auth.NewJWTManager("test-auth-integration-secret-32-bytes!!", 1*time.Hour)
 	authSvc := auth.NewAuthService(authRepo, jwtMgr, "")
+	authSvc.SetDevLoginEnabled(true)
 
 	handler := router.NewHandler(trackingSvc, pricingSvc)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
@@ -84,15 +85,17 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	server := httptest.NewServer(r)
 	defer server.Close()
 
-	guestID := uuid.New()
-	_, _ = dbPool.Exec(ctx, "INSERT INTO users (id) VALUES ($1) ON CONFLICT DO NOTHING", guestID)
+	// Step 1: Guest bootstraps a session and tracks a product
+	guestBearer, guestSess, guestCookie := startGuest(t, server.URL)
+	if guestSess.User.AuthProvider != "guest" {
+		t.Fatalf("expected guest user, got %s", guestSess.User.AuthProvider)
+	}
 
-	// Step 1: Guest tracks a product with X-User-ID
 	prodURL := fmt.Sprintf("https://mock.dealhunter.vn/item/sony-%s", uuid.New().String()[:8])
 	trackBody, _ := json.Marshal(map[string]string{"url": prodURL})
 	req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/tracked-products", bytes.NewBuffer(trackBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", guestID.String())
+	req.Header.Set("Authorization", guestBearer)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil || resp.StatusCode != http.StatusCreated {
@@ -100,48 +103,63 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Step 2: User logs in via Demo Login
-	loginBody, _ := json.Marshal(map[string]string{
+	// Step 2: Login while presenting the guest token migrates the guest data automatically
+	loginResp, authResult, loginCookie := postSession(t, server.URL+"/api/v1/auth/demo-login", map[string]string{
 		"email": fmt.Sprintf("user-%s@dealhunter.vn", uuid.New().String()[:8]),
 		"name":  "DealHunter Explorer",
-	})
-	loginReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/demo-login", bytes.NewBuffer(loginBody))
-	loginReq.Header.Set("Content-Type", "application/json")
-
-	loginResp, err := http.DefaultClient.Do(loginReq)
-	if err != nil || loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("Demo login failed: %v, status: %d", err, loginResp.StatusCode)
+	}, guestBearer, nil)
+	if authResult == nil {
+		t.Fatalf("Demo login failed, status: %d", loginResp.StatusCode)
 	}
-
-	var authResult auth.LoginResponse
-	_ = json.NewDecoder(loginResp.Body).Decode(&authResult)
-	loginResp.Body.Close()
-
-	if authResult.Token == "" {
-		t.Fatal("Expected non-empty JWT token")
+	if authResult.AccessToken == "" || loginCookie == nil || !loginCookie.HttpOnly {
+		t.Fatal("Expected access token and HttpOnly refresh cookie")
 	}
-	token := authResult.Token
+	token := authResult.AccessToken
 	authUserID := authResult.User.ID
 
-	// Step 3: Call Migrate API with JWT token
-	migrateBody, _ := json.Marshal(map[string]interface{}{
-		"guest_user_id": guestID,
-	})
-	migrateReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(migrateBody))
-	migrateReq.Header.Set("Content-Type", "application/json")
-	migrateReq.Header.Set("Authorization", "Bearer "+token)
-
-	migResp, err := http.DefaultClient.Do(migrateReq)
-	if err != nil || migResp.StatusCode != http.StatusOK {
-		t.Fatalf("Migrate API failed: %v, status: %d", err, migResp.StatusCode)
+	if authResult.Migration == nil || authResult.Migration.MigratedProducts != 1 {
+		t.Fatalf("Expected 1 migrated product, got %+v", authResult.Migration)
 	}
 
-	var migResult auth.MigrationResult
-	_ = json.NewDecoder(migResp.Body).Decode(&migResult)
-	migResp.Body.Close()
+	// Step 3: Refresh rotates the cookie; replaying the old cookie is rejected
+	refreshResp, refreshed, rotatedCookie := postSession(t, server.URL+"/api/v1/auth/refresh", nil, "", loginCookie)
+	if refreshed == nil || rotatedCookie == nil || rotatedCookie.Value == loginCookie.Value {
+		t.Fatalf("Refresh failed or did not rotate cookie, status: %d", refreshResp.StatusCode)
+	}
+	if refreshed.User.ID != authUserID {
+		t.Fatalf("Refresh returned wrong user %s", refreshed.User.ID)
+	}
+	// Replay after the concurrent-tab grace window is treated as theft
+	_, _ = dbPool.Exec(ctx, "UPDATE refresh_tokens SET revoked_at = NOW() - INTERVAL '5 minutes' WHERE token_hash = $1",
+		auth.HashRefreshToken(loginCookie.Value))
+	if replay, _, _ := postSession(t, server.URL+"/api/v1/auth/refresh", nil, "", loginCookie); replay.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 replaying rotated refresh token, got %d", replay.StatusCode)
+	}
+	if again, _, _ := postSession(t, server.URL+"/api/v1/auth/refresh", nil, "", rotatedCookie); again.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("Expected reuse detection to revoke the rotated token too, got %d", again.StatusCode)
+	}
 
-	if migResult.MigratedProducts != 1 {
-		t.Errorf("Expected 1 migrated product, got %d", migResult.MigratedProducts)
+	// The migrated guest's session was revoked during migration
+	if guestCookie == nil {
+		t.Fatal("Expected guest refresh cookie")
+	}
+	if after, _, _ := postSession(t, server.URL+"/api/v1/auth/refresh", nil, "", guestCookie); after.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 refreshing migrated guest session, got %d", after.StatusCode)
+	}
+
+	// Logout revokes the member session (the replay above already revoked this token family,
+	// so use a fresh login)
+	_, _, freshCookie := postSession(t, server.URL+"/api/v1/auth/demo-login",
+		map[string]string{"email": *authResult.User.Email}, "", nil)
+	logoutReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/logout", nil)
+	logoutReq.AddCookie(freshCookie)
+	logoutResp, err := http.DefaultClient.Do(logoutReq)
+	if err != nil || logoutResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("Logout failed: %v", err)
+	}
+	logoutResp.Body.Close()
+	if after, _, _ := postSession(t, server.URL+"/api/v1/auth/refresh", nil, "", freshCookie); after.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 refreshing after logout, got %d", after.StatusCode)
 	}
 
 	// Step 4: Verify tracked-products returns the migrated item for the authenticated user

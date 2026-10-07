@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/auth"
 	"github.com/tiendang/deal-hunter/internal/comparison"
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/jobs"
@@ -93,6 +94,8 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	matchingSvc := matching.NewMatchingService(matchingRepo, searcher, linker, comparisonSvc)
 
 	handler := router.NewHandler(trackingSvc, pricingSvc)
+	jwtMgr := auth.NewJWTManager("test-integration-access-secret-32-bytes!", time.Hour)
+	handler.SetAuthService(nil, jwtMgr)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
 	handler.SetComparisonService(comparisonSvc)
 	handler.SetMatchingService(matchingSvc)
@@ -112,7 +115,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	})
 	req, _ := http.NewRequestWithContext(ctx, "POST", ts.URL+"/api/v1/tracked-products", bytes.NewReader(trackPayload))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", userID.String())
+	req.Header.Set("Authorization", bearerFor(t, jwtMgr, userID))
 
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusCreated {
@@ -149,7 +152,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 
 	t.Log("Step 2: Triggering Auto-Match for the product...")
 	autoMatchReq, _ := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/api/v1/tracked-products/%s/auto-match", ts.URL, trackedID), nil)
-	autoMatchReq.Header.Set("X-User-ID", userID.String())
+	autoMatchReq.Header.Set("Authorization", bearerFor(t, jwtMgr, userID))
 
 	amResp, err := client.Do(autoMatchReq)
 	if err != nil || amResp.StatusCode != http.StatusOK {
@@ -165,7 +168,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 
 	t.Log("Step 3: Querying match suggestions...")
 	suggReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/api/v1/tracked-products/%s/match-suggestions", ts.URL, trackedID), nil)
-	suggReq.Header.Set("X-User-ID", userID.String())
+	suggReq.Header.Set("Authorization", bearerFor(t, jwtMgr, userID))
 
 	suggResp, err := client.Do(suggReq)
 	if err != nil || suggResp.StatusCode != http.StatusOK {
@@ -187,7 +190,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 
 		acceptReq, _ := http.NewRequestWithContext(ctx, "POST",
 			fmt.Sprintf("%s/api/v1/products/%s/match-suggestions/%s/accept", ts.URL, suggList.ProductID, targetSugg.ID), nil)
-		acceptReq.Header.Set("X-User-ID", userID.String())
+		acceptReq.Header.Set("Authorization", bearerFor(t, jwtMgr, userID))
 
 		accResp, err := client.Do(acceptReq)
 		if err != nil || accResp.StatusCode != http.StatusOK {

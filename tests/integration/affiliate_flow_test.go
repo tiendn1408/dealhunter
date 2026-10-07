@@ -77,6 +77,7 @@ func TestAffiliateLinkEngineFlow(t *testing.T) {
 	compSvc := comparison.NewComparisonService(comparisonRepo, compCache)
 	jwtMgr := auth.NewJWTManager("test-affiliate-secret-key-32b!", 1*time.Hour)
 	authSvc := auth.NewAuthService(authRepo, jwtMgr, "")
+	authSvc.SetDevLoginEnabled(true)
 
 	// Configure Affiliate Transformer
 	affCfg := affiliate.Config{
@@ -117,10 +118,10 @@ func TestAffiliateLinkEngineFlow(t *testing.T) {
 	if err != nil || loginResp.StatusCode != http.StatusOK {
 		t.Fatalf("Login failed: %v", err)
 	}
-	var loginData auth.LoginResponse
+	var loginData auth.Session
 	_ = json.NewDecoder(loginResp.Body).Decode(&loginData)
 	loginResp.Body.Close()
-	userToken := loginData.Token
+	userToken := loginData.AccessToken
 	authUserID := loginData.User.ID
 
 	// 2. Track a Shopee product

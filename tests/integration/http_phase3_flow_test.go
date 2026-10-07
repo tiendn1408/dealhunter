@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/auth"
 	"github.com/tiendang/deal-hunter/internal/comparison"
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/jobs"
@@ -71,6 +72,8 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	comparisonSvc := comparison.NewComparisonService(comparisonRepo, comparisonCache)
 
 	handler := router.NewHandler(trackingSvc, pricingSvc)
+	jwtMgr := auth.NewJWTManager("test-integration-access-secret-32-bytes!", time.Hour)
+	handler.SetAuthService(nil, jwtMgr)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
 	handler.SetComparisonService(comparisonSvc)
 
@@ -90,7 +93,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	})
 	req, _ := http.NewRequest("POST", server.URL+"/api/v1/tracked-products", bytes.NewReader(trackPayload))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", userID)
+	req.Header.Set("Authorization", bearerFor(t, jwtMgr, uuid.MustParse(userID)))
 
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusCreated {
@@ -125,7 +128,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	// Step 2: User opens Detail Page -> calls GET /api/v1/tracked-products/{id}/comparison
 	t.Log("Step 2: Checking comparison before second source is linked...")
 	req, _ = http.NewRequest("GET", server.URL+"/api/v1/tracked-products/"+trackResp.ID+"/comparison", nil)
-	req.Header.Set("X-User-ID", userID)
+	req.Header.Set("Authorization", bearerFor(t, jwtMgr, uuid.MustParse(userID)))
 	resp, err = client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("Failed to get comparison for single source, status: %d, err: %v", resp.StatusCode, err)
@@ -157,7 +160,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	})
 	req, _ = http.NewRequest("POST", server.URL+"/api/v1/products/"+canonicalProductID+"/link-source", bytes.NewReader(linkPayload))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", userID)
+	req.Header.Set("Authorization", bearerFor(t, jwtMgr, uuid.MustParse(userID)))
 	resp, err = client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusCreated {
 		t.Fatalf("Failed to link second source, status: %d, err: %v", resp.StatusCode, err)
@@ -179,7 +182,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	t.Log("Step 4: Testing duplicate link returns 409 Conflict...")
 	req, _ = http.NewRequest("POST", server.URL+"/api/v1/products/"+canonicalProductID+"/link-source", bytes.NewReader(linkPayload))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-ID", userID)
+	req.Header.Set("Authorization", bearerFor(t, jwtMgr, uuid.MustParse(userID)))
 	resp, err = client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusConflict {
 		t.Fatalf("Expected 409 Conflict on duplicate link, got status: %d", resp.StatusCode)
@@ -205,7 +208,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	// Step 5: Frontend refetches comparison -> calls GET /api/v1/tracked-products/{id}/comparison
 	t.Log("Step 5: Verifying multi-platform comparison after link...")
 	req, _ = http.NewRequest("GET", server.URL+"/api/v1/tracked-products/"+trackResp.ID+"/comparison", nil)
-	req.Header.Set("X-User-ID", userID)
+	req.Header.Set("Authorization", bearerFor(t, jwtMgr, uuid.MustParse(userID)))
 	resp, err = client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("Failed to get multi-source comparison, status: %d", resp.StatusCode)
@@ -248,7 +251,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	// Step 6: Verify GET /api/v1/product-groups returns the product group
 	t.Log("Step 6: Verifying product group summary in GET /api/v1/product-groups...")
 	req, _ = http.NewRequest("GET", server.URL+"/api/v1/product-groups", nil)
-	req.Header.Set("X-User-ID", userID)
+	req.Header.Set("Authorization", bearerFor(t, jwtMgr, uuid.MustParse(userID)))
 	resp, err = client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("Failed to list product groups, status: %d", resp.StatusCode)
@@ -287,7 +290,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	// Step 7: Verify GET /api/v1/tracked-products lists both trackings with shared ProductID
 	t.Log("Step 7: Verifying tracking list returns shared ProductID for multi-source badge...")
 	req, _ = http.NewRequest("GET", server.URL+"/api/v1/tracked-products", nil)
-	req.Header.Set("X-User-ID", userID)
+	req.Header.Set("Authorization", bearerFor(t, jwtMgr, uuid.MustParse(userID)))
 	resp, err = client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("Failed to list trackings, status: %d", resp.StatusCode)

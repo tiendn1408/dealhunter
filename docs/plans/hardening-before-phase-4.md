@@ -13,6 +13,30 @@
 
 ---
 
+## 0. Tiến Độ Thực Hiện
+
+| Bước | Trạng thái | Hạng mục đã xong | Ghi chú |
+|---|---|---|---|
+| **1. Bảo mật xác thực** | ✅ Hoàn thành (2026-10-07) | SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-10, OPS-01, OPS-02, OPS-07 (API), GAP-02a, GAP-02c, DOC-03; thêm: chống payload webhook quá lớn (một phần SEC-11), thuật toán chữ ký Zalo (từ nhóm DATA) | Xem chi tiết bên dưới |
+| 2. Phân quyền & validate input | ⏳ Chưa bắt đầu | | |
+| 3 → 9 | ⏳ Chưa bắt đầu | | |
+
+**Chi tiết Bước 1**:
+- Định danh chỉ lấy từ access token (`Authorization: Bearer`), JWT 15 phút có claim `role` (`guest`/`user`), kiểm tra `iss` và `exp`. `X-User-ID` và user mặc định `...0001` đã bị loại bỏ.
+- Refresh token 30 ngày trong cookie `dh_refresh` (HttpOnly, SameSite=Lax, Secure ở production), lưu hash SHA-256 trong bảng `refresh_tokens` (migration `000008`), xoay vòng mỗi lần refresh, phát hiện dùng lại (thu hồi toàn bộ phiên) với 30 giây ân hạn cho nhiều tab.
+- Endpoint mới: `POST /auth/guest`, `/auth/refresh`, `/auth/logout`. Đã gỡ `POST /auth/migrate`; di trú guest chỉ xảy ra khi đăng nhập kèm access token guest của chính người dùng, sau đó phiên guest bị thu hồi.
+- Demo login và token `mock-google-*` chỉ hoạt động khi `ENABLE_DEV_LOGIN=true`; demo login không bao giờ trả về tài khoản Google có sẵn (409).
+- Google login kiểm tra `aud == GOOGLE_CLIENT_ID`, `iss`, `email_verified`.
+- `cfg.ValidateAPI()`: API từ chối khởi động ở production nếu JWT secret yếu/mặc định, thiếu `GOOGLE_CLIENT_ID`, CORS rỗng hoặc `*`, bật dev login, cookie không Secure, hoặc bật Zalo mà thiếu thông tin ký webhook. `docker-compose.prod.yml` bắt buộc các biến này.
+- CORS đọc từ `CORS_ALLOWED_ORIGINS`, chỉ cấp `Allow-Credentials` cho origin được cấu hình.
+- Webhook Zalo: secret chỉ lấy từ cấu hình (thiếu → 503), chữ ký `sha256(appId + body + timestamp + OASecretKey)`, từ chối timestamp lệch quá 15 phút, giới hạn body 64KB.
+- `migrate down` chỉ lùi 1 bước (`-steps N`); `down-all` bắt buộc `-force`.
+- Frontend (`dealhunter-web`): access token chỉ trong bộ nhớ, tự khôi phục phiên bằng `/auth/refresh` hoặc tạo phiên guest, tự refresh và thử lại 1 lần khi gặp 401; nút Google Sign-In thật (Google Identity Services); nút demo/mock chỉ hiện ở môi trường dev.
+
+**Còn mở sau Bước 1**: chưa kiểm thử frontend trên trình duyệt thật với Google Client ID thật; chưa có rate limit cho `POST /auth/guest`.
+
+---
+
 ## 1. Tổng Quan Kết Quả Rà Soát
 
 - `go build ./...`, `go vet ./...` và `go test -short -race ./internal/... ./pkg/...` đều **PASS**.
@@ -53,8 +77,8 @@
 
 **DoD Nhóm 1**:
 - [ ] Mỗi SEC-xx có test (unit hoặc integration) tái hiện kịch bản tấn công và khẳng định bị từ chối.
-- [ ] Không còn đường dẫn code nào đọc `X-User-ID` hoặc trả về user `...0001`.
-- [ ] `APP_ENV=production` với secret yếu → process thoát với lỗi rõ ràng.
+- [x] Không còn đường dẫn code nào đọc `X-User-ID` hoặc trả về user `...0001`.
+- [x] `APP_ENV=production` với secret yếu → process thoát với lỗi rõ ràng.
 - [ ] Mọi route ghi dữ liệu đều đi qua auth middleware và kiểm tra ownership.
 
 ---
@@ -142,7 +166,7 @@
 - [ ] `docker compose -f docker-compose.prod.yml config` lỗi khi thiếu `JWT_SECRET` / `POSTGRES_PASSWORD`.
 - [ ] `make prod-up` chạy toàn stack (bao gồm image web) thành công, mọi service `healthy`.
 - [ ] Từ máy ngoài không truy cập được `:8080` và `/metrics`.
-- [ ] `migrate down` chỉ lùi 1 phiên bản (có test).
+- [x] `migrate down` chỉ lùi 1 phiên bản (đã kiểm tra thủ công trên DB local: 8 → 7; `down-all` không có `-force` bị từ chối).
 
 ---
 

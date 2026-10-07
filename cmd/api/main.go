@@ -40,6 +40,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Load config failed: %v", err)
 	}
+	if err := cfg.ValidateAPI(); err != nil {
+		log.Fatalf("Refusing to start: %v", err)
+	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	logger.Info("Starting API server", "port", cfg.HTTPPort, "env", cfg.AppEnv)
@@ -96,8 +99,13 @@ func main() {
 	pricingSvc := pricing.NewPricingService(pricingRepo)
 	comparisonCache := comparison.NewRedisCache(rdb)
 	comparisonSvc := comparison.NewComparisonService(comparisonRepo, comparisonCache)
-	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, 7*24*time.Hour)
+	jwtMgr := auth.NewJWTManager(cfg.JWTSecret, cfg.AccessTokenTTL)
 	authSvc := auth.NewAuthService(authRepo, jwtMgr, cfg.GoogleClientID)
+	authSvc.SetRefreshTokenTTL(cfg.RefreshTokenTTL)
+	authSvc.SetDevLoginEnabled(cfg.DevLoginEnabled)
+	if cfg.DevLoginEnabled {
+		logger.Warn("Dev login (demo-login, mock Google tokens) is ENABLED; never use this in production")
+	}
 
 	// GAP-03: Matching Service
 	matchingRepo := matching.NewPostgresMatchingRepository(dbPool)
@@ -128,9 +136,9 @@ func main() {
 	handler.SetMatchingService(matchingSvc)
 	handler.SetAffiliateTransformer(affiliateTr)
 	handler.SetVoucherRepository(voucherRepo)
-	if cfg.ZaloWebhookSecret != "" {
-		handler.SetZaloWebhookSecret(cfg.ZaloWebhookSecret)
-	}
+	handler.SetZaloWebhookCredentials(cfg.ZaloAppID, cfg.ZaloWebhookSecret)
+	handler.SetAuthCookieSecure(cfg.AuthCookieSecure)
+	handler.SetCORSAllowedOrigins(cfg.CORSOrigins())
 	r := router.NewRouter(logger, handler)
 
 	srv := &http.Server{

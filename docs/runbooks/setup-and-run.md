@@ -124,21 +124,29 @@ go run cmd/notifier/main.go
 
 ## 6. Kiem tra & Kiem thu He thong (Verification)
 
+Moi API du lieu yeu cau access token. Lay token guest (hoac dang nhap demo o muc 6.7) truoc khi goi cac lenh ben duoi:
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/guest | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+```
+
 ### 6.1. Dang ky theo doi san pham (`POST /api/v1/tracked-products`)
 ```bash
 curl -X POST http://localhost:8080/api/v1/tracked-products \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://shopee.vn/product/123/456"}'
 ```
 
 ### 6.2. Kiem tra lich su gia (`GET /api/v1/tracked-products/:id/prices`)
 ```bash
-curl -X GET http://localhost:8080/api/v1/tracked-products/<product_source_id>/prices
+curl -X GET http://localhost:8080/api/v1/tracked-products/<product_source_id>/prices \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 6.3. Tao quy tac canh bao gia (Phase 2)
 ```bash
 curl -X POST http://localhost:8080/api/v1/tracked-products/<id>/alerts \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "rule_type": "drop_percent",
@@ -150,15 +158,18 @@ curl -X POST http://localhost:8080/api/v1/tracked-products/<id>/alerts \
 ### 6.4. Xem bang so sanh gia da san & Best Deal (Phase 3)
 ```bash
 # Bang so sanh theo ID san pham hoac ID theo doi
-curl -X GET http://localhost:8080/api/v1/tracked-products/<id>/comparison
+curl -X GET http://localhost:8080/api/v1/tracked-products/<id>/comparison \
+  -H "Authorization: Bearer $TOKEN"
 
 # Hoac theo Product ID logic:
-curl -X GET http://localhost:8080/api/v1/products/<product_id>/comparison
+curl -X GET http://localhost:8080/api/v1/products/<product_id>/comparison \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 6.5. Lien ket them nguon san moi (Phase 3)
 ```bash
 curl -X POST http://localhost:8080/api/v1/products/<product_id>/link-source \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://tiktok.com/@shop/product/789"}'
 ```
@@ -166,39 +177,41 @@ curl -X POST http://localhost:8080/api/v1/products/<product_id>/link-source \
 ### 6.6. Danh sach nhom san pham da san (Phase 3)
 ```bash
 curl -X GET http://localhost:8080/api/v1/product-groups \
-  -H "X-User-ID: <user_uuid>"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 6.7. Xac thuc & Dang nhap Demo / Google (GAP-02)
 ```bash
-# Dang nhap Demo 1-click nhan JWT Token:
+# Dang nhap Demo (chi khi ENABLE_DEV_LOGIN=true), nhan access_token:
 curl -X POST http://localhost:8080/api/v1/auth/demo-login \
   -H "Content-Type: application/json" \
-  -d '{"role": "user"}'
+  -d '{"email": "tester@dealhunter.vn"}'
 
 # Lay thong tin tai khoan nguoi dung hien tai:
 curl -X GET http://localhost:8080/api/v1/auth/me \
-  -H "Authorization: Bearer <jwt_token>"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 6.8. Tu dong goi y so khop da san Auto-Matching (GAP-03)
 ```bash
 # Kich hoat tim kiem ung vien tu dong tren cac san:
 curl -X POST http://localhost:8080/api/v1/products/<product_id>/auto-match \
-  -H "Authorization: Bearer <jwt_token>"
+  -H "Authorization: Bearer $TOKEN"
 
 # Lay danh sach goi y so khop:
 curl -X GET http://localhost:8080/api/v1/products/<product_id>/match-suggestions \
-  -H "Authorization: Bearer <jwt_token>"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 6.9. Quan ly Voucher & Gia Ve Tay EffectivePrice (Phase 3.5)
 ```bash
 # Xem danh sach voucher kha dung cua san pham:
-curl -X GET http://localhost:8080/api/v1/tracked-products/<id>/vouchers
+curl -X GET http://localhost:8080/api/v1/tracked-products/<id>/vouchers \
+  -H "Authorization: Bearer $TOKEN"
 
 # Thu cong them voucher moi:
 curl -X POST http://localhost:8080/api/v1/tracked-products/<id>/vouchers \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "voucher_type": "shop_voucher",

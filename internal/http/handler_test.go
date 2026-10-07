@@ -13,9 +13,36 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/auth"
 	"github.com/tiendang/deal-hunter/internal/comparison"
 	"github.com/tiendang/deal-hunter/internal/notification"
 )
+
+var (
+	testJWTManager = auth.NewJWTManager("handler-test-secret-key-at-least-32-bytes", time.Hour)
+	defaultUserID  = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+)
+
+// authAs attaches a valid guest access token for userID.
+func authAs(req *http.Request, userID uuid.UUID) {
+	token, _ := testJWTManager.GenerateAccessToken(&auth.User{ID: userID, AuthProvider: "guest"})
+	req.Header.Set("Authorization", "Bearer "+token)
+}
+
+// newTestHandler returns a handler that validates tokens from testJWTManager.
+func newTestHandler() *Handler {
+	return &Handler{jwtManager: testJWTManager}
+}
+
+// defaultAuth authenticates requests that carry no token as defaultUserID.
+func defaultAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" && r.Header.Get("X-Test-Anonymous") == "" {
+			authAs(r, defaultUserID)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 type mockAlertRepo struct {
 	rules []*alert.AlertRule
@@ -182,12 +209,13 @@ func (m *mockNotifRepo) DisconnectUserZalo(ctx context.Context, userID uuid.UUID
 }
 
 func setupTestRouter() (*chi.Mux, *mockAlertRepo, *mockNotifRepo) {
-	handler := &Handler{}
+	handler := newTestHandler()
 	alertRepo := &mockAlertRepo{}
 	notifRepo := &mockNotifRepo{}
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
 
 	r := chi.NewRouter()
+	r.Use(defaultAuth)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/tracked-products/{id}/alerts", handler.CreateAlert)
 		r.Get("/tracked-products/{id}/alerts", handler.ListAlerts)
@@ -254,7 +282,6 @@ func TestCreateAlert_InvalidType(t *testing.T) {
 func TestListAlerts(t *testing.T) {
 	r, alertRepo, _ := setupTestRouter()
 	sourceID := uuid.New()
-	defaultUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{
 		ID:              uuid.New(),
@@ -302,7 +329,7 @@ func TestListAlerts_Isolation(t *testing.T) {
 
 	// User B queries alerts for the same source
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tracked-products/"+sourceID.String()+"/alerts", nil)
-	req.Header.Set("X-User-ID", userB.String())
+	authAs(req, userB)
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
@@ -324,7 +351,6 @@ func TestListAlerts_Isolation(t *testing.T) {
 func TestDeactivateAlert(t *testing.T) {
 	r, alertRepo, _ := setupTestRouter()
 	alertID := uuid.New()
-	defaultUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{
 		ID:     alertID,
@@ -361,7 +387,7 @@ func TestDeactivateAlert_Isolation(t *testing.T) {
 
 	// User B tries to deactivate User A's alert
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/alerts/"+alertID.String(), nil)
-	req.Header.Set("X-User-ID", userB.String())
+	authAs(req, userB)
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
@@ -397,7 +423,7 @@ func TestGetAlertLogs_Isolation(t *testing.T) {
 
 	// User B attempts to access User A's alert logs
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/alerts/"+alertID.String()+"/logs", nil)
-	req.Header.Set("X-User-ID", userB.String())
+	authAs(req, userB)
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
@@ -409,7 +435,6 @@ func TestGetAlertLogs_Isolation(t *testing.T) {
 
 func TestListNotifications(t *testing.T) {
 	r, _, notifRepo := setupTestRouter()
-	defaultUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 	notifRepo.logs = append(notifRepo.logs, &notification.NotificationLog{
 		ID:          uuid.New(),
@@ -444,7 +469,6 @@ func TestListNotifications(t *testing.T) {
 
 func TestMarkNotificationAsRead(t *testing.T) {
 	r, _, notifRepo := setupTestRouter()
-	defaultUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	notifID := uuid.New()
 
 	notifRepo.logs = append(notifRepo.logs, &notification.NotificationLog{
@@ -468,7 +492,6 @@ func TestMarkNotificationAsRead(t *testing.T) {
 
 func TestListUserAlerts(t *testing.T) {
 	r, alertRepo, _ := setupTestRouter()
-	defaultUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 
 	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{
 		ID:              uuid.New(),
@@ -578,10 +601,11 @@ func TestGetProductComparison_Handler(t *testing.T) {
 	}
 
 	compSvc := comparison.NewComparisonService(compRepo, nil)
-	handler := &Handler{}
+	handler := newTestHandler()
 	handler.SetComparisonService(compSvc)
 
 	r := chi.NewRouter()
+	r.Use(defaultAuth)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/products/{product_id}/comparison", handler.GetProductComparison)
 	})
@@ -620,10 +644,11 @@ func TestListProductGroups_Handler(t *testing.T) {
 	}
 
 	compSvc := comparison.NewComparisonService(compRepo, nil)
-	handler := &Handler{}
+	handler := newTestHandler()
 	handler.SetComparisonService(compSvc)
 
 	r := chi.NewRouter()
+	r.Use(defaultAuth)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/product-groups", handler.ListProductGroups)
 	})
@@ -645,5 +670,31 @@ func TestListProductGroups_Handler(t *testing.T) {
 
 	if len(res.Groups) != 1 {
 		t.Fatalf("expected 1 group, got %d", len(res.Groups))
+	}
+}
+
+// SEC-05: requests without a valid access token are rejected; X-User-ID is ignored
+func TestUnauthenticatedRequestsAreRejected(t *testing.T) {
+	r, alertRepo, _ := setupTestRouter()
+	victim := uuid.New()
+	alertRepo.rules = append(alertRepo.rules, &alert.AlertRule{ID: uuid.New(), UserID: victim, Active: true})
+
+	for _, tc := range []struct{ name, header, value string }{
+		{"no credentials", "", ""},
+		{"forged X-User-ID", "X-User-ID", victim.String()},
+		{"garbage bearer", "Authorization", "Bearer not-a-jwt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/alert-rules", nil)
+			req.Header.Set("X-Test-Anonymous", "1")
+			if tc.header != "" {
+				req.Header.Set(tc.header, tc.value)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }

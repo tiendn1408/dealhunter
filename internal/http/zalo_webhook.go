@@ -1,8 +1,8 @@
 package router
 
 import (
-	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -12,6 +12,11 @@ import (
 	"time"
 
 	"github.com/tiendang/deal-hunter/internal/notification"
+)
+
+const (
+	maxZaloWebhookBody = 64 << 10
+	zaloWebhookMaxSkew = 15 * time.Minute
 )
 
 type ZaloWebhookPayload struct {
@@ -40,39 +45,38 @@ func (h *Handler) HandleZaloWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bodyBytes, err := io.ReadAll(r.Body)
+	// Signature verification is mandatory; never trust a secret supplied by the caller.
+	if h.zaloAppID == "" || h.zaloWebhookSecret == "" {
+		http.Error(w, "zalo webhook not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxZaloWebhookBody))
 	if err != nil {
 		http.Error(w, "read body failed", http.StatusBadRequest)
 		return
 	}
 
-	// Resolve webhook secret
-	webhookSecret := h.zaloWebhookSecret
-	if webhookSecret == "" {
-		webhookSecret = r.Header.Get("X-DealHunter-Secret")
+	var envelope struct {
+		Timestamp json.RawMessage `json:"timestamp"`
 	}
-	if webhookSecret == "" {
-		webhookSecret = r.URL.Query().Get("secret")
+	if err := json.Unmarshal(bodyBytes, &envelope); err != nil {
+		http.Error(w, "invalid json payload", http.StatusBadRequest)
+		return
 	}
+	timestamp := strings.Trim(string(envelope.Timestamp), `"`)
 
-	// Extract signature from headers or query
 	sigHeader := r.Header.Get("X-ZEvent-Signature")
-	if sigHeader == "" {
-		sigHeader = r.Header.Get("X-Zalo-Signature")
-	}
-	if sigHeader == "" {
-		sigHeader = r.URL.Query().Get("mac")
-	}
-	if sigHeader == "" {
-		sigHeader = r.URL.Query().Get("signature")
+	if sigHeader == "" || !verifyZaloSignature(sigHeader, h.zaloAppID, bodyBytes, timestamp, h.zaloWebhookSecret) {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
 	}
 
-	// Verify signature if secret is configured
-	if webhookSecret != "" {
-		if sigHeader == "" || !verifyZaloSignature(sigHeader, bodyBytes, webhookSecret) {
-			http.Error(w, "invalid signature", http.StatusUnauthorized)
-			return
-		}
+	// Reject stale or replayed callbacks
+	eventAt := parseEpoch(timestamp)
+	if eventAt == nil || absDuration(time.Since(*eventAt)) > zaloWebhookMaxSkew {
+		http.Error(w, "stale webhook timestamp", http.StatusUnauthorized)
+		return
 	}
 
 	var payload ZaloWebhookPayload
@@ -160,13 +164,20 @@ func parseEpoch(v any) *time.Time {
 	return &t
 }
 
-func verifyZaloSignature(signature string, body []byte, secretKey string) bool {
-	cleanSig := strings.TrimPrefix(signature, "sha256=")
-	cleanSig = strings.TrimPrefix(cleanSig, "mac=")
+// verifyZaloSignature checks Zalo's X-ZEvent-Signature header:
+// mac = sha256(appId + rawBody + timestamp + OASecretKey), hex encoded.
+func verifyZaloSignature(signature, appID string, body []byte, timestamp, secretKey string) bool {
+	cleanSig := strings.TrimPrefix(strings.TrimSpace(signature), "mac=")
 	cleanSig = strings.ToLower(strings.TrimSpace(cleanSig))
 
-	mac := hmac.New(sha256.New, []byte(secretKey))
-	mac.Write(body)
-	expectedMAC := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(cleanSig), []byte(expectedMAC))
+	sum := sha256.Sum256([]byte(appID + string(body) + timestamp + secretKey))
+	expected := hex.EncodeToString(sum[:])
+	return subtle.ConstantTimeCompare([]byte(cleanSig), []byte(expected)) == 1
+}
+
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
 }

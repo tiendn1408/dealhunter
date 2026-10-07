@@ -54,8 +54,16 @@ CORS_ALLOWED_ORIGINS=https://dealhunter.vn,https://www.dealhunter.vn
 
 # 2. AUTHENTICATION & SECURITY (BAT BUOC THAY DOI)
 # Tao chuoi ngau nhien it nhat 32 bytes: openssl rand -base64 32
+# API se TU CHOI KHOI DONG neu: JWT_SECRET < 32 ky tu hoac la gia tri mac dinh cua dev, thieu GOOGLE_CLIENT_ID,
+# CORS_ALLOWED_ORIGINS rong hoac chua "*", ENABLE_DEV_LOGIN=true, AUTH_COOKIE_SECURE=false.
 JWT_SECRET=THAY_THE_BANG_CHUOI_BI_MAT_NGAU_NHIEN_IT_NHAT_32_KY_TU_CHO_PROD
 GOOGLE_CLIENT_ID=your-production-google-client-id.apps.googleusercontent.com
+ACCESS_TOKEN_TTL=15m
+REFRESH_TOKEN_TTL=720h
+ENABLE_DEV_LOGIN=false
+AUTH_COOKIE_SECURE=true
+# Luu y: cookie refresh dung SameSite=Lax, vi vay Web va API phai cung "site"
+# (vi du dealhunter.vn va api.dealhunter.vn). Frontend can NEXT_PUBLIC_GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID.
 
 # 3. POSTGRESQL DATABASE
 POSTGRES_USER=dealuser
@@ -356,8 +364,14 @@ go run cmd/migrate/main.go up
 ### 6.2 Quy trinh Rollback khan cap khi xay ra loi:
 Neu phien ban moi gap su co va can quay ve phien ban database truoc do:
 ```bash
-# Rollback 1 migration gan nhat
+# Rollback 1 migration gan nhat (mac dinh -steps 1)
 /opt/dealhunter/bin/migrate down
+
+# Rollback nhieu buoc
+/opt/dealhunter/bin/migrate down -steps 2
+
+# CANH BAO: xoa TOAN BO bang va du lieu — chi dung khi chu dong reset, bat buoc co -force
+# /opt/dealhunter/bin/migrate down-all -force
 
 # Sau do restart lai cac service o phien ban on dinh cu:
 sudo systemctl restart dealhunter-api dealhunter-worker dealhunter-scheduler dealhunter-notifier

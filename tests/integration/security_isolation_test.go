@@ -74,6 +74,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	compSvc := comparison.NewComparisonService(comparisonRepo, nil)
 	jwtMgr := auth.NewJWTManager("test-security-isolation-secret-32b!", 1*time.Hour)
 	authSvc := auth.NewAuthService(authRepo, jwtMgr, "")
+	authSvc.SetDevLoginEnabled(true)
 
 	handler := router.NewHandler(trackingSvc, pricingSvc)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
@@ -104,14 +105,16 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	if err != nil || loginResp.StatusCode != http.StatusOK {
 		t.Fatalf("Failed to login User A: %v, status: %d", err, loginResp.StatusCode)
 	}
-	var loginData auth.LoginResponse
+	var loginData auth.Session
 	_ = json.NewDecoder(loginResp.Body).Decode(&loginData)
 	loginResp.Body.Close()
 
-	userAToken := loginData.Token
+	userAToken := loginData.AccessToken
 	userAID := loginData.User.ID
 
-	userBID := uuid.New()
+	// User B is an anonymous guest with a server-issued guest session
+	userBBearer, userBSess, _ := startGuest(t, server.URL)
+	userBID := userBSess.User.ID
 
 	// Shared product URL tracked by both users
 	sharedURL := fmt.Sprintf("https://mock.dealhunter.vn/item/laptop-%s", uuid.New().String()[:8])
@@ -135,7 +138,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// User B tracks the exact same product
 	reqTrackB, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/tracked-products", bytes.NewBuffer(trackPayload))
 	reqTrackB.Header.Set("Content-Type", "application/json")
-	reqTrackB.Header.Set("X-User-ID", userBID.String())
+	reqTrackB.Header.Set("Authorization", userBBearer)
 	respTrackB, err := client.Do(reqTrackB)
 	if err != nil || respTrackB.StatusCode != http.StatusCreated {
 		t.Fatalf("User B track product failed: %v, code: %d", err, respTrackB.StatusCode)
@@ -174,7 +177,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// User B lists alerts for the same product source
 		reqListB, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/tracked-products/%s/alerts", server.URL, sourceID), nil)
-		reqListB.Header.Set("X-User-ID", userBID.String())
+		reqListB.Header.Set("Authorization", userBBearer)
 		respListB, err := client.Do(reqListB)
 		if err != nil || respListB.StatusCode != http.StatusOK {
 			t.Fatalf("User B list alerts request failed: %v, status: %d", err, respListB.StatusCode)
@@ -227,7 +230,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// User B attempts to deactivate User A's alert rule
 		reqDeactB, _ := http.NewRequest(http.MethodDelete, fmt.Sprintf("%s/api/v1/alerts/%s", server.URL, userAAlert.ID), nil)
-		reqDeactB.Header.Set("X-User-ID", userBID.String())
+		reqDeactB.Header.Set("Authorization", userBBearer)
 		respDeactB, err := client.Do(reqDeactB)
 		if err != nil {
 			t.Fatalf("User B deactivate request error: %v", err)
@@ -289,7 +292,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// User B attempts to access User A's alert logs
 		reqLogsB, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/alerts/%s/logs", server.URL, alertRule.ID), nil)
-		reqLogsB.Header.Set("X-User-ID", userBID.String())
+		reqLogsB.Header.Set("Authorization", userBBearer)
 		respLogsB, err := client.Do(reqLogsB)
 		if err != nil {
 			t.Fatalf("User B get logs request error: %v", err)
@@ -324,7 +327,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	t.Run("Vulnerability4_IDORTrackingOperations", func(t *testing.T) {
 		// User B attempts to pause User A's tracking
 		reqPauseB, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v1/tracked-products/%s/pause", server.URL, trackDataA.ID), nil)
-		reqPauseB.Header.Set("X-User-ID", userBID.String())
+		reqPauseB.Header.Set("Authorization", userBBearer)
 		respPauseB, err := client.Do(reqPauseB)
 		if err != nil {
 			t.Fatalf("User B pause request error: %v", err)
@@ -352,7 +355,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// User B attempts to resume User A's tracking
 		reqResumeB, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v1/tracked-products/%s/resume", server.URL, trackDataA.ID), nil)
-		reqResumeB.Header.Set("X-User-ID", userBID.String())
+		reqResumeB.Header.Set("Authorization", userBBearer)
 		respResumeB, err := client.Do(reqResumeB)
 		if err != nil {
 			t.Fatalf("User B resume request error: %v", err)
@@ -365,7 +368,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// User B attempts to view User A's tracking details directly via tracking ID
 		reqGetTrackingB, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/tracked-products/%s", server.URL, trackDataA.ID), nil)
-		reqGetTrackingB.Header.Set("X-User-ID", userBID.String())
+		reqGetTrackingB.Header.Set("Authorization", userBBearer)
 		respGetTrackingB, err := client.Do(reqGetTrackingB)
 		if err != nil {
 			t.Fatalf("User B get tracking request error: %v", err)
@@ -378,7 +381,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// User B attempts to view User A's tracking comparison
 		reqCmpB, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/tracked-products/%s/comparison", server.URL, trackDataA.ID), nil)
-		reqCmpB.Header.Set("X-User-ID", userBID.String())
+		reqCmpB.Header.Set("Authorization", userBBearer)
 		respCmpB, err := client.Do(reqCmpB)
 		if err != nil {
 			t.Fatalf("User B get comparison error: %v", err)
@@ -390,7 +393,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// User B attempts to view User A's tracking match-suggestions
 		reqSuggB, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/tracked-products/%s/match-suggestions", server.URL, trackDataA.ID), nil)
-		reqSuggB.Header.Set("X-User-ID", userBID.String())
+		reqSuggB.Header.Set("Authorization", userBBearer)
 		respSuggB, err := client.Do(reqSuggB)
 		if err != nil {
 			t.Fatalf("User B get match suggestions error: %v", err)
@@ -402,7 +405,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 		// User B attempts to trigger auto-match on User A's tracking ID
 		reqAutoB, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v1/tracked-products/%s/auto-match", server.URL, trackDataA.ID), nil)
-		reqAutoB.Header.Set("X-User-ID", userBID.String())
+		reqAutoB.Header.Set("Authorization", userBBearer)
 		respAutoB, err := client.Do(reqAutoB)
 		if err != nil {
 			t.Fatalf("User B trigger auto-match error: %v", err)
@@ -504,103 +507,75 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 		}
 	})
 
+	// countTrackings returns how many tracked products the bearer's account has.
+	countTrackings := func(t *testing.T, bearer string) int {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/tracked-products", nil)
+		req.Header.Set("Authorization", bearer)
+		resp, err := client.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("list trackings failed: %v", err)
+		}
+		defer resp.Body.Close()
+		var out struct {
+			Data []map[string]interface{} `json:"data"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return len(out.Data)
+	}
+
 	// -------------------------------------------------------------------------
-	// 6. Vulnerability 6 Test: Unauthenticated Migration Prevention
+	// 6. Vulnerability 6 Test: Migration Requires The Guest's Own Session (SEC-06)
 	// -------------------------------------------------------------------------
 	t.Run("Vulnerability6_UnauthenticatedMigrationBlocked", func(t *testing.T) {
-		guestUUID := uuid.New()
-		migrateBody, _ := json.Marshal(map[string]interface{}{
-			"guest_user_id": guestUUID,
-		})
-
-		// Attacker attempts to call migrate without Bearer token
-		reqNoAuth, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(migrateBody))
-		reqNoAuth.Header.Set("Content-Type", "application/json")
-		respNoAuth, err := client.Do(reqNoAuth)
+		// The free-form migrate endpoint no longer exists
+		migrateBody, _ := json.Marshal(map[string]interface{}{"guest_user_id": userBID})
+		reqMigrate, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(migrateBody))
+		reqMigrate.Header.Set("Content-Type", "application/json")
+		reqMigrate.Header.Set("Authorization", "Bearer "+userAToken)
+		respMigrate, err := client.Do(reqMigrate)
 		if err != nil {
 			t.Fatalf("Migrate request error: %v", err)
 		}
-		respNoAuth.Body.Close()
-
-		if respNoAuth.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("Expected 401 Unauthorized for unauthenticated migrate call, got: %d", respNoAuth.StatusCode)
+		respMigrate.Body.Close()
+		if respMigrate.StatusCode == http.StatusOK {
+			t.Fatal("SECURITY BREACH: /auth/migrate still accepts arbitrary guest IDs")
 		}
 
-		// Attacker attempts to forge X-User-ID to target User A without JWT
-		reqForge, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(migrateBody))
-		reqForge.Header.Set("Content-Type", "application/json")
-		reqForge.Header.Set("X-User-ID", userAID.String())
-		respForge, err := client.Do(reqForge)
-		if err != nil {
-			t.Fatalf("Migrate forged request error: %v", err)
+		// Logging in while naming the victim guest through X-User-ID migrates nothing
+		attackerEmail := fmt.Sprintf("attacker-%s@dealhunter.vn", uuid.New().String()[:8])
+		loginReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/demo-login",
+			bytes.NewBufferString(fmt.Sprintf(`{"email":%q}`, attackerEmail)))
+		loginReq.Header.Set("Content-Type", "application/json")
+		loginReq.Header.Set("X-User-ID", userBID.String())
+		loginResp, err := client.Do(loginReq)
+		if err != nil || loginResp.StatusCode != http.StatusOK {
+			t.Fatalf("Attacker login failed: %v", err)
 		}
-		respForge.Body.Close()
+		var attacker auth.Session
+		_ = json.NewDecoder(loginResp.Body).Decode(&attacker)
+		loginResp.Body.Close()
 
-		if respForge.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("Expected 401 Unauthorized for forged X-User-ID migrate call, got: %d", respForge.StatusCode)
+		if attacker.Migration != nil {
+			t.Fatalf("SECURITY BREACH: guest data migrated via forged X-User-ID: %+v", attacker.Migration)
 		}
-
-		// Legitimate migration with User A's Bearer JWT succeeds
-		reqAuth, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(migrateBody))
-		reqAuth.Header.Set("Content-Type", "application/json")
-		reqAuth.Header.Set("Authorization", "Bearer "+userAToken)
-		respAuth, err := client.Do(reqAuth)
-		if err != nil || respAuth.StatusCode != http.StatusOK {
-			t.Fatalf("Legitimate migrate with JWT failed: %v, status: %d", err, respAuth.StatusCode)
+		if countTrackings(t, userBBearer) == 0 {
+			t.Fatal("SECURITY BREACH: guest B lost its tracked products")
 		}
-		respAuth.Body.Close()
 	})
 
 	// -------------------------------------------------------------------------
 	// 7. Vulnerability 7 Test: Registered User Account Theft via Migration Blocked
 	// -------------------------------------------------------------------------
 	t.Run("Vulnerability7_RegisteredUserMigrationTheftBlocked", func(t *testing.T) {
-		// Create Attacker / User C as a registered member
+		// User C logs in presenting User A's member token as if it were a guest token
 		userCEmail := fmt.Sprintf("user-c-%s@dealhunter.vn", uuid.New().String()[:8])
-		loginBodyC, _ := json.Marshal(map[string]string{
-			"email": userCEmail,
-			"name":  "User C Attacker",
-		})
-		loginRespC, err := client.Post(server.URL+"/api/v1/auth/demo-login", "application/json", bytes.NewBuffer(loginBodyC))
-		if err != nil || loginRespC.StatusCode != http.StatusOK {
-			t.Fatalf("Failed to login User C: %v", err)
-		}
-		var loginDataC auth.LoginResponse
-		_ = json.NewDecoder(loginRespC.Body).Decode(&loginDataC)
-		loginRespC.Body.Close()
-		userCToken := loginDataC.Token
+		_, sessC := demoLogin(t, server.URL, userCEmail, "Bearer "+userAToken)
 
-		// User C attempts to steal User A's data by passing User A's UUID as guest_user_id
-		stealPayload, _ := json.Marshal(map[string]interface{}{
-			"guest_user_id": userAID,
-		})
-		reqSteal, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(stealPayload))
-		reqSteal.Header.Set("Content-Type", "application/json")
-		reqSteal.Header.Set("Authorization", "Bearer "+userCToken)
-		respSteal, err := client.Do(reqSteal)
-		if err != nil {
-			t.Fatalf("Theft migrate request error: %v", err)
+		if sessC.Migration != nil {
+			t.Fatalf("SECURITY BREACH: registered member data migrated to another account: %+v", sessC.Migration)
 		}
-		respSteal.Body.Close()
-
-		if respSteal.StatusCode != http.StatusBadRequest {
-			t.Fatalf("SECURITY BREACH: Migration of registered member account did not return 400! Status: %d", respSteal.StatusCode)
-		}
-
-		// Verify User A still owns their tracked product
-		reqCheckA, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/tracked-products", nil)
-		reqCheckA.Header.Set("Authorization", "Bearer "+userAToken)
-		respCheckA, err := client.Do(reqCheckA)
-		if err != nil || respCheckA.StatusCode != http.StatusOK {
-			t.Fatalf("Failed to verify User A trackings: %v", err)
-		}
-		var trackingsA struct {
-			Data []map[string]interface{} `json:"data"`
-		}
-		_ = json.NewDecoder(respCheckA.Body).Decode(&trackingsA)
-		respCheckA.Body.Close()
-
-		if len(trackingsA.Data) == 0 {
+		if countTrackings(t, "Bearer "+userAToken) == 0 {
 			t.Fatalf("SECURITY BREACH: User A's tracked products were stolen or wiped!")
 		}
 	})
@@ -609,44 +584,35 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// 8. Vulnerability 8 Test: Already Migrated Guest Replay Prevented
 	// -------------------------------------------------------------------------
 	t.Run("Vulnerability8_AlreadyMigratedGuestReplayPrevented", func(t *testing.T) {
-		guestDID := uuid.New()
+		guestDBearer, _, guestDCookie := startGuest(t, server.URL)
 		guestURL := fmt.Sprintf("https://mock.dealhunter.vn/item/camera-%s", uuid.New().String()[:8])
 		trackPayload, _ := json.Marshal(map[string]string{"url": guestURL})
 
 		reqTrackGuest, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/tracked-products", bytes.NewBuffer(trackPayload))
 		reqTrackGuest.Header.Set("Content-Type", "application/json")
-		reqTrackGuest.Header.Set("X-User-ID", guestDID.String())
+		reqTrackGuest.Header.Set("Authorization", guestDBearer)
 		respTrackGuest, err := client.Do(reqTrackGuest)
 		if err != nil || respTrackGuest.StatusCode != http.StatusCreated {
 			t.Fatalf("Guest track failed: %v", err)
 		}
 		respTrackGuest.Body.Close()
 
-		// User A legitimately migrates guestDID
-		migratePayload, _ := json.Marshal(map[string]interface{}{
-			"guest_user_id": guestDID,
-		})
-		reqMigrate1, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(migratePayload))
-		reqMigrate1.Header.Set("Content-Type", "application/json")
-		reqMigrate1.Header.Set("Authorization", "Bearer "+userAToken)
-		respMigrate1, err := client.Do(reqMigrate1)
-		if err != nil || respMigrate1.StatusCode != http.StatusOK {
-			t.Fatalf("First migration failed: %v, status: %d", err, respMigrate1.StatusCode)
+		// User A logs in from guest D's browser: guest D's data is migrated to A
+		_, sessA := demoLogin(t, server.URL, userAEmail, guestDBearer)
+		if sessA.Migration == nil || sessA.Migration.MigratedProducts != 1 {
+			t.Fatalf("Expected 1 migrated product, got %+v", sessA.Migration)
 		}
-		respMigrate1.Body.Close()
 
-		// Attempt to replay migration with the same guestDID
-		reqMigrate2, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(migratePayload))
-		reqMigrate2.Header.Set("Content-Type", "application/json")
-		reqMigrate2.Header.Set("Authorization", "Bearer "+userAToken)
-		respMigrate2, err := client.Do(reqMigrate2)
-		if err != nil {
-			t.Fatalf("Replay migration request error: %v", err)
+		// Replaying guest D's (still unexpired) access token into another account migrates nothing
+		replayEmail := fmt.Sprintf("replay-%s@dealhunter.vn", uuid.New().String()[:8])
+		_, sessReplay := demoLogin(t, server.URL, replayEmail, guestDBearer)
+		if sessReplay.Migration != nil {
+			t.Fatalf("Expected no migration on replay, got %+v", sessReplay.Migration)
 		}
-		respMigrate2.Body.Close()
 
-		if respMigrate2.StatusCode != http.StatusBadRequest {
-			t.Fatalf("Expected 400 Bad Request on replay migration of already-migrated guest, got: %d", respMigrate2.StatusCode)
+		// Guest D's refresh token was revoked by the migration
+		if resp, _, _ := postSession(t, server.URL+"/api/v1/auth/refresh", nil, "", guestDCookie); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("Expected migrated guest refresh to be rejected, got %d", resp.StatusCode)
 		}
 	})
 
@@ -654,20 +620,29 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// 9. Vulnerability 9 Test: Migration to Self Prevented
 	// -------------------------------------------------------------------------
 	t.Run("Vulnerability9_MigrationToSelfPrevented", func(t *testing.T) {
-		selfPayload, _ := json.Marshal(map[string]interface{}{
-			"guest_user_id": userAID,
-		})
-		reqSelf, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/migrate", bytes.NewBuffer(selfPayload))
-		reqSelf.Header.Set("Content-Type", "application/json")
-		reqSelf.Header.Set("Authorization", "Bearer "+userAToken)
-		respSelf, err := client.Do(reqSelf)
-		if err != nil {
-			t.Fatalf("Self migrate request error: %v", err)
+		_, sess := demoLogin(t, server.URL, userAEmail, "Bearer "+userAToken)
+		if sess.Migration != nil {
+			t.Fatalf("Expected no self-migration, got %+v", sess.Migration)
 		}
-		respSelf.Body.Close()
+	})
 
-		if respSelf.StatusCode != http.StatusBadRequest {
-			t.Fatalf("Expected 400 Bad Request on self-migration, got: %d", respSelf.StatusCode)
+	// -------------------------------------------------------------------------
+	// 9b. Production-mode Dev Login Disabled (SEC-01, SEC-02)
+	// -------------------------------------------------------------------------
+	t.Run("Vulnerability9b_DevLoginDisabledInProduction", func(t *testing.T) {
+		authSvc.SetDevLoginEnabled(false)
+		defer authSvc.SetDevLoginEnabled(true)
+
+		demoResp, demoSess, _ := postSession(t, server.URL+"/api/v1/auth/demo-login",
+			map[string]string{"email": userAEmail}, "", nil)
+		if demoSess != nil || demoResp.StatusCode != http.StatusNotFound {
+			t.Fatalf("SECURITY BREACH: demo-login available with dev login disabled (status %d)", demoResp.StatusCode)
+		}
+
+		mockResp, mockSess, _ := postSession(t, server.URL+"/api/v1/auth/google",
+			map[string]string{"id_token": "mock-google-" + userAEmail}, "", nil)
+		if mockSess != nil || mockResp.StatusCode == http.StatusOK {
+			t.Fatalf("SECURITY BREACH: mock Google token accepted with dev login disabled (status %d)", mockResp.StatusCode)
 		}
 	})
 
@@ -736,7 +711,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 		// User B attempts to connect the same phone number
 		reqZalo2, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/users/me/zalo", bytes.NewBuffer(zaloBody1))
 		reqZalo2.Header.Set("Content-Type", "application/json")
-		reqZalo2.Header.Set("X-User-ID", userBID.String())
+		reqZalo2.Header.Set("Authorization", userBBearer)
 		respZalo2, err := client.Do(reqZalo2)
 		if err != nil {
 			t.Fatalf("Duplicate Zalo connection request error: %v", err)

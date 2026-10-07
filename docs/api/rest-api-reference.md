@@ -11,17 +11,14 @@ Tai lieu nay dac ta chi tiet toan bo cac endpoint HTTP REST API cua he thong **D
 - **Production**: `https://dealhunter.vn/api/v1`
 
 ### Authentication & Authorization Headers:
-He thong ho tro 2 phuong thuc xac thuc phien lam viec:
+Moi endpoint du lieu ca nhan deu yeu cau **access token** trong header `Authorization: Bearer <access_token>`.
+Header `X-User-ID` **khong con duoc chap nhan** (bi bo qua); request khong co token hop le tra ve `401`.
 
-1. **Bearer JWT Token (`Authorization: Bearer <token>`)**:
-   - Ap dung cho nguoi dung da dang nhap (Google OAuth hoac Demo Login).
-   - Token co thoi han 7 ngay, duoc ky boi `JWT_SECRET`.
-   - Bat buoc khi thuc hien cac thao tac quan tri tai khoan hoac truy van du lieu ca nhan cua thanh vien da dang ky.
-
-2. **Guest User Header (`X-User-ID: <uuid>`)**:
-   - Ap dung cho khach vang lai chua dang nhap.
-   - Neu nguoi dung da dang ky tai khoan that ma su dung header `X-User-ID` khong kem JWT, he thong se tra ve loi `401 Unauthorized` (`ErrImpersonationDisallowed`) de ngan chan gia mao danh tinh.
-   - Gia tri mac dinh fallback khi khong truyen: `00000000-0000-0000-0000-000000000001`.
+- **Access token**: JWT HS256, song **15 phut** (`ACCESS_TOKEN_TTL`), claim `role` = `guest` hoac `user`. Frontend chi luu trong bo nho.
+- **Refresh token**: cookie `dh_refresh` (HttpOnly, SameSite=Lax, Secure o production, Path `/api/v1/auth`), song **30 ngay** (`REFRESH_TOKEN_TTL`).
+  Moi lan refresh se xoay vong token; dung lai token cu (sau 30 giay an han cho nhieu tab) bi coi la danh cap va thu hoi toan bo phien.
+- **Khach vang lai**: goi `POST /auth/guest` de nhan phien guest do server ky (khong tu sinh UUID phia client).
+- Frontend goi API voi `credentials: "include"` cho cac endpoint `/auth/*`; khi gap `401`, goi `/auth/refresh` mot lan roi thu lai.
 
 ### Dinh dang tra ve chung:
 - Content-Type: `application/json; charset=utf-8`
@@ -57,72 +54,58 @@ He thong ho tro 2 phuong thuc xac thuc phien lam viec:
 
 ## 3. Nhom Endpoint Xac Thuc & Nguoi Dung (Authentication — GAP-02)
 
-### 3.1. Dang Nhap Demo 1-Click
-- **Endpoint**: `POST /api/v1/auth/demo-login`
-- **Header**: `Content-Type: application/json`
-- **Request Body**:
-  ```json
-  {
-    "role": "user"
-  }
-  ```
-- **Response `200 OK`**:
-  ```json
-  {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "user": {
-      "id": "c1f7a0b3-4d2e-48f1-9b7a-8f6a3b2c1d0e",
-      "email": "demo-user@dealhunter.vn",
-      "name": "Demo User",
-      "auth_provider": "demo"
-    }
-  }
-  ```
+Tat ca endpoint dang nhap / refresh tra ve cung dinh dang **Session** va dat cookie `dh_refresh`:
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_in": 900,
+  "user": {
+    "id": "e4b2d1c0-5a3f-42e1-8c9a-1b2c3d4e5f6a",
+    "email": "user@gmail.com",
+    "name": "Nguyen Van A",
+    "avatar_url": "https://lh3.googleusercontent.com/...",
+    "auth_provider": "google"
+  },
+  "migration": { "migrated_products": 2, "migrated_alerts": 1, "migrated_notifications": 0 }
+}
+```
+`migration` chi co mat khi dang nhap kem access token **guest** hop le: du lieu cua guest do duoc chuyen sang tai khoan (GAP-02c) va phien guest bi thu hoi.
+
+### 3.1. Khoi Tao Phien Khach Vang Lai
+- **Endpoint**: `POST /api/v1/auth/guest`
+- **Xac thuc**: Khong yeu cau
+- **Response `200 OK`**: Session voi `user.auth_provider = "guest"`.
 
 ### 3.2. Dang Nhap Google OAuth
 - **Endpoint**: `POST /api/v1/auth/google`
-- **Header**: `Content-Type: application/json`
+- **Header**: `Content-Type: application/json`, tuy chon `Authorization: Bearer <guest_access_token>` de di tru du lieu guest
 - **Request Body**:
   ```json
-  {
-    "id_token": "google-id-token-string-from-client-sdk"
-  }
+  { "id_token": "<credential tu Google Identity Services>" }
   ```
-- **Response `200 OK`**:
-  ```json
-  {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "user": {
-      "id": "e4b2d1c0-5a3f-42e1-8c9a-1b2c3d4e5f6a",
-      "email": "user@gmail.com",
-      "name": "Nguyen Van A",
-      "avatar_url": "https://lh3.googleusercontent.com/...",
-      "auth_provider": "google"
-    }
-  }
-  ```
+- Backend kiem tra `aud == GOOGLE_CLIENT_ID`, `iss` la Google, `email_verified == true`.
+- **Ma loi**: `401` token khong hop le; `503` chua cau hinh `GOOGLE_CLIENT_ID`.
 
-### 3.3. Di Tru Du Lieu Khach Vang Lai (Guest Migration)
-- **Endpoint**: `POST /api/v1/auth/migrate`
-- **Header**: `Authorization: Bearer <jwt_token>`, `Content-Type: application/json`
-- **Request Body**:
-  ```json
-  {
-    "guest_id": "00000000-0000-0000-0000-000000000001"
-  }
-  ```
-- **Response `200 OK`**:
-  ```json
-  {
-    "status": "success",
-    "migrated_trackings_count": 5,
-    "migrated_alerts_count": 3
-  }
-  ```
+### 3.3. Dang Nhap Demo (chi moi truong phat trien)
+- **Endpoint**: `POST /api/v1/auth/demo-login`
+- **Kha dung khi**: `ENABLE_DEV_LOGIN=true` (khong bao gio o production); nguoc lai tra ve `404`.
+- **Request Body** (tuy chon): `{ "email": "tester@dealhunter.vn", "name": "Tester" }`
+- **Ma loi**: `409` neu email thuoc tai khoan da dang ky bang Google.
+- Token `"mock-google-<email>"` cho `/auth/google` cung chi hoat dong khi `ENABLE_DEV_LOGIN=true`.
+
+### 3.3a. Lam Moi Phien
+- **Endpoint**: `POST /api/v1/auth/refresh` (gui kem cookie `dh_refresh`)
+- **Response `200 OK`**: Session moi + cookie moi. `401` neu cookie thieu, het han, da thu hoi hoac bi dung lai.
+
+### 3.3b. Dang Xuat
+- **Endpoint**: `POST /api/v1/auth/logout` (gui kem cookie `dh_refresh`)
+- **Response `204 No Content`**: Refresh token bi thu hoi, cookie bi xoa.
+
+> Endpoint `POST /api/v1/auth/migrate` da bi **go bo** (SEC-06): viec di tru chi xay ra khi dang nhap kem token guest cua chinh nguoi dung.
 
 ### 3.4. Lay Thong Tin Nguoi Dung Hien Tai
 - **Endpoint**: `GET /api/v1/auth/me` hoac `GET /api/v1/users/me`
-- **Header**: `Authorization: Bearer <jwt_token>` (hoac `X-User-ID: <uuid>`)
+- **Header**: `Authorization: Bearer <access_token>`
 - **Response `200 OK`**:
   ```json
   {
@@ -140,7 +123,7 @@ He thong ho tro 2 phuong thuc xac thuc phien lam viec:
 
 ### 4.1. Dang Ky Theo Doi URL San Pham Moi
 - **Endpoint**: `POST /api/v1/tracked-products`
-- **Header**: `Content-Type: application/json`, `X-User-ID: <uuid>` (hoac Bearer)
+- **Header**: `Content-Type: application/json`, `Authorization: Bearer <access_token>`
 - **Request Body**:
   ```json
   {
@@ -165,12 +148,12 @@ He thong ho tro 2 phuong thuc xac thuc phien lam viec:
 
 ### 4.2. Danh Sach San Pham Dang Theo Doi
 - **Endpoint**: `GET /api/v1/tracked-products`
-- **Header**: `X-User-ID: <uuid>` (hoac Bearer)
+- **Header**: `Authorization: Bearer <access_token>`
 - **Response `200 OK`**: Danh sach cac ban ghi theo doi kem thong tin gia moi nhat, Best Deal, va huy hieu da san.
 
 ### 4.3. Chi Tiet San Pham Theo Doi
 - **Endpoint**: `GET /api/v1/tracked-products/{id}`
-- **Header**: `X-User-ID: <uuid>` (hoac Bearer)
+- **Header**: `Authorization: Bearer <access_token>`
 - **Response `200 OK`**: Thong tin chi tiet san pham, cac nguon lien ket va thong so thoi gian quet.
 
 ### 4.4. Lich Su Bien Dong Gia (Price History)
@@ -224,7 +207,7 @@ He thong ho tro 2 phuong thuc xac thuc phien lam viec:
 
 ### 5.4. Feed Thong Bao Bien Dong Gia
 - **Endpoint**: `GET /api/v1/notifications?limit=20`
-- **Header**: `X-User-ID: <uuid>` (hoac Bearer)
+- **Header**: `Authorization: Bearer <access_token>`
 - **Response `200 OK`**: Danh sach tin thong bao, kenh gui (zalo/in_app), trang thai doc.
 
 ### 5.5. Danh Dau Thong Bao Da Doc
@@ -282,7 +265,7 @@ He thong ho tro 2 phuong thuc xac thuc phien lam viec:
 
 ### 6.3. Danh Sach Nhom San Pham Da San
 - **Endpoint**: `GET /api/v1/product-groups`
-- **Header**: `X-User-ID: <uuid>` (hoac Bearer)
+- **Header**: `Authorization: Bearer <access_token>`
 - **Response `200 OK`**: Danh sach cac nhom san pham co tu 2 nguon san tro len.
 
 ---

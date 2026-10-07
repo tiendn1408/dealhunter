@@ -4,7 +4,6 @@
 package integration
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tiendang/deal-hunter/internal/alert"
+	"github.com/tiendang/deal-hunter/internal/auth"
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/notification/zalo"
@@ -56,6 +56,9 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 
 	handler := router.NewHandler(nil, nil)
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
+	handler.SetZaloWebhookCredentials(testZaloAppID, testWebhookSecret)
+	jwtMgr := auth.NewJWTManager("test-zalo-delivery-secret-32-bytes-long!", time.Hour)
+	handler.SetAuthService(nil, jwtMgr)
 	r := router.NewRouter(logger, handler)
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -155,16 +158,14 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 
 	// 6. Simulate Zalo Webhook: Delivery callback (user_received_message)
 	t.Log("Step 4: Simulating Zalo webhook callback (user_received_message -> delivered)...")
-	deliveryPayload, _ := json.Marshal(map[string]interface{}{
-		"app_id":        "123456",
+	delResp := postSignedZaloWebhook(t, client, ts.URL+"/api/v1/webhooks/zalo", map[string]interface{}{
+		"app_id":        testZaloAppID,
 		"event_name":    "user_received_message",
 		"msg_id":        capturedMsgID,
 		"delivery_time": fmt.Sprintf("%d", time.Now().Unix()),
 	})
-
-	delResp, err := client.Post(ts.URL+"/api/v1/webhooks/zalo", "application/json", bytes.NewReader(deliveryPayload))
-	if err != nil || delResp.StatusCode != http.StatusOK {
-		t.Fatalf("delivery webhook failed: status=%d, err=%v", delResp.StatusCode, err)
+	if delResp.StatusCode != http.StatusOK {
+		t.Fatalf("delivery webhook failed: status=%d", delResp.StatusCode)
 	}
 	delResp.Body.Close()
 
@@ -182,16 +183,13 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 
 	// 7. Simulate Zalo Webhook: Read callback (user_read_message)
 	t.Log("Step 5: Simulating Zalo webhook callback (user_read_message -> read)...")
-	readPayload, _ := json.Marshal(map[string]interface{}{
-		"app_id":     "123456",
+	readResp := postSignedZaloWebhook(t, client, ts.URL+"/api/v1/webhooks/zalo", map[string]interface{}{
+		"app_id":     testZaloAppID,
 		"event_name": "user_read_message",
 		"msg_id":     capturedMsgID,
-		"timestamp":  fmt.Sprintf("%d", time.Now().Unix()),
 	})
-
-	readResp, err := client.Post(ts.URL+"/api/v1/webhooks/zalo", "application/json", bytes.NewReader(readPayload))
-	if err != nil || readResp.StatusCode != http.StatusOK {
-		t.Fatalf("read webhook failed: status=%d, err=%v", readResp.StatusCode, err)
+	if readResp.StatusCode != http.StatusOK {
+		t.Fatalf("read webhook failed: status=%d", readResp.StatusCode)
 	}
 	readResp.Body.Close()
 
@@ -210,7 +208,7 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 	// 8. Verify via HTTP API GET /api/v1/notifications
 	t.Log("Step 6: Verifying user notification feed API...")
 	feedReq, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/v1/notifications", nil)
-	feedReq.Header.Set("X-User-ID", userID.String())
+	feedReq.Header.Set("Authorization", bearerFor(t, jwtMgr, userID))
 
 	feedResp, err := client.Do(feedReq)
 	if err != nil || feedResp.StatusCode != http.StatusOK {

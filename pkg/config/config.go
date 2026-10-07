@@ -34,6 +34,10 @@ type Config struct {
 	CORSAllowedOrigins  string
 	JWTSecret           string
 	GoogleClientID      string
+	AccessTokenTTL      time.Duration
+	RefreshTokenTTL     time.Duration
+	DevLoginEnabled     bool
+	AuthCookieSecure    bool
 
 	// Affiliate Marketing (Phase 3.5.1)
 	AffiliateEnabled           bool
@@ -86,8 +90,20 @@ func Load() (*Config, error) {
 	zaloWebhookSecret := getEnv("ZALO_WEBHOOK_SECRET", zaloSecret)
 	zaloEnabled := getEnv("ZALO_ENABLED", "false") == "true" || zaloToken != "" || zaloRefreshToken != ""
 
+	appEnv := getEnv("APP_ENV", "development")
+	isDev := appEnv == "development"
+
+	accessTTL, err := time.ParseDuration(getEnv("ACCESS_TOKEN_TTL", "15m"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid ACCESS_TOKEN_TTL: %w", err)
+	}
+	refreshTTL, err := time.ParseDuration(getEnv("REFRESH_TOKEN_TTL", "720h"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid REFRESH_TOKEN_TTL: %w", err)
+	}
+
 	return &Config{
-		AppEnv:              getEnv("APP_ENV", "development"),
+		AppEnv:              appEnv,
 		HTTPPort:            port,
 		LogLevel:            getEnv("LOG_LEVEL", "info"),
 		DatabaseURL:         getEnv("DATABASE_URL", "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable"),
@@ -108,9 +124,13 @@ func Load() (*Config, error) {
 		ZaloRefreshToken:    zaloRefreshToken,
 		ZaloWebhookSecret:   zaloWebhookSecret,
 		ZaloEnabled:         zaloEnabled,
-		CORSAllowedOrigins:  getEnv("CORS_ALLOWED_ORIGINS", "*"),
-		JWTSecret:           getEnv("JWT_SECRET", "dealhunter-super-secret-jwt-key-32bytes-secure!"),
+		CORSAllowedOrigins:  getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
+		JWTSecret:           getEnv("JWT_SECRET", DevJWTSecret),
 		GoogleClientID:      getEnv("GOOGLE_CLIENT_ID", ""),
+		AccessTokenTTL:      accessTTL,
+		RefreshTokenTTL:     refreshTTL,
+		DevLoginEnabled:     getEnv("ENABLE_DEV_LOGIN", strconv.FormatBool(isDev)) == "true",
+		AuthCookieSecure:    getEnv("AUTH_COOKIE_SECURE", strconv.FormatBool(!isDev)) == "true",
 
 		// Affiliate Marketing
 		AffiliateEnabled:           getEnv("AFFILIATE_ENABLED", "true") == "true",
@@ -122,6 +142,69 @@ func Load() (*Config, error) {
 		TikTokAffiliateURLTemplate: getEnv("TIKTOK_AFFILIATE_URL_TEMPLATE", "https://vt.tiktok.com/xxxx?url={URL}&sub_id={SUB_ID}"),
 		AccessTradeDeeplinkURL:     getEnv("ACCESSTRADE_DEEPLINK_URL", ""),
 	}, nil
+}
+
+// DevJWTSecret is the public development default. It is rejected in production.
+const DevJWTSecret = "dealhunter-super-secret-jwt-key-32bytes-secure!"
+
+func (c *Config) IsProduction() bool {
+	return c.AppEnv == "production"
+}
+
+// CORSOrigins returns the comma-separated CORS_ALLOWED_ORIGINS as a list.
+func (c *Config) CORSOrigins() []string {
+	var origins []string
+	for _, o := range strings.Split(c.CORSAllowedOrigins, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			origins = append(origins, o)
+		}
+	}
+	return origins
+}
+
+// ValidateAPI fails fast on insecure API configuration. Production rules are strict;
+// an empty JWT secret is rejected in every environment.
+func (c *Config) ValidateAPI() error {
+	var problems []string
+
+	if len(c.JWTSecret) < 32 {
+		problems = append(problems, "JWT_SECRET must be at least 32 characters")
+	}
+	if c.AccessTokenTTL <= 0 || c.RefreshTokenTTL <= c.AccessTokenTTL {
+		problems = append(problems, "ACCESS_TOKEN_TTL must be > 0 and shorter than REFRESH_TOKEN_TTL")
+	}
+
+	if c.IsProduction() {
+		if c.JWTSecret == DevJWTSecret {
+			problems = append(problems, "JWT_SECRET must not use the development default")
+		}
+		if c.GoogleClientID == "" {
+			problems = append(problems, "GOOGLE_CLIENT_ID is required")
+		}
+		if c.DevLoginEnabled {
+			problems = append(problems, "ENABLE_DEV_LOGIN must be false")
+		}
+		if !c.AuthCookieSecure {
+			problems = append(problems, "AUTH_COOKIE_SECURE must be true")
+		}
+		origins := c.CORSOrigins()
+		if len(origins) == 0 {
+			problems = append(problems, "CORS_ALLOWED_ORIGINS is required")
+		}
+		for _, o := range origins {
+			if o == "*" {
+				problems = append(problems, "CORS_ALLOWED_ORIGINS must not contain *")
+			}
+		}
+		if c.ZaloEnabled && (c.ZaloAppID == "" || c.ZaloWebhookSecret == "") {
+			problems = append(problems, "ZALO_APP_ID and ZALO_OA_SECRET_KEY (or ZALO_WEBHOOK_SECRET) are required when Zalo is enabled")
+		}
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("invalid configuration (APP_ENV=%s): %s", c.AppEnv, strings.Join(problems, "; "))
+	}
+	return nil
 }
 
 func loadEnvFile(filenames ...string) {

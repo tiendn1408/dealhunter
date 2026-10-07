@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -19,9 +20,9 @@ func TestJWTManager_GenerateAndValidate(t *testing.T) {
 		Name:  &name,
 	}
 
-	token, err := manager.GenerateToken(user)
+	token, err := manager.GenerateAccessToken(user)
 	if err != nil {
-		t.Fatalf("GenerateToken failed: %v", err)
+		t.Fatalf("GenerateAccessToken failed: %v", err)
 	}
 
 	if token == "" {
@@ -51,9 +52,9 @@ func TestJWTManager_ExpiredToken(t *testing.T) {
 		Email: &email,
 	}
 
-	token, err := manager.GenerateToken(user)
+	token, err := manager.GenerateAccessToken(user)
 	if err != nil {
-		t.Fatalf("GenerateToken failed: %v", err)
+		t.Fatalf("GenerateAccessToken failed: %v", err)
 	}
 
 	_, err = manager.ValidateToken(token)
@@ -67,10 +68,55 @@ func TestJWTManager_InvalidSecret(t *testing.T) {
 	m2 := NewJWTManager("secret-key-2-dealhunter-different!", 1*time.Hour)
 
 	user := &User{ID: uuid.New()}
-	token, _ := m1.GenerateToken(user)
+	token, _ := m1.GenerateAccessToken(user)
 
 	_, err := m2.ValidateToken(token)
 	if err != ErrInvalidToken {
 		t.Errorf("expected ErrInvalidToken, got %v", err)
+	}
+}
+
+func TestJWTManager_RoleClaim(t *testing.T) {
+	manager := NewJWTManager("test-secret-key-at-least-32-chars-long!", 1*time.Hour)
+
+	guestToken, _ := manager.GenerateAccessToken(&User{ID: uuid.New(), AuthProvider: "guest"})
+	claims, err := manager.ValidateToken(guestToken)
+	if err != nil || claims.Role != RoleGuest {
+		t.Fatalf("expected guest role, got claims=%+v err=%v", claims, err)
+	}
+
+	userToken, _ := manager.GenerateAccessToken(&User{ID: uuid.New(), AuthProvider: "google"})
+	claims, err = manager.ValidateToken(userToken)
+	if err != nil || claims.Role != RoleUser {
+		t.Fatalf("expected user role, got claims=%+v err=%v", claims, err)
+	}
+}
+
+func TestJWTManager_RejectsTokenWithoutRoleOrIssuer(t *testing.T) {
+	secret := "test-secret-key-at-least-32-chars-long!"
+	manager := NewJWTManager(secret, 1*time.Hour)
+
+	forge := func(claims *UserClaims) string {
+		tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	exp := jwt.NewNumericDate(time.Now().Add(time.Hour))
+
+	noRole := forge(&UserClaims{UserID: uuid.New(), RegisteredClaims: jwt.RegisteredClaims{Issuer: "dealhunter", ExpiresAt: exp}})
+	if _, err := manager.ValidateToken(noRole); err != ErrInvalidToken {
+		t.Errorf("token without role: expected ErrInvalidToken, got %v", err)
+	}
+
+	wrongIssuer := forge(&UserClaims{UserID: uuid.New(), Role: RoleUser, RegisteredClaims: jwt.RegisteredClaims{Issuer: "evil", ExpiresAt: exp}})
+	if _, err := manager.ValidateToken(wrongIssuer); err != ErrInvalidToken {
+		t.Errorf("token with wrong issuer: expected ErrInvalidToken, got %v", err)
+	}
+
+	noExpiry := forge(&UserClaims{UserID: uuid.New(), Role: RoleUser, RegisteredClaims: jwt.RegisteredClaims{Issuer: "dealhunter"}})
+	if _, err := manager.ValidateToken(noExpiry); err != ErrInvalidToken {
+		t.Errorf("token without exp: expected ErrInvalidToken, got %v", err)
 	}
 }

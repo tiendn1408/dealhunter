@@ -21,7 +21,7 @@ type JWTManager struct {
 
 func NewJWTManager(secretKey string, tokenDuration time.Duration) *JWTManager {
 	if tokenDuration == 0 {
-		tokenDuration = 7 * 24 * time.Hour // default 7 days for web session
+		tokenDuration = 15 * time.Minute // short-lived access token; sessions are extended via refresh tokens
 	}
 	return &JWTManager{
 		secretKey:     []byte(secretKey),
@@ -29,7 +29,19 @@ func NewJWTManager(secretKey string, tokenDuration time.Duration) *JWTManager {
 	}
 }
 
-func (m *JWTManager) GenerateToken(user *User) (string, error) {
+func (m *JWTManager) TokenDuration() time.Duration {
+	return m.tokenDuration
+}
+
+// RoleFor maps a user's auth provider to the role carried in its access token.
+func RoleFor(user *User) string {
+	if user.AuthProvider == "" || user.AuthProvider == "guest" {
+		return RoleGuest
+	}
+	return RoleUser
+}
+
+func (m *JWTManager) GenerateAccessToken(user *User) (string, error) {
 	email := ""
 	if user.Email != nil {
 		email = *user.Email
@@ -38,6 +50,7 @@ func (m *JWTManager) GenerateToken(user *User) (string, error) {
 	claims := &UserClaims{
 		UserID: user.ID,
 		Email:  email,
+		Role:   RoleFor(user),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "dealhunter",
 			Subject:   user.ID.String(),
@@ -61,7 +74,7 @@ func (m *JWTManager) ValidateToken(tokenStr string) (*UserClaims, error) {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return m.secretKey, nil
-	})
+	}, jwt.WithIssuer("dealhunter"), jwt.WithExpirationRequired())
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
@@ -75,7 +88,7 @@ func (m *JWTManager) ValidateToken(tokenStr string) (*UserClaims, error) {
 		return nil, ErrInvalidToken
 	}
 
-	if claims.UserID == uuid.Nil {
+	if claims.UserID == uuid.Nil || (claims.Role != RoleGuest && claims.Role != RoleUser) {
 		return nil, ErrInvalidToken
 	}
 

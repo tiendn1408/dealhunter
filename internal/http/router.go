@@ -3,6 +3,7 @@ package router
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -17,19 +18,7 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 	r.Use(middleware.Recoverer)
 	r.Use(RequestLogger(logger))
 
-	// Basic CORS middleware
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-User-ID")
-			if r.Method == "OPTIONS" {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
+	r.Use(corsMiddleware(handler.corsAllowedOrigins))
 
 	// Health check endpoint
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -50,9 +39,11 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 
 		// Phase 1 Foundation / GAP-02: Authentication & Guest Data Migration
 		r.Route("/auth", func(r chi.Router) {
+			r.Post("/guest", handler.StartGuestSession)
 			r.Post("/demo-login", handler.DemoLogin)
 			r.Post("/google", handler.GoogleLogin)
-			r.Post("/migrate", handler.MigrateGuestData)
+			r.Post("/refresh", handler.RefreshSession)
+			r.Post("/logout", handler.Logout)
 			r.Get("/me", handler.GetCurrentUser)
 		})
 
@@ -106,4 +97,38 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 	})
 
 	return r
+}
+
+// corsMiddleware allows credentialed requests (refresh-token cookie) from the configured origins only.
+// "*" in the list echoes any origin and must only be used in development.
+func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	allowAny := false
+	allowed := make(map[string]bool, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		o = strings.TrimRight(strings.TrimSpace(o), "/")
+		if o == "*" {
+			allowAny = true
+		} else if o != "" {
+			allowed[o] = true
+		}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin != "" && (allowAny || allowed[origin]) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
+				w.Header().Set("Access-Control-Max-Age", "600")
+			}
+			w.Header().Add("Vary", "Origin")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

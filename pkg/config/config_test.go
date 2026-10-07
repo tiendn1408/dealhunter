@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestConfigLoad(t *testing.T) {
@@ -48,5 +49,55 @@ func TestLoadEnvFile(t *testing.T) {
 	}
 	if val := os.Getenv("TEST_CONFIG_INT_VAR"); val != "9999" {
 		t.Errorf("Expected 9999, got %s", val)
+	}
+}
+
+func validProductionConfig() *Config {
+	return &Config{
+		AppEnv:             "production",
+		JWTSecret:          "prod-secret-that-is-long-enough-1234567890",
+		GoogleClientID:     "client.apps.googleusercontent.com",
+		AccessTokenTTL:     15 * time.Minute,
+		RefreshTokenTTL:    720 * time.Hour,
+		AuthCookieSecure:   true,
+		CORSAllowedOrigins: "https://dealhunter.vn, https://www.dealhunter.vn",
+	}
+}
+
+func TestValidateAPI_Production(t *testing.T) {
+	if err := validProductionConfig().ValidateAPI(); err != nil {
+		t.Fatalf("expected valid production config, got %v", err)
+	}
+
+	cases := map[string]func(c *Config){
+		"empty jwt secret":   func(c *Config) { c.JWTSecret = "" },
+		"default jwt secret": func(c *Config) { c.JWTSecret = DevJWTSecret },
+		"short jwt secret":   func(c *Config) { c.JWTSecret = "short" },
+		"no google client":   func(c *Config) { c.GoogleClientID = "" },
+		"dev login enabled":  func(c *Config) { c.DevLoginEnabled = true },
+		"insecure cookie":    func(c *Config) { c.AuthCookieSecure = false },
+		"wildcard cors":      func(c *Config) { c.CORSAllowedOrigins = "*" },
+		"empty cors":         func(c *Config) { c.CORSAllowedOrigins = "" },
+		"zalo without creds": func(c *Config) { c.ZaloEnabled = true },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := validProductionConfig()
+			mutate(c)
+			if err := c.ValidateAPI(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestValidateAPI_DevelopmentRejectsEmptySecret(t *testing.T) {
+	c := &Config{AppEnv: "development", JWTSecret: "", AccessTokenTTL: time.Minute, RefreshTokenTTL: time.Hour}
+	if err := c.ValidateAPI(); err == nil {
+		t.Fatal("expected empty JWT secret to be rejected in development")
+	}
+	c.JWTSecret = DevJWTSecret
+	if err := c.ValidateAPI(); err != nil {
+		t.Fatalf("expected dev default secret to be allowed in development, got %v", err)
 	}
 }

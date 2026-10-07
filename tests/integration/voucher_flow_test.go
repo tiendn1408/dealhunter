@@ -79,6 +79,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	compSvc := comparison.NewComparisonService(comparisonRepo, compCache)
 	jwtMgr := auth.NewJWTManager("test-voucher-secret-key-32b-ok!", 1*time.Hour)
 	authSvc := auth.NewAuthService(authRepo, jwtMgr, "")
+	authSvc.SetDevLoginEnabled(true)
 
 	// Affiliate Transformer
 	affCfg := affiliate.Config{
@@ -111,10 +112,10 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	if err != nil || loginResp.StatusCode != http.StatusOK {
 		t.Fatalf("Login failed: %v", err)
 	}
-	var loginData auth.LoginResponse
+	var loginData auth.Session
 	_ = json.NewDecoder(loginResp.Body).Decode(&loginData)
 	loginResp.Body.Close()
-	userToken := loginData.Token
+	userToken := loginData.AccessToken
 	userID := loginData.User.ID
 
 	// 2. Track a Shopee product
@@ -339,4 +340,3 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 		len(updatedResp.Vouchers),
 	)
 }
-

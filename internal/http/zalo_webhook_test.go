@@ -3,12 +3,14 @@ package router
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,68 +75,82 @@ func (m *mockWebhookNotifRepo) DisconnectUserZalo(_ context.Context, _ uuid.UUID
 	return nil
 }
 
-func TestZaloWebhook_DeliveryStatusFlow(t *testing.T) {
-	repo := newMockWebhookNotifRepo()
+const (
+	testZaloAppID  = "123456"
+	testZaloSecret = "super-webhook-secret-123"
+)
+
+func newWebhookTestHandler(repo *mockWebhookNotifRepo) *Handler {
 	h := NewHandler(nil, nil)
 	h.SetAlertAndNotificationRepos(nil, repo)
+	h.SetZaloWebhookCredentials(testZaloAppID, testZaloSecret)
+	return h
+}
+
+func zaloMac(appID string, body []byte, timestamp, secret string) string {
+	sum := sha256.Sum256([]byte(appID + string(body) + timestamp + secret))
+	return "mac=" + hex.EncodeToString(sum[:])
+}
+
+// signedWebhookRequest builds a request signed the way Zalo does; timestamp defaults to now (ms).
+func signedWebhookRequest(t *testing.T, payload map[string]interface{}) *http.Request {
+	t.Helper()
+	if _, ok := payload["timestamp"]; !ok {
+		payload["timestamp"] = strconv.FormatInt(time.Now().UnixMilli(), 10)
+	}
+	body, _ := json.Marshal(payload)
+	ts := strings.Trim(fmt.Sprint(payload["timestamp"]), `"`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo", bytes.NewReader(body))
+	req.Header.Set("X-ZEvent-Signature", zaloMac(testZaloAppID, body, ts, testZaloSecret))
+	return req
+}
+
+func TestZaloWebhook_DeliveryStatusFlow(t *testing.T) {
+	repo := newMockWebhookNotifRepo()
+	h := newWebhookTestHandler(repo)
 
 	// 1. Test user_received_message -> delivered
-	payload1 := map[string]interface{}{
-		"app_id":        "123456",
+	rec1 := httptest.NewRecorder()
+	h.HandleZaloWebhook(rec1, signedWebhookRequest(t, map[string]interface{}{
+		"app_id":        testZaloAppID,
 		"event_name":    "user_received_message",
 		"msg_id":        "zalo-msg-001",
 		"delivery_time": "1727710000",
-	}
-	body1, _ := json.Marshal(payload1)
-	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo", bytes.NewReader(body1))
-	rec1 := httptest.NewRecorder()
-
-	h.HandleZaloWebhook(rec1, req1)
+	}))
 	if rec1.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d", rec1.Code)
 	}
-
 	if repo.updatedStatus["zalo-msg-001"] != notification.StatusDelivered {
 		t.Errorf("expected status 'delivered', got '%s'", repo.updatedStatus["zalo-msg-001"])
 	}
 
 	// 2. Test user_read_message -> read
-	payload2 := map[string]interface{}{
-		"app_id":     "123456",
+	rec2 := httptest.NewRecorder()
+	h.HandleZaloWebhook(rec2, signedWebhookRequest(t, map[string]interface{}{
+		"app_id":     testZaloAppID,
 		"event_name": "user_read_message",
 		"msg_id":     "zalo-msg-001",
-		"timestamp":  "1727710050",
-	}
-	body2, _ := json.Marshal(payload2)
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo", bytes.NewReader(body2))
-	rec2 := httptest.NewRecorder()
-
-	h.HandleZaloWebhook(rec2, req2)
+	}))
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK, got %d", rec2.Code)
 	}
-
 	if repo.updatedStatus["zalo-msg-001"] != notification.StatusRead {
 		t.Errorf("expected status 'read', got '%s'", repo.updatedStatus["zalo-msg-001"])
 	}
-	// 3. Test nested message.msg_id (standard OA format) and millisecond epoch
-	payload3 := map[string]interface{}{
-		"app_id":     "123456",
+
+	// 3. Test nested message.msg_id (standard OA format) and numeric millisecond epoch
+	rec3 := httptest.NewRecorder()
+	h.HandleZaloWebhook(rec3, signedWebhookRequest(t, map[string]interface{}{
+		"app_id":     testZaloAppID,
 		"event_name": "user_read_message",
-		"timestamp":  1727710050000, // int64 millisecond epoch
+		"timestamp":  time.Now().UnixMilli(),
 		"message": map[string]interface{}{
 			"msg_id": "zalo-msg-nested-002",
 		},
-	}
-	body3, _ := json.Marshal(payload3)
-	req3 := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo", bytes.NewReader(body3))
-	rec3 := httptest.NewRecorder()
-
-	h.HandleZaloWebhook(rec3, req3)
+	}))
 	if rec3.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for nested message, got %d", rec3.Code)
 	}
-
 	if repo.updatedStatus["zalo-msg-nested-002"] != notification.StatusRead {
 		t.Errorf("expected status 'read' for nested msg_id, got '%s'", repo.updatedStatus["zalo-msg-nested-002"])
 	}
@@ -143,50 +159,87 @@ func TestZaloWebhook_DeliveryStatusFlow(t *testing.T) {
 	}
 }
 
+// SEC-10: verification can never be skipped or keyed by the caller
 func TestZaloWebhook_SignatureValidation(t *testing.T) {
-	repo := newMockWebhookNotifRepo()
-	h := NewHandler(nil, nil)
-	h.SetAlertAndNotificationRepos(nil, repo)
-
-	secret := "super-webhook-secret-123"
-	h.SetZaloWebhookSecret(secret)
-
-	payload := map[string]interface{}{
-		"app_id":     "123456",
-		"event_name": "user_read_message",
-		"msg_id":     "zalo-msg-sig-1",
-	}
-	body, _ := json.Marshal(payload)
-
-	// Missing signature when secret is configured -> 401
-	reqMissing := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo", bytes.NewReader(body))
-	recMissing := httptest.NewRecorder()
-	h.HandleZaloWebhook(recMissing, reqMissing)
-	if recMissing.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for missing signature, got %d", recMissing.Code)
+	newPayload := func() map[string]interface{} {
+		return map[string]interface{}{
+			"app_id":     testZaloAppID,
+			"event_name": "user_read_message",
+			"msg_id":     "zalo-msg-sig-1",
+		}
 	}
 
-	// Valid signature with mac= prefix
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	validSig := hex.EncodeToString(mac.Sum(nil))
+	t.Run("not configured returns 503", func(t *testing.T) {
+		h := NewHandler(nil, nil)
+		h.SetAlertAndNotificationRepos(nil, newMockWebhookNotifRepo())
+		rec := httptest.NewRecorder()
+		h.HandleZaloWebhook(rec, signedWebhookRequest(t, newPayload()))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected 503, got %d", rec.Code)
+		}
+	})
 
-	reqValid := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo", bytes.NewReader(body))
-	reqValid.Header.Set("X-ZEvent-Signature", "mac="+validSig)
-	recValid := httptest.NewRecorder()
+	t.Run("valid signature", func(t *testing.T) {
+		repo := newMockWebhookNotifRepo()
+		rec := httptest.NewRecorder()
+		newWebhookTestHandler(repo).HandleZaloWebhook(rec, signedWebhookRequest(t, newPayload()))
+		if rec.Code != http.StatusOK || repo.updatedStatus["zalo-msg-sig-1"] != notification.StatusRead {
+			t.Errorf("expected 200 and status update, got %d", rec.Code)
+		}
+	})
 
-	h.HandleZaloWebhook(recValid, reqValid)
-	if recValid.Code != http.StatusOK {
-		t.Errorf("expected 200 for valid signature, got %d", recValid.Code)
-	}
+	t.Run("missing signature", func(t *testing.T) {
+		req := signedWebhookRequest(t, newPayload())
+		req.Header.Del("X-ZEvent-Signature")
+		rec := httptest.NewRecorder()
+		newWebhookTestHandler(newMockWebhookNotifRepo()).HandleZaloWebhook(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", rec.Code)
+		}
+	})
 
-	// Invalid signature
-	reqInvalid := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo", bytes.NewReader(body))
-	reqInvalid.Header.Set("X-ZEvent-Signature", "invalid-signature-hash")
-	recInvalid := httptest.NewRecorder()
+	t.Run("invalid signature", func(t *testing.T) {
+		req := signedWebhookRequest(t, newPayload())
+		req.Header.Set("X-ZEvent-Signature", "mac=invalid-signature-hash")
+		rec := httptest.NewRecorder()
+		newWebhookTestHandler(newMockWebhookNotifRepo()).HandleZaloWebhook(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", rec.Code)
+		}
+	})
 
-	h.HandleZaloWebhook(recInvalid, reqInvalid)
-	if recInvalid.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401 for invalid signature, got %d", recInvalid.Code)
-	}
+	t.Run("caller-supplied secret is ignored", func(t *testing.T) {
+		payload := newPayload()
+		payload["timestamp"] = strconv.FormatInt(time.Now().UnixMilli(), 10)
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo?secret=attacker", bytes.NewReader(body))
+		req.Header.Set("X-DealHunter-Secret", "attacker")
+		req.Header.Set("X-ZEvent-Signature", zaloMac(testZaloAppID, body, payload["timestamp"].(string), "attacker"))
+		rec := httptest.NewRecorder()
+		repo := newMockWebhookNotifRepo()
+		newWebhookTestHandler(repo).HandleZaloWebhook(rec, req)
+		if rec.Code != http.StatusUnauthorized || len(repo.updatedStatus) != 0 {
+			t.Errorf("expected 401 with no update, got %d", rec.Code)
+		}
+	})
+
+	t.Run("stale timestamp is rejected", func(t *testing.T) {
+		payload := newPayload()
+		payload["timestamp"] = strconv.FormatInt(time.Now().Add(-2*time.Hour).UnixMilli(), 10)
+		rec := httptest.NewRecorder()
+		newWebhookTestHandler(newMockWebhookNotifRepo()).HandleZaloWebhook(rec, signedWebhookRequest(t, payload))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401 for replayed callback, got %d", rec.Code)
+		}
+	})
+
+	t.Run("oversized body is rejected", func(t *testing.T) {
+		payload := newPayload()
+		payload["padding"] = strings.Repeat("x", maxZaloWebhookBody+1)
+		rec := httptest.NewRecorder()
+		newWebhookTestHandler(newMockWebhookNotifRepo()).HandleZaloWebhook(rec, signedWebhookRequest(t, payload))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 for oversized body, got %d", rec.Code)
+		}
+	})
 }
