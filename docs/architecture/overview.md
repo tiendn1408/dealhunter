@@ -107,6 +107,7 @@ dealhunter/
 │   ├── 000005_matching       # Matching candidates & suggestions tables
 │   ├── 000006_zalo_delivery  # Zalo webhook delivery status tracking
 │   └── 000007_vouchers       # ProductVouchers, shop_discount & platform_coupon columns
+├── extension/                # DealHunter Chrome Extension (Client-Side Fast Voucher Clicker & Price Intelligence)
 └── tests/                    # Integration tests (E2E flow, Idempotency replay, Comparison full flow)
 ```
 
