@@ -82,7 +82,7 @@ go run cmd/notifier/main.go
   - `GET /api/v1/product-groups`: List multi-source product groups
 - [x] End-to-End Full Flow Integration Tests (`tests/integration/http_phase3_flow_test.go`, `TestPhase3FullHTTPFlow`)
 
-### Phase 3.5: Monetization & Voucher Engine [100% Completed]
+### Phase 3.5: Monetization & Voucher Engine [Implemented — pending hardening, see docs/plans/hardening-before-phase-4.md]
 - [x] Affiliate Link Transformer (`pkg/affiliate`): Shopee, Lazada, TikTok, AccessTrade affiliate URL conversion
 - [x] SubID Tracking Parameter: Format `u_{user_id}_p_{product_id}` for cross-platform attribution
 - [x] Database Schema & Migrations (`migrations/000007_vouchers.up.sql`): `product_vouchers`, discount columns
@@ -102,3 +102,4 @@ Chi tiet tai lieu he thong duoc quan ly trong thu muc [`docs/`](docs/README.md):
 - [**Ke hoach Phase 2**](docs/plans/phase-2-alert-and-zalo.md): Thiet ke Alert Engine & Zalo Notification.
 - [**Ke hoach Phase 3**](docs/plans/phase-3-cross-platform.md): Thiet ke So Sanh Gia Da Nen Tang & Bao cao kiem dinh.
 - [**Ke hoach Phase 3.5**](docs/plans/phase-3-5-monetization-and-voucher-engine.md): Affiliate Link Engine & Voucher Intelligence 2 Buoc.
+- [**Ke hoach Gia co truoc Phase 4**](docs/plans/hardening-before-phase-4.md): Danh sach day du loi bao mat, do tin cay va du lieu can sua truoc khi deploy production.

@@ -19,6 +19,7 @@ Chua tai lieu PRD, dac ta BA/PM va ke hoach trien khai chi tiet cho tung giai do
 - [**phase-3-cross-platform.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/plans/phase-3-cross-platform.md): Ke hoach va thiet ke kien truc Phase 3 (Cross-platform Price Comparison).
 - [**gap-resolution-and-foundation-completion.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/plans/gap-resolution-and-foundation-completion.md): Ke hoach giai quyet dut diem cac thanh phan con thieu (Scraper thuc te, Auth, Auto-matching, Local dev runner) va ghi chu trien khai Docker tai Phase 6.
 - [**phase-3-5-monetization-and-voucher-engine.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/plans/phase-3-5-monetization-and-voucher-engine.md): Ke hoach & dac ta ky thuat Phase 3.5 (Monetization & Voucher Engine - Tiep thi lien ket Affiliate & San voucher 2 buoc).
+- [**hardening-before-phase-4.md**](file:///Users/tien.dang/Workplace/reference/dealhunter/docs/plans/hardening-before-phase-4.md): Ke hoach gia co bao mat, do tin cay va tinh dung dan du lieu sau dot ra soat Phase 1 → 3.5 (bat buoc truoc khi deploy production va Phase 4).
 
 ---
 

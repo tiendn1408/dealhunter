@@ -8,7 +8,8 @@
 > * **Phase 2**: User Alerts & Zalo Notification (Đã hoàn thành)
 > * **Phase 3**: Cross-platform Price Comparison (Đã hoàn thành)
 > * **GAP 01 - 04**: Scraper thật, Google Auth, Auto-matching, Zalo OA Production (Đã hoàn thành)
-> * **PHASE 3.5**: **Monetization & Voucher Engine (Đã hoàn thành 100%)**
+> * **PHASE 3.5**: **Monetization & Voucher Engine (Đã triển khai — còn hạng mục gia cố, xem `hardening-before-phase-4.md`)**
+> * **HARDENING**: Gia cố bảo mật, độ tin cậy & dữ liệu trước Phase 4 (GIAI ĐOẠN HIỆN TẠI)
 > * **Phase 4**: Price Intelligence (Deal Score 1-10, Fake Discount Detector, Volatility)
 > * **Phase 5**: Auto Hunt (Tự động săn deal theo từ khóa & ngân sách)
 > * **Phase 6**: Đóng gói Docker toàn diện & Triển khai Cloud (Deployment)
