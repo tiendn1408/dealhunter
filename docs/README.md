@@ -50,3 +50,8 @@ De chuan bi cho cac giai doan tiep theo (Phase 2, Phase 3, ...), tat ca tai lieu
    - `docs/plans/`: Chi chua ke hoach va dac ta nghiep vu theo tung Phase (`phase-X-*.md`).
    - `docs/architecture/`: Chua so do, thiet ke database, queue, bao mat dung chung.
    - `docs/runbooks/`: Chua huong dan thao tac, van hanh thuc te.
+
+---
+
+### Tiện Ích Chrome DealHunter Assistant (`docs/extension/`)
+- [**huong-dan-su-dung.md**](extension/huong-dan-su-dung.md): Hướng dẫn cài đặt và sử dụng tiện ích săn voucher Shopee (bán tự động, tự động 100%, đọc kết quả, xử lý sự cố).

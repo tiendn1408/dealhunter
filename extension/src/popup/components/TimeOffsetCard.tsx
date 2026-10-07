@@ -56,9 +56,14 @@ export const TimeOffsetCard: React.FC = () => {
       <div className="grid grid-cols-2 gap-2 pt-0.5">
         <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
           <span className="text-[10px] text-slate-400 block font-medium">Do lech dong ho</span>
-          <span className="font-mono text-sm font-bold text-slate-900">
-            {offset >= 0 ? `+${offset}ms` : `${offset}ms`}
-          </span>
+          {calibration?.calibrated ? (
+            <span className="font-mono text-sm font-bold text-slate-900">
+              {offset >= 0 ? `+${offset}ms` : `${offset}ms`}
+              <span className="text-[10px] font-semibold text-slate-400"> ±{calibration.errorMs}ms</span>
+            </span>
+          ) : (
+            <span className="text-[11px] font-bold text-rose-600">Chua dong bo - bam Do lai</span>
+          )}
         </div>
 
         <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">

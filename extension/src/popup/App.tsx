@@ -55,7 +55,7 @@ export const App: React.FC = () => {
       {/* Footer Info */}
       <div className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1.5 pt-1">
         <Shield className="w-3 h-3 text-emerald-600" />
-        <span>Chay hoan toan tren client. An toan 100% truoc bot scanner.</span>
+        <span>Chay tren trinh duyet cua ban, dung tai khoan Shopee cua ban.</span>
       </div>
     </div>
   );

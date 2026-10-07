@@ -21,7 +21,7 @@ export const SHOPEE_URLS = {
   FREESHIP_HUB: "https://shopee.vn/m/mien-phi-van-chuyen",
   SUPER_SALE_1010: "https://shopee.vn/m/10-10",
   CART: "https://shopee.vn/cart",
-  PING_TARGET: "https://shopee.vn/",
+  PING_TARGET: "https://shopee.vn/favicon.ico", // tiny static file: fast response, accurate Date header
 };
 
 export const MESSAGE_ACTIONS = {

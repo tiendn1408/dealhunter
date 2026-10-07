@@ -33,7 +33,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.action === MESSAGE_ACTIONS.TASK_STATUS_UPDATE) {
     if (message.taskId && message.status) {
-      storage.updateTaskStatus(message.taskId, message.status).then(() => {
+      const lastResult = message.result ? { ...message.result, finishedAt: Date.now() } : undefined;
+      storage.updateTaskStatus(message.taskId, message.status, lastResult).then(() => {
         sendResponse({ success: true });
       });
       return true;

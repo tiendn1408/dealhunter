@@ -3,8 +3,9 @@ import ReactDOM from "react-dom/client";
 import { FloatingHUD } from "./ui/FloatingHUD";
 import { PriceHistoryBadge } from "./ui/PriceHistoryBadge";
 import { timeSyncClient } from "./core/time_sync_client";
-import { elementResolver } from "./core/element_resolver";
-import { humanClicker } from "./core/human_clicker";
+import { startHunt } from "./core/hunt_engine";
+import { nextDropAt } from "../lib/drop_time";
+import { ScheduledTask } from "../lib/types";
 import { MESSAGE_ACTIONS } from "../lib/constants";
 import "./ui/style.css";
 
@@ -60,51 +61,55 @@ if (document.readyState === "loading") {
   injectPriceHistoryBadge();
 }
 
+/** Why this tab cannot hunt, if Shopee redirected it away from the voucher page. */
+function shopeeBlockReason(): string | null {
+  const path = window.location.pathname;
+  if (path.startsWith("/verify/")) return "Shopee chuyen sang trang xac minh (captcha) - hay mo Shopee, xac minh va dang nhap truoc gio G";
+  if (path.startsWith("/buyer/login")) return "Chua dang nhap Shopee tren trinh duyet nay";
+  return null;
+}
+
 // 4. Handle Full-Auto Hunt message from background service worker
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action === MESSAGE_ACTIONS.TRIGGER_FULL_AUTO) {
-    console.log("[DealHunter] Full-Auto hunt triggered for task:", message.task);
+  if (message.action !== MESSAGE_ACTIONS.TRIGGER_FULL_AUTO) return false;
 
-    // Calculate exact target timestamp
-    const task = message.task;
-    const now = timeSyncClient.getShopeeTime();
-    const targetDate = new Date(now);
-    targetDate.setHours(task.targetHour, task.targetMinute, 0, 0);
-    if (targetDate.getTime() < now - 5000) {
-      targetDate.setDate(targetDate.getDate() + 1);
+  const task: ScheduledTask = message.task;
+  console.log("[DealHunter] Full-Auto hunt armed for task:", task);
+  sendResponse({ received: true });
+
+  (async () => {
+    // Shopee may send the tab to a captcha/verification or login page instead of the voucher page
+    const blocked = shopeeBlockReason();
+    if (blocked) {
+      chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
+        taskId: task.id,
+        status: "failed",
+        result: { result: "not_found", clicks: 0, detail: blocked },
+      });
+      return;
     }
-    const targetTimestamp = targetDate.getTime();
 
-    const checkTargetReady = setInterval(() => {
-      const currentShopeeTime = timeSyncClient.getShopeeTime();
-      const diff = targetTimestamp - currentShopeeTime;
+    // The background calibrated right before opening this tab; load that calibration first
+    await timeSyncClient.init();
+    const targetTimestamp = nextDropAt(task.targetHour, task.targetMinute, timeSyncClient.getShopeeTime());
 
-      // Exact trigger window: within 80ms before 00.000s up to 1500ms after
-      if (diff <= 80 && diff >= -1500) {
-        clearInterval(checkTargetReady);
+    startHunt({
+      targetTimestamp,
+      now: () => timeSyncClient.getShopeeTime(),
+      keyword: task.keyword,
+      onStatus: (msg) => console.log("[DealHunter Full-Auto]", msg),
+      onDone: (outcome) => {
+        console.log("[DealHunter Full-Auto] Result:", outcome);
+        chrome.runtime.sendMessage({
+          action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
+          taskId: task.id,
+          status: outcome.result === "saved" ? "completed" : "failed",
+          result: outcome,
+        });
+      },
+    });
+  })();
 
-        const buttons = elementResolver.findCollectButtons(task?.keyword);
-        if (buttons.length > 0) {
-          console.log("[DealHunter Full-Auto] Firing turbo burst on target button!");
-          humanClicker.startBurst(
-            buttons[0],
-            35,
-            2000,
-            () => elementResolver.isButtonFinished(buttons[0]),
-            (success) => {
-              chrome.runtime.sendMessage({
-                action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
-                taskId: task.id,
-                status: success ? "completed" : "completed",
-              });
-            }
-          );
-        }
-      }
-    }, 20);
-
-    sendResponse({ received: true });
-    return true;
-  }
   return false;
 });

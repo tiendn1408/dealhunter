@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { timeSyncClient } from "../core/time_sync_client";
-import { workerTimer } from "../core/timer_worker";
 import { humanClicker } from "../core/human_clicker";
 import { elementResolver } from "../core/element_resolver";
+import { startHunt, HuntOutcome } from "../core/hunt_engine";
+import { formatVN, nextFlashDrop } from "../../lib/drop_time";
+import { SHOPEE_FLASH_HOURS } from "../../lib/constants";
 import {
   Crosshair,
   Zap,
@@ -32,50 +34,31 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose }) => {
   const [targetLabel, setTargetLabel] = useState<string>("");
 
   const targetElementRef = useRef<HTMLElement | null>(null);
+  const cancelHuntRef = useRef<(() => void) | null>(null);
+  const [errorMs, setErrorMs] = useState(1000);
+  const [calibrated, setCalibrated] = useState(false);
 
-  // Helper to compute target timestamp
+  // Target timestamp in Vietnam time (Shopee VN drops are GMT+7 whatever this computer's timezone is)
   const computeTargetTimestamp = (now: number, mode: "next_flash" | "next_minute") => {
-    const d = new Date(now);
     if (mode === "next_minute") {
-      const nextMin = new Date(now);
-      nextMin.setSeconds(0, 0);
-      nextMin.setMinutes(nextMin.getMinutes() + 1);
-      return { timestamp: nextMin.getTime(), label: `${String(nextMin.getHours()).padStart(2, "0")}:${String(nextMin.getMinutes()).padStart(2, "0")}:00` };
+      const at = Math.floor(now / 60000) * 60000 + 60000;
+      return { timestamp: at, label: formatVN(at).slice(0, 8) };
     }
-
-    // Next flash hour in [0, 9, 12, 15, 18, 21]
-    const flashHours = [0, 9, 12, 15, 18, 21];
-    const currentHour = d.getHours();
-    let nextHour = flashHours.find((h) => h > currentHour);
-    const target = new Date(now);
-    target.setMinutes(0, 0, 0);
-
-    if (nextHour !== undefined) {
-      target.setHours(nextHour);
-    } else {
-      target.setHours(0);
-      target.setDate(target.getDate() + 1);
-      nextHour = 0;
-    }
-    return { timestamp: target.getTime(), label: `${String(nextHour).padStart(2, "0")}:00:00` };
+    const { at } = nextFlashDrop(SHOPEE_FLASH_HOURS, now);
+    return { timestamp: at, label: formatVN(at).slice(0, 8) };
   };
 
-  // 1. Clock loop: updates time display and checks countdown
+  // 1. Clock display only; the hunt itself runs on the Web Worker ticker in the hunt engine
   useEffect(() => {
     const updateClock = () => {
       const now = timeSyncClient.getShopeeTime();
-      const d = new Date(now);
-      const hours = String(d.getHours()).padStart(2, "0");
-      const minutes = String(d.getMinutes()).padStart(2, "0");
-      const seconds = String(d.getSeconds()).padStart(2, "0");
-      const ms = String(d.getMilliseconds()).padStart(3, "0");
-
-      setShopeeTimeStr(`${hours}:${minutes}:${seconds}.${ms}`);
+      setShopeeTimeStr(formatVN(now));
       setOffsetMs(timeSyncClient.getOffset());
+      setErrorMs(timeSyncClient.getErrorMs());
+      setCalibrated(timeSyncClient.getIsCalibrated());
 
       const { timestamp, label } = computeTargetTimestamp(now, targetSlot);
       setTargetLabel(label);
-
       const diff = timestamp - now;
       if (diff > 0) {
         const cdMin = Math.floor(diff / 60000);
@@ -85,18 +68,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose }) => {
       } else {
         setCountdownStr("00:00.0");
       }
-
-      // If armed and not bursting, trigger when diff reaches exact 80ms window before 00.000s
-      if (isArmed && !isBursting && !isFinished) {
-        if (diff <= 80 && diff >= -1500) {
-          triggerHunt();
-        }
-      }
     };
 
-    const interval = setInterval(updateClock, 30);
+    const interval = setInterval(updateClock, 50);
     return () => clearInterval(interval);
-  }, [isArmed, isBursting, isFinished, targetSlot]);
+  }, [targetSlot]);
+
+  useEffect(() => () => cancelHuntRef.current?.(), []);
 
   // 2. Select / lock target button
   const handleSelectTarget = () => {
@@ -109,11 +87,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose }) => {
       const el = e.target as HTMLElement;
       el.classList.remove("dh-target-highlight");
     };
-    const onClick = (e: MouseEvent) => {
+    // Lock on pointerdown: Chrome does not fire click on a disabled button, and Shopee's "Lưu" is usually
+    // disabled until the drop.
+    const onPick = (e: PointerEvent) => {
       e.preventDefault();
       e.stopPropagation();
 
-      const el = e.target as HTMLElement;
+      const el = elementResolver.normalizeTarget(e.target as HTMLElement);
       el.classList.add("dh-target-highlight");
       targetElementRef.current = el;
       setTargetFound(true);
@@ -121,12 +101,22 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose }) => {
 
       window.removeEventListener("mouseover", onMouseOver);
       window.removeEventListener("mouseout", onMouseOut);
-      window.removeEventListener("click", onClick, true);
+      window.removeEventListener("pointerdown", onPick, true);
+
+      // Swallow the click that follows on an enabled button so picking it does not save the voucher early
+      const swallow = (ev: MouseEvent) => {
+        if (!el.contains(ev.target as Node)) return; // only the click on the picked button itself
+        ev.preventDefault();
+        ev.stopPropagation();
+        window.removeEventListener("click", swallow, true);
+      };
+      window.addEventListener("click", swallow, true);
+      setTimeout(() => window.removeEventListener("click", swallow, true), 600);
     };
 
     window.addEventListener("mouseover", onMouseOver);
     window.addEventListener("mouseout", onMouseOut);
-    window.addEventListener("click", onClick, true);
+    window.addEventListener("pointerdown", onPick, true);
   };
 
   // 3. Auto-detect first available collect button if not manually picked
@@ -145,37 +135,43 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose }) => {
     }
   };
 
-  // 4. Trigger hunting burst
-  const triggerHunt = () => {
-    let target = targetElementRef.current;
-    if (!target) {
-      const buttons = elementResolver.findCollectButtons();
-      if (buttons.length > 0) {
-        target = buttons[0];
-        targetElementRef.current = target;
-      }
-    }
+  // 4. Arm: the hunt engine waits for the drop, re-finds the button and reports what the page shows
+  const RESULT_MESSAGES: Record<HuntOutcome["result"], string> = {
+    saved: "DA LUU MA (trang xac nhan)",
+    exhausted: "Voucher da het luot",
+    not_found: "Khong thay nut voucher trong khung gio",
+    timeout: "Da click nhung trang chua xac nhan da luu - hay kiem tra vi voucher",
+    cancelled: "Da tam dung",
+  };
 
-    if (!target) {
-      setStatusMessage("Khong co nut muc tieu de click");
-      return;
-    }
-
-    setIsBursting(true);
-    setStatusMessage("Dang ban tia (Turbo Bursting)...");
-
-    humanClicker.startBurst(
-      target,
-      35, // 35ms interval
-      2000, // 2s max duration
-      () => elementResolver.isButtonFinished(target!),
-      (success) => {
+  const armHunt = () => {
+    const now = timeSyncClient.getShopeeTime();
+    const { timestamp } = computeTargetTimestamp(now, targetSlot);
+    setIsArmed(true);
+    setIsFinished(false);
+    setStatusMessage("Da bat che do san");
+    cancelHuntRef.current = startHunt({
+      targetTimestamp: timestamp,
+      now: () => timeSyncClient.getShopeeTime(),
+      locked: targetElementRef.current,
+      onStatus: (msg) => {
+        setIsBursting(msg.startsWith("Dang luu"));
+        setStatusMessage(msg);
+      },
+      onDone: (outcome) => {
+        cancelHuntRef.current = null;
         setIsBursting(false);
         setIsArmed(false);
-        setIsFinished(true);
-        setStatusMessage(success ? "Luu ma thanh cong!" : "Hoan tat chu ky");
-      }
-    );
+        setIsFinished(outcome.result !== "cancelled");
+        setStatusMessage(`${RESULT_MESSAGES[outcome.result]} (${outcome.clicks} click)`);
+      },
+    });
+  };
+
+  const disarmHunt = () => {
+    cancelHuntRef.current?.();
+    cancelHuntRef.current = null;
+    setIsArmed(false);
   };
 
   const handleManualTestClick = () => {
@@ -260,7 +256,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose }) => {
             className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-emerald-400 transition-colors"
           >
             <RefreshCw className="w-2.5 h-2.5" />
-            <span>{offsetMs >= 0 ? `+${offsetMs}ms` : `${offsetMs}ms`}</span>
+            <span className={calibrated ? "" : "text-rose-400"}>
+              {calibrated
+                ? `${offsetMs >= 0 ? "+" : ""}${offsetMs}ms ±${errorMs}ms`
+                : "CHUA DONG BO - bam de do lai"}
+            </span>
           </button>
         </div>
         <div className="font-mono text-xl font-black text-emerald-400 tracking-wider text-center">
@@ -326,11 +326,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose }) => {
       {/* Arm Toggle Button */}
       <button
         type="button"
-        onClick={() => {
-          setIsArmed(!isArmed);
-          setIsFinished(false);
-          setStatusMessage(!isArmed ? "Da bat che do san san sang" : "Da tam dung");
-        }}
+        onClick={() => (isArmed ? disarmHunt() : armHunt())}
         className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
           isArmed
             ? "bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-900/40"

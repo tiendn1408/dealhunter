@@ -6,13 +6,22 @@ export interface ScheduledTask {
   label: string;
   mode: "semi_auto" | "full_auto";
   keyword?: string; // e.g. "500k", "15%"
-  status: "pending" | "running" | "completed" | "cancelled";
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: number;
+  /** What the page actually showed at the end of the hunt. */
+  lastResult?: {
+    result: "saved" | "exhausted" | "not_found" | "timeout" | "cancelled";
+    clicks: number;
+    detail: string;
+    finishedAt: number;
+  };
 }
 
 export interface ClockCalibration {
   offsetMs: number; // ShopeeServerTime - LocalDeviceTime
   rttMs: number; // Round-trip time
+  errorMs: number; // Estimated accuracy of offsetMs (+/-)
+  calibrated: boolean; // false when no server second roll-over could be observed
   lastCalibratedAt: number;
 }
 

@@ -52,11 +52,20 @@ describe("ElementResolver", () => {
     document.body.appendChild(btnSaved);
     expect(resolver.isButtonFinished(btnSaved)).toBe(true);
 
+    // Before the drop Shopee shows a disabled "Lưu": that is NOT finished, the hunt must keep waiting
     const btnDisabled = document.createElement("button");
     btnDisabled.innerText = "Lưu";
     btnDisabled.setAttribute("disabled", "true");
     document.body.appendChild(btnDisabled);
-    expect(resolver.isButtonFinished(btnDisabled)).toBe(true);
+    expect(resolver.isButtonFinished(btnDisabled)).toBe(false);
+    expect(resolver.getButtonState(btnDisabled)).toBe("unknown");
+
+    // A disabled button on a card that says it ran out is exhausted
+    const card = document.createElement("div");
+    card.className = "voucher-card";
+    card.innerHTML = `<span>Giảm 50k</span><span>Đã hết</span><button disabled>Lưu</button>`;
+    document.body.appendChild(card);
+    expect(resolver.getButtonState(card.querySelector("button"))).toBe("exhausted");
 
     const btnReady = document.createElement("button");
     btnReady.innerText = "Lưu";

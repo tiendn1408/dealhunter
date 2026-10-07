@@ -4,17 +4,17 @@ import { ClockCalibration } from "../../lib/types";
 export class TimeSyncClient {
   private offsetMs: number = 0;
   private isCalibrated: boolean = false;
+  private errorMs: number = 1000;
 
   async init(): Promise<void> {
     try {
       const res = await chrome.runtime.sendMessage({
         action: MESSAGE_ACTIONS.GET_CALIBRATION,
       });
-      if (res && res.calibration) {
-        this.applyCalibration(res.calibration);
-      } else {
-        await this.calibrate();
-      }
+      const cal: ClockCalibration | null = res?.calibration ?? null;
+      const stale = !cal || !cal.calibrated || Date.now() - cal.lastCalibratedAt > 10 * 60 * 1000;
+      if (cal) this.applyCalibration(cal);
+      if (stale) await this.calibrate();
     } catch {
       // Fallback
       this.offsetMs = 0;
@@ -25,7 +25,7 @@ export class TimeSyncClient {
     try {
       const res = await chrome.runtime.sendMessage({
         action: MESSAGE_ACTIONS.CALIBRATE_TIME,
-        samples: 3,
+        samples: 3, // second roll-overs to observe
       });
       if (res && res.calibration) {
         this.applyCalibration(res.calibration);
@@ -37,7 +37,12 @@ export class TimeSyncClient {
 
   applyCalibration(cal: ClockCalibration): void {
     this.offsetMs = cal.offsetMs;
-    this.isCalibrated = true;
+    this.errorMs = cal.errorMs ?? 1000;
+    this.isCalibrated = !!cal.calibrated;
+  }
+
+  getErrorMs(): number {
+    return this.errorMs;
   }
 
   /**

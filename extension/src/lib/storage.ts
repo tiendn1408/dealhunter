@@ -23,11 +23,16 @@ export const storage = {
     await this.saveTasks(filtered);
   },
 
-  async updateTaskStatus(id: string, status: ScheduledTask["status"]): Promise<void> {
+  async updateTaskStatus(
+    id: string,
+    status: ScheduledTask["status"],
+    lastResult?: ScheduledTask["lastResult"]
+  ): Promise<void> {
     const tasks = await this.getTasks();
     const task = tasks.find((t) => t.id === id);
     if (task) {
       task.status = status;
+      if (lastResult) task.lastResult = lastResult;
       await this.saveTasks(tasks);
     }
   },

@@ -8,6 +8,14 @@ interface TaskListProps {
   onTasksChanged: () => void;
 }
 
+const STATUS_LABELS: Record<ScheduledTask["status"], string> = {
+  pending: "Cho den gio",
+  running: "Dang san",
+  completed: "Da luu ma",
+  failed: "Khong luu duoc",
+  cancelled: "Da huy",
+};
+
 export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged }) => {
   if (tasks.length === 0) {
     return (
@@ -51,8 +59,23 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged }) => 
               <div className="text-[10px] text-slate-400 flex items-center gap-2">
                 <span>{task.targetHour}:00</span>
                 {task.keyword && <span>Loc: "{task.keyword}"</span>}
-                <span className="capitalize text-slate-500 font-semibold">{task.status}</span>
+                <span
+                  className={`font-semibold ${
+                    task.status === "completed"
+                      ? "text-emerald-600"
+                      : task.status === "failed"
+                      ? "text-rose-600"
+                      : "text-slate-500"
+                  }`}
+                >
+                  {STATUS_LABELS[task.status]}
+                </span>
               </div>
+              {task.lastResult && (
+                <div className="text-[10px] text-slate-500">
+                  {task.lastResult.detail} ({task.lastResult.clicks} click)
+                </div>
+              )}
             </div>
 
             <button

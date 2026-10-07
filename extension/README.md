@@ -1,5 +1,7 @@
 # DealHunter Assistant — Client-Side Fast Voucher Clicker
 
+> **Hướng dẫn sử dụng cho người dùng:** [`docs/extension/huong-dan-su-dung.md`](../docs/extension/huong-dan-su-dung.md)
+
 Tiện ích mở rộng trình duyệt (Chrome Extension) theo chuẩn **Manifest V3**, chuyên dụng để săn mã giảm giá chớp nhoáng (flash vouchers 0h, 9h, 12h, 18h, 21h) trên **Shopee Việt Nam** và tích hợp thông tin trí tuệ giá của hệ sinh thái **DealHunter**.
 
 ---
@@ -67,6 +69,22 @@ Sau khi lệnh hoàn tất, thư mục `dist/` sẽ chứa trọn bộ file cài
 
 ---
 
+## 3b. Quy Tắc Săn Mã (áp dụng cho mọi khung giờ)
+
+1. **Giờ G là giờ Việt Nam (GMT+7)** — tính đúng kể cả khi máy đặt múi giờ khác.
+2. **Đồng hồ Shopee** đo bằng cách bắt đúng khoảnh khắc đồng hồ máy chủ Shopee nhảy sang giây mới (không dùng thẳng header `Date` vốn chỉ chính xác tới 1 giây). HUD hiển thị `+độ lệch ±sai số`; nếu hiện **CHUA DONG BO** thì bấm vào để đo lại trước giờ G.
+3. **Chọn đúng voucher**: hoặc bấm **Trỏ Chọn Nút** rồi bấm vào nút "Lưu" của voucher muốn săn (khóa được cả khi nút đang mờ/disabled trước giờ G), hoặc nhập **từ khóa** ("500k", "15%") ở chế độ Tự động 100%.
+   - Khi đã khóa một voucher, tiện ích **chỉ** click voucher đó — kể cả khi Shopee render lại thẻ lúc mở mã. Không bao giờ chuyển sang click voucher khác.
+   - Không khóa, không từ khóa: chỉ click voucher **mở ra đúng giờ G**, bỏ qua các voucher đã mở sẵn trước đó.
+4. **Bắt đầu click 150ms trước giờ G** (bù sai số đồng hồ), mỗi 35ms, tối đa 80 click, trong cửa sổ 3 giây sau giờ G. Bộ đếm chạy bằng Web Worker nên không bị Chrome làm chậm khi tab ở nền.
+5. **Kết quả là những gì trang Shopee hiển thị**, không tự báo thành công:
+   - `ĐÃ LƯU MÃ` — nút chuyển sang "Đã lưu"/"Dùng ngay"/...
+   - `Voucher đã hết lượt` — trang hiện "Hết lượt"/"Đã hết"
+   - `Không thấy nút voucher` — không có nút phù hợp trong khung giờ
+   - `Đã click nhưng trang chưa xác nhận` — hãy mở ví voucher để kiểm tra
+   - Tự động 100% còn báo rõ nếu Shopee chuyển sang trang xác minh (captcha) hoặc chưa đăng nhập.
+6. **Trước giờ G**: đăng nhập Shopee trên chính trình duyệt này và mở thử trang mã một lần để vượt xác minh (nếu có). Máy không được ngủ; Chrome phải đang mở.
+
 ## 4. Kiểm Thử Mã Nguồn (Unit Tests & Quality Assurance)
 
 Chạy bộ kiểm thử tự động Vitest:
@@ -75,7 +93,10 @@ npm test
 ```
 - `element_resolver.test.ts`: Kiểm tra nhận diện chính xác các nút "Lưu", "Lưu mã", "Thu thập" và lọc theo từ khóa.
 - `human_clicker.test.ts`: Kiểm tra chuỗi sự kiện chuột mô phỏng tự nhiên với tọa độ ngẫu nhiên.
-- `time_calibrator.test.ts`: Kiểm tra thuật toán đo RTT và bù trừ độ lệch đồng hồ máy chủ.
+- `time_calibrator.test.ts`: Thuật toán bắt mốc đổi giây khôi phục đúng độ lệch đồng hồ (sai số ≤ RTT/2); không có mốc đổi giây thì báo "chưa đồng bộ".
+- `hunt_engine.test.ts`: Không click trước giờ G; chỉ báo đã lưu khi trang xác nhận; theo được nút bị React thay mới; báo hết lượt / không tìm thấy / hết giờ đúng sự thật; lọc từ khóa; không bao giờ click nhầm voucher khác.
+- `drop_time.test.ts`: Giờ G theo giờ Việt Nam.
+- E2E trên Chrome thật: xem `e2e/README.md`.
 
 Kiểm tra Zero-Emoji:
 Tuân thủ tuyệt đối 100% quy chuẩn Zero-Emoji trên toàn bộ mã nguồn và giao diện.

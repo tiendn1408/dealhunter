@@ -10,7 +10,6 @@ interface ScheduleFormProps {
 
 export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated }) => {
   const [targetHour, setTargetHour] = useState<number>(0);
-  const [mode, setMode] = useState<"semi_auto" | "full_auto">("full_auto");
   const [targetUrl, setTargetUrl] = useState<string>(SHOPEE_URLS.VOUCHER_HUB);
   const [label, setLabel] = useState<string>("San ma 0h Shopee");
   const [keyword, setKeyword] = useState<string>("");
@@ -27,7 +26,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated }) => 
         targetMinute: 0,
         targetUrl,
         label: label.trim() || `San ma ${targetHour}h`,
-        mode,
+        mode: "full_auto", // a scheduled hunt always runs unattended
         keyword: keyword.trim() || undefined,
         status: "pending",
         createdAt: Date.now(),
@@ -47,26 +46,9 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated }) => 
           <Calendar className="w-3.5 h-3.5 text-emerald-600" />
           <span>Hen Gio San Voucher</span>
         </h3>
-        <div className="flex bg-slate-100 p-0.5 rounded-xl text-[11px] font-bold">
-          <button
-            type="button"
-            onClick={() => setMode("full_auto")}
-            className={`px-2 py-0.5 rounded-lg transition-all ${
-              mode === "full_auto" ? "bg-white text-emerald-800 shadow-2xs" : "text-slate-500 hover:text-slate-900"
-            }`}
-          >
-            Tu dong 100%
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("semi_auto")}
-            className={`px-2 py-0.5 rounded-lg transition-all ${
-              mode === "semi_auto" ? "bg-white text-emerald-800 shadow-2xs" : "text-slate-500 hover:text-slate-900"
-            }`}
-          >
-            Ban tu dong
-          </button>
-        </div>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200">
+          Tu dong 100%
+        </span>
       </div>
 
       {/* Target Hour Picker */}

@@ -2,6 +2,7 @@ import { ScheduledTask } from "../lib/types";
 import { storage } from "../lib/storage";
 import { timeCalibrator } from "./time_calibrator";
 import { MESSAGE_ACTIONS } from "../lib/constants";
+import { nextDropAt } from "../lib/drop_time";
 
 export class TaskScheduler {
   /**
@@ -11,17 +12,12 @@ export class TaskScheduler {
   async scheduleTask(task: ScheduledTask): Promise<void> {
     await storage.addTask(task);
 
-    const now = new Date();
-    const targetDate = new Date();
-    targetDate.setHours(task.targetHour, task.targetMinute, 0, 0);
+    const now = Date.now();
+    // Drop times are Vietnam time (GMT+7) regardless of this computer's timezone
+    const target = nextDropAt(task.targetHour, task.targetMinute, now, 0);
 
-    // If target hour is already passed today, schedule for next day
-    if (targetDate.getTime() <= now.getTime()) {
-      targetDate.setDate(targetDate.getDate() + 1);
-    }
-
-    const preWarmTime = targetDate.getTime() - 60 * 1000; // 60s in advance
-    const alarmTime = Math.max(preWarmTime, now.getTime() + 200);
+    const preWarmTime = target - 60 * 1000; // 60s in advance
+    const alarmTime = Math.max(preWarmTime, now + 200);
     const alarmName = `dh_task_${task.id}`;
 
     chrome.alarms.create(alarmName, {
@@ -45,8 +41,8 @@ export class TaskScheduler {
 
     if (!task || task.status === "cancelled") return;
 
-    // 1. Calibrate time fresh
-    await timeCalibrator.calibrate(3);
+    // 1. Calibrate against Shopee's clock right before the drop (stored for the content script)
+    await timeCalibrator.calibrate(5);
 
     // 2. Open or focus target tab
     const tab = await chrome.tabs.create({
