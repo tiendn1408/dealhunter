@@ -83,14 +83,17 @@ FETCH_TIMEOUT=15s
 MAX_RETRY=5
 
 # 6. AFFILIATE MARKETING ENGINE
-AFFILIATE_ENABLED=true
-SHOPEE_AFFILIATE_ID=YOUR_SHOPEE_AFFILIATE_ID
-SHOPEE_AFFILIATE_URL_TEMPLATE=https://s.shopee.vn/universal-link?url={URL}&sub_id={SUB_ID}
-LAZADA_AFFILIATE_ID=YOUR_LAZADA_AFFILIATE_ID
-LAZADA_AFFILIATE_URL_TEMPLATE=https://s.lazada.vn/s.xxxx?url={URL}&aff_sub={SUB_ID}
-TIKTOK_AFFILIATE_ID=YOUR_TIKTOK_AFFILIATE_ID
-TIKTOK_AFFILIATE_URL_TEMPLATE=https://vt.tiktok.com/xxxx?url={URL}&sub_id={SUB_ID}
-ACCESSTRADE_DEEPLINK_URL=https://fast.accesstrade.com.vn/deep_link/YOUR_ID?url=
+# Mac dinh TAT. Chi bat khi da co tai khoan affiliate that. Moi san chi duoc chuyen link khi co CA ID va
+# template do chuong trinh affiliate cung cap (khong co gia tri mau); thieu mot trong hai => giu link goc.
+AFFILIATE_ENABLED=false
+SHOPEE_AFFILIATE_ID=
+SHOPEE_AFFILIATE_URL_TEMPLATE=
+LAZADA_AFFILIATE_ID=
+LAZADA_AFFILIATE_URL_TEMPLATE=
+TIKTOK_AFFILIATE_ID=
+TIKTOK_AFFILIATE_URL_TEMPLATE=
+# Deeplink AccessTrade phai chua placeholder {URL} (vd: https://go.isclix.com/deep_link/<publisher_id>?url={URL}&utm_content={SUB_ID})
+ACCESSTRADE_DEEPLINK_URL=
 
 # 7. ZALO OA & ZNS NOTIFICATION (PROD LIVE)
 ZALO_ENABLED=true

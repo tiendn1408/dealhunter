@@ -13,16 +13,16 @@ import (
 )
 
 type ExtractedProduct struct {
-	Title        string
-	Price        int64
-	ListedPrice  int64
-	ShippingFee  int64
-	Currency     string
-	InStock      bool
-	ImageURL     string
-	SellerName   string
-	Brand        string
-	Description  string
+	Title       string
+	Price       int64
+	ListedPrice int64
+	ShippingFee int64
+	Currency    string
+	InStock     *bool // nil when the page does not state availability
+	ImageURL    string
+	SellerName  string
+	Brand       string
+	Description string
 }
 
 type JsonLdOffer struct {
@@ -33,12 +33,12 @@ type JsonLdOffer struct {
 }
 
 type JsonLdProduct struct {
-	Type        interface{}   `json:"@type"`
-	Name        string        `json:"name"`
-	Image       interface{}   `json:"image"`
-	Description string        `json:"description"`
-	Brand       interface{}   `json:"brand"`
-	Offers      interface{}   `json:"offers"`
+	Type        interface{} `json:"@type"`
+	Name        string      `json:"name"`
+	Image       interface{} `json:"image"`
+	Description string      `json:"description"`
+	Brand       interface{} `json:"brand"`
+	Offers      interface{} `json:"offers"`
 }
 
 // ExtractFromHTML parses HTML content to extract product metadata.
@@ -97,10 +97,9 @@ func ExtractFromHTML(body []byte, pageURL string) (*ExtractedProduct, error) {
 	}
 	traverse(doc)
 
+	// Only values present on the page are filled in; nothing is assumed (stock, shipping, seller).
 	prod := &ExtractedProduct{
-		Currency:    "VND",
-		InStock:     true,
-		ShippingFee: 15000,
+		Currency: "VND",
 	}
 
 	// 1. Try extracting from JSON-LD Schema.org first (most structured)
@@ -137,12 +136,6 @@ func ExtractFromHTML(body []byte, pageURL string) (*ExtractedProduct, error) {
 		}
 	}
 
-	if prod.SellerName == "" {
-		if siteName, ok := metaTags["og:site_name"]; ok {
-			prod.SellerName = siteName
-		}
-	}
-
 	// Price extraction from meta if not found in JSON-LD
 	if prod.Price == 0 {
 		var priceStr string
@@ -158,11 +151,6 @@ func ExtractFromHTML(body []byte, pageURL string) (*ExtractedProduct, error) {
 				prod.Price = parsedPrice
 			}
 		}
-	}
-
-	// 3. Last fallback for title: parse from URL slug
-	if prod.Title == "" && pageURL != "" {
-		prod.Title = ExtractSlugTitle(pageURL)
 	}
 
 	if prod.ListedPrice == 0 && prod.Price > 0 {
@@ -304,8 +292,9 @@ func parseSingleOffer(offer map[string]interface{}, prod *ExtractedProduct) {
 	}
 
 	if avail, ok := offer["availability"].(string); ok {
-		prod.InStock = strings.Contains(strings.ToLower(avail), "instock") ||
+		inStock := strings.Contains(strings.ToLower(avail), "instock") ||
 			strings.Contains(strings.ToLower(avail), "instoreonly")
+		prod.InStock = &inStock
 	}
 
 	if seller, ok := offer["seller"].(map[string]interface{}); ok {
@@ -363,7 +352,6 @@ func ParseVNDPrice(priceStr string) (int64, error) {
 var urlShopeeSlugPattern = regexp.MustCompile(`^/(.+)-i\.\d+\.\d+`)
 var urlLazadaSlugPattern = regexp.MustCompile(`^/products/(.+)-i\d+`)
 
-// ExtractSlugTitle extracts a fallback product title from the URL path.
 func ExtractSlugTitle(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {

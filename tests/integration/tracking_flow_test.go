@@ -12,12 +12,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
-	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
 	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/pkg/database"
+	"github.com/tiendang/deal-hunter/tests/fakemarket"
 )
 
 func TestEndToEndTrackingFlow(t *testing.T) {
@@ -49,7 +49,7 @@ func TestEndToEndTrackingFlow(t *testing.T) {
 	}
 
 	registry := marketplace.NewRegistry()
-	registry.Register(mock.NewMockAdapter())
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)

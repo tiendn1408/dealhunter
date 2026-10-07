@@ -1,4 +1,6 @@
-package zalo
+// Package fakezalo is a test-only Zalo client that records messages instead of sending them.
+// It must never be wired into a binary (cmd/*).
+package fakezalo
 
 import (
 	"context"

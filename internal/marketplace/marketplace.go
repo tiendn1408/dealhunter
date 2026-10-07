@@ -2,10 +2,15 @@ package marketplace
 
 import (
 	"context"
+	"errors"
 
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 )
+
+// ErrProductUnavailable means the marketplace page/API could not be read (blocked, removed or changed).
+// Adapters return it instead of substituting placeholder titles or previously stored prices.
+var ErrProductUnavailable = errors.New("could not read product data from the marketplace")
 
 type ProductData struct {
 	ExternalProductID string

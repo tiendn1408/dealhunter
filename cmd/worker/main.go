@@ -14,7 +14,6 @@ import (
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
 	"github.com/tiendang/deal-hunter/internal/marketplace/lazada"
-	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
 	"github.com/tiendang/deal-hunter/internal/marketplace/shopee"
 	"github.com/tiendang/deal-hunter/internal/marketplace/tiktok"
 	"github.com/tiendang/deal-hunter/internal/notification"
@@ -59,7 +58,6 @@ func main() {
 
 	// 3. Marketplace Registry
 	registry := marketplace.NewRegistry()
-	registry.Register(mock.NewMockAdapter())
 	registry.Register(lazada.NewLazadaAdapter())
 	registry.Register(shopee.NewShopeeAdapter())
 	registry.Register(tiktok.NewTikTokAdapter())

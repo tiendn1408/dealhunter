@@ -91,7 +91,8 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 		})
 		if err == nil && resp.StatusCode == 200 {
 			var apiResp shopeeApiResponse
-			if jsonErr := json.Unmarshal(resp.Body, &apiResp); jsonErr == nil && apiResp.Error == 0 && apiResp.Data.Name != "" {
+			if jsonErr := json.Unmarshal(resp.Body, &apiResp); jsonErr == nil && apiResp.Error == 0 && apiResp.Data.Name != "" &&
+				(apiResp.Data.Price > 0 || apiResp.Data.PriceMin > 0) {
 				price := apiResp.Data.Price / 100000
 				if price <= 0 {
 					price = apiResp.Data.PriceMin / 100000
@@ -105,11 +106,10 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 					ExternalProductID: extID,
 					CanonicalURL:      rawURL,
 					RawTitle:          crawler.CleanTitle(apiResp.Data.Name),
-					SellerName:        "Shopee Shop",
+					// The item API exposes neither the shop name nor the shipping fee; leave them unknown
 					Price: pricing.Price{
 						ListedPrice: listedPrice,
 						SalePrice:   price,
-						ShippingFee: 15000,
 					},
 					InStock: apiResp.Data.Stock > 0,
 				}, nil
@@ -121,16 +121,14 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 	resp, err := a.client.Fetch(ctx, rawURL, nil)
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, rawURL)
-		if extractErr == nil && extracted.Title != "" && extracted.Title != "San pham" {
+		if extractErr == nil && extracted.Title != "" && extracted.Price > 0 {
+			// A real product page states both a title and a price; challenge/error pages only have a <title>
 			price := extracted.Price
 			listedPrice := extracted.ListedPrice
 			if listedPrice <= 0 {
 				listedPrice = price
 			}
-			seller := extracted.SellerName
-			if seller == "" {
-				seller = "Shopee Seller"
-			}
+			seller := extracted.SellerName // empty when the page does not state it
 
 			return &marketplace.ProductData{
 				ExternalProductID: extID,
@@ -142,29 +140,12 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 					SalePrice:   price,
 					ShippingFee: extracted.ShippingFee,
 				},
-				InStock: extracted.InStock,
+				InStock: extracted.InStock != nil && *extracted.InStock,
 			}, nil
 		}
 	}
 
-	// 3. Fallback: Parse slug when anti-bot prevents direct content extraction
-	slugTitle := crawler.ExtractSlugTitle(rawURL)
-	if slugTitle == "" || slugTitle == "San pham" {
-		slugTitle = "San pham Shopee"
-	}
-
-	return &marketplace.ProductData{
-		ExternalProductID: extID,
-		CanonicalURL:      rawURL,
-		RawTitle:          slugTitle,
-		SellerName:        "Shopee Official",
-		Price: pricing.Price{
-			ListedPrice: 0,
-			SalePrice:   0,
-			ShippingFee: 0,
-		},
-		InStock: false,
-	}, nil
+	return nil, fmt.Errorf("%w: shopee %s", marketplace.ErrProductUnavailable, rawURL)
 }
 
 func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
@@ -192,7 +173,8 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 				}
 				if price > 0 {
 					inStock := apiResp.Data.Stock > 0
-					shipping := int64(15000)
+					// The item API has no shipping fee; reuse the last one actually extracted, else 0
+					shipping := int64(0)
 					if source.LastShippingFee != nil && *source.LastShippingFee >= 0 {
 						shipping = *source.LastShippingFee
 					}
@@ -225,29 +207,11 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 				ShippingFee:     shipping,
 				EffectivePrice:  extracted.Price + shipping,
 				Currency:        extracted.Currency,
-				InStock:         &extracted.InStock,
+				InStock:         extracted.InStock,
 				CapturedAt:      time.Now(),
 			}, nil
 		}
 	}
 
-	// 3. Fallback: preserve last verified price without random numbers
-	if source.LastPrice != nil && *source.LastPrice > 0 {
-		shipping := int64(15000)
-		if source.LastShippingFee != nil && *source.LastShippingFee >= 0 {
-			shipping = *source.LastShippingFee
-		}
-		inStock := true
-		return &pricing.PriceSnapshot{
-			ProductSourceID: source.ID,
-			Price:           *source.LastPrice,
-			ShippingFee:     shipping,
-			EffectivePrice:  *source.LastPrice + shipping,
-			Currency:        "VND",
-			InStock:         &inStock,
-			CapturedAt:      time.Now(),
-		}, nil
-	}
-
-	return nil, fmt.Errorf("shopee price extraction failed: %s", targetURL)
+	return nil, fmt.Errorf("%w: shopee price %s", marketplace.ErrProductUnavailable, targetURL)
 }

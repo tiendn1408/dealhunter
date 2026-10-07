@@ -74,7 +74,13 @@ func (t *Transformer) Transform(rawURL, platform, subID string) string {
 		}
 	}
 
-	if template == "" && t.cfg.AccessTradeTemplate != "" {
+	// A platform template is only usable with a real affiliate ID; otherwise keep the canonical link
+	if affID == "" {
+		template = ""
+	}
+
+	// AccessTrade deeplinks embed the publisher ID in the template and must carry the target URL
+	if template == "" && strings.Contains(t.cfg.AccessTradeTemplate, "{URL}") {
 		template = t.cfg.AccessTradeTemplate
 	}
 

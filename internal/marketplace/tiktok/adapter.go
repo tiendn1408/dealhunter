@@ -61,16 +61,14 @@ func (a *TikTokAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 	resp, err := a.client.Fetch(ctx, rawURL, nil)
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, rawURL)
-		if extractErr == nil && extracted.Title != "" && extracted.Title != "San pham" {
+		if extractErr == nil && extracted.Title != "" && extracted.Price > 0 {
+			// A real product page states both a title and a price; challenge/error pages only have a <title>
 			price := extracted.Price
 			listedPrice := extracted.ListedPrice
 			if listedPrice <= 0 {
 				listedPrice = price
 			}
-			seller := extracted.SellerName
-			if seller == "" {
-				seller = "TikTok Shop Official"
-			}
+			seller := extracted.SellerName // empty when the page does not state it
 
 			return &marketplace.ProductData{
 				ExternalProductID: extID,
@@ -82,29 +80,12 @@ func (a *TikTokAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 					SalePrice:   price,
 					ShippingFee: extracted.ShippingFee,
 				},
-				InStock: extracted.InStock,
+				InStock: extracted.InStock != nil && *extracted.InStock,
 			}, nil
 		}
 	}
 
-	// 2. Fallback: Parse slug if direct content is blocked
-	slugTitle := crawler.ExtractSlugTitle(rawURL)
-	if slugTitle == "" || slugTitle == "San pham" {
-		slugTitle = "San pham TikTok Shop"
-	}
-
-	return &marketplace.ProductData{
-		ExternalProductID: extID,
-		CanonicalURL:      rawURL,
-		RawTitle:          slugTitle,
-		SellerName:        "TikTok Shop Official",
-		Price: pricing.Price{
-			ListedPrice: 0,
-			SalePrice:   0,
-			ShippingFee: 0,
-		},
-		InStock: false,
-	}, nil
+	return nil, fmt.Errorf("%w: tiktok %s", marketplace.ErrProductUnavailable, rawURL)
 }
 
 func (a *TikTokAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
@@ -125,29 +106,11 @@ func (a *TikTokAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 				ShippingFee:     shipping,
 				EffectivePrice:  extracted.Price + shipping,
 				Currency:        extracted.Currency,
-				InStock:         &extracted.InStock,
+				InStock:         extracted.InStock,
 				CapturedAt:      time.Now(),
 			}, nil
 		}
 	}
 
-	// 2. Fallback: preserve last verified price without random numbers
-	if source.LastPrice != nil && *source.LastPrice > 0 {
-		shipping := int64(12000)
-		if source.LastShippingFee != nil && *source.LastShippingFee >= 0 {
-			shipping = *source.LastShippingFee
-		}
-		inStock := true
-		return &pricing.PriceSnapshot{
-			ProductSourceID: source.ID,
-			Price:           *source.LastPrice,
-			ShippingFee:     shipping,
-			EffectivePrice:  *source.LastPrice + shipping,
-			Currency:        "VND",
-			InStock:         &inStock,
-			CapturedAt:      time.Now(),
-		}, nil
-	}
-
-	return nil, fmt.Errorf("tiktok price extraction failed: %s", targetURL)
+	return nil, fmt.Errorf("%w: tiktok price %s", marketplace.ErrProductUnavailable, targetURL)
 }

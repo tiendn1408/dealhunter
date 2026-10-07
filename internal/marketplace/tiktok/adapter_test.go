@@ -2,9 +2,14 @@ package tiktok
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/tiendang/deal-hunter/internal/marketplace"
+	"github.com/tiendang/deal-hunter/internal/product"
 )
 
 func TestTikTokAdapter_Name(t *testing.T) {
@@ -14,24 +19,27 @@ func TestTikTokAdapter_Name(t *testing.T) {
 	}
 }
 
-func TestTikTokAdapter_ResolveProduct_SlugFallback(t *testing.T) {
+// When the marketplace blocks us (anti-bot page) the adapter must fail, never invent a title,
+// seller or price, and never re-use a previously stored price as a new reading.
+func TestTikTokAdapter_BlockedPageFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`<html><head><title></title></head><body>Checking your browser...</body></html>`))
+	}))
+	defer server.Close()
+
 	adapter := NewTikTokAdapter()
 	ctx := context.Background()
+	testURL := server.URL + "/view/product/555666777-tiktok.com"
 
-	url := "https://shop.tiktok.com/view/product/1729482910294819284"
-	data, err := adapter.ResolveProduct(ctx, url)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if data, err := adapter.ResolveProduct(ctx, testURL); !errors.Is(err, marketplace.ErrProductUnavailable) {
+		t.Fatalf("ResolveProduct: expected ErrProductUnavailable, got data=%+v err=%v", data, err)
 	}
 
-	if data.ExternalProductID != "tiktok-1729482910294819284" {
-		t.Errorf("expected extID 'tiktok-1729482910294819284', got '%s'", data.ExternalProductID)
-	}
-	if data.RawTitle == "" {
-		t.Errorf("expected non-empty title")
-	}
-	if data.Price.SalePrice < 0 {
-		t.Errorf("expected non-negative price, got %d", data.Price.SalePrice)
+	lastPrice := int64(1990000)
+	source := &product.ProductSource{ID: uuid.New(), CanonicalURL: testURL, LastPrice: &lastPrice}
+	if snap, err := adapter.FetchPrice(ctx, source); !errors.Is(err, marketplace.ErrProductUnavailable) {
+		t.Fatalf("FetchPrice: expected ErrProductUnavailable (no stale price), got snap=%+v err=%v", snap, err)
 	}
 }
 
@@ -67,7 +75,21 @@ func TestTikTokAdapter_ResolveProduct_LiveMockServer(t *testing.T) {
 	if data.Price.SalePrice != 2490000 {
 		t.Errorf("expected price 2490000, got %d", data.Price.SalePrice)
 	}
-	if data.SellerName != "JBL Official Store" {
-		t.Errorf("expected seller 'JBL Official Store', got '%s'", data.SellerName)
+	// og:site_name names the site, not the seller: the seller stays unknown
+	if data.SellerName != "" {
+		t.Errorf("expected unknown seller, got '%s'", data.SellerName)
+	}
+}
+
+// A 200 page that only has a <title> (anti-bot "Security Check", "product removed" pages) is not a product
+func TestTikTokAdapter_TitleOnlyPageIsNotAProduct(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<html><head><title>Security Check</title><meta property="og:title" content="Security Check" /></head><body></body></html>`))
+	}))
+	defer server.Close()
+
+	data, err := NewTikTokAdapter().ResolveProduct(context.Background(), server.URL+"/view/product/555666777-tiktok.com")
+	if !errors.Is(err, marketplace.ErrProductUnavailable) {
+		t.Fatalf("expected ErrProductUnavailable, got data=%+v err=%v", data, err)
 	}
 }

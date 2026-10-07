@@ -56,6 +56,7 @@ func TestTransformer_Lazada(t *testing.T) {
 func TestTransformer_TikTok(t *testing.T) {
 	cfg := Config{
 		Enabled:        true,
+		TikTokID:       "dh-tiktok",
 		TikTokTemplate: "https://vt.tiktok.com/aff?url={URL}&sub_id={SUB_ID}",
 	}
 	tr := NewTransformer(cfg)
@@ -86,6 +87,7 @@ func TestTransformer_AccessTradeFallback(t *testing.T) {
 func TestTransformer_AutoDetectPlatform(t *testing.T) {
 	cfg := Config{
 		Enabled:        true,
+		ShopeeID:       "dh-shopee",
 		ShopeeTemplate: "https://s.shopee.vn/aff?url={URL}&sub_id={SUB_ID}",
 	}
 	tr := NewTransformer(cfg)
@@ -126,5 +128,26 @@ func TestFormatSubID(t *testing.T) {
 	resGuest := FormatSubID(uuid.Nil, pID)
 	if resGuest != "guest_p_99999999" {
 		t.Fatalf("expected 'guest_p_99999999', got: %s", resGuest)
+	}
+}
+
+// Without a real affiliate ID the canonical link is kept (no placeholder affiliate links)
+func TestTransformer_NoAffiliateIDKeepsCanonicalLink(t *testing.T) {
+	tr := NewTransformer(Config{
+		Enabled:        true,
+		LazadaTemplate: "https://s.lazada.vn/s.xxxx?url={URL}&aff_sub={SUB_ID}",
+	})
+	rawURL := "https://www.lazada.vn/products/item-i123.html"
+	if got := tr.Transform(rawURL, "lazada", "u_1_p_2"); got != rawURL {
+		t.Fatalf("expected canonical link without affiliate ID, got %s", got)
+	}
+}
+
+// An AccessTrade template without {URL} would send every click to the same page; it is ignored
+func TestTransformer_AccessTradeTemplateWithoutURLIgnored(t *testing.T) {
+	tr := NewTransformer(Config{Enabled: true, AccessTradeTemplate: "https://go.isclix.com/deep_link/123?url="})
+	rawURL := "https://tiki.vn/product/123"
+	if got := tr.Transform(rawURL, "tiki", "u_1"); got != rawURL {
+		t.Fatalf("expected canonical link, got %s", got)
 	}
 }

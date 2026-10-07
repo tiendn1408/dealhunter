@@ -1,4 +1,6 @@
-package mock
+// Package fakemarket is a test-only marketplace adapter. It must never be registered in a binary
+// (cmd/*): DealHunter only tracks real marketplaces.
+package fakemarket
 
 import (
 	"context"

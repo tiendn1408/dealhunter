@@ -1,11 +1,8 @@
 package router
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -76,10 +73,7 @@ func (h *Handler) GetTrackedProductVouchers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	normPlatform := strings.ToLower(platform)
-	if (normPlatform == "shopee" || normPlatform == "lazada" || normPlatform == "tiktok") && len(vouchers) == 0 && listedPrice > 0 {
-		vouchers = h.seedStandardVouchers(r.Context(), sourceID, normPlatform, listedPrice, shippingFee)
-	}
+	// Only real vouchers are shown; no voucher data is ever generated. An empty list is a valid answer.
 
 	// 3. Enrich vouchers with affiliate collect URL for Early Cookie Drop
 	for _, v := range vouchers {
@@ -107,110 +101,6 @@ func (h *Handler) GetTrackedProductVouchers(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-const (
-	defaultVoucherValidityDays = 30
-	defaultShopDiscPercent     = 5
-	defaultPlatformDiscPercent = 8
-	maxShopDiscountCap         = 100000
-	minShopDiscountFloor       = 10000
-	maxPlatformDiscountCap     = 150000
-	minPlatformDiscountFloor   = 20000
-
-	hubShopeeVoucher  = "https://shopee.vn/m/ma-giam-gia"
-	hubShopeeFreeship = "https://shopee.vn/m/mien-phi-van-chuyen"
-	hubLazadaVoucher  = "https://www.lazada.vn/voucher"
-	hubTikTokVoucher  = "https://www.tiktok.com/tag/voucher"
-)
-
-func (h *Handler) seedStandardVouchers(ctx context.Context, sourceID uuid.UUID, platform string, listedPrice, shippingFee int64) []*voucher.ProductVoucher {
-	now := time.Now()
-	exp := now.AddDate(0, 0, defaultVoucherValidityDays)
-
-	var hubURL string
-	var freeshipURL string
-	switch platform {
-	case "lazada":
-		hubURL = hubLazadaVoucher
-		freeshipURL = hubLazadaVoucher
-	case "tiktok":
-		hubURL = hubTikTokVoucher
-		freeshipURL = hubTikTokVoucher
-	default:
-		hubURL = hubShopeeVoucher
-		freeshipURL = hubShopeeFreeship
-	}
-
-	shopDisc := (listedPrice * defaultShopDiscPercent) / 100
-	if shopDisc > maxShopDiscountCap {
-		shopDisc = maxShopDiscountCap
-	} else if shopDisc < minShopDiscountFloor {
-		shopDisc = minShopDiscountFloor
-	}
-
-	platDisc := (listedPrice * defaultPlatformDiscPercent) / 100
-	if platDisc > maxPlatformDiscountCap {
-		platDisc = maxPlatformDiscountCap
-	} else if platDisc < minPlatformDiscountFloor {
-		platDisc = minPlatformDiscountFloor
-	}
-
-	var generated []*voucher.ProductVoucher
-
-	vShop := &voucher.ProductVoucher{
-		ID:              uuid.New(),
-		ProductSourceID: sourceID,
-		VoucherType:     voucher.VoucherTypeShop,
-		VoucherCode:     fmt.Sprintf("SHOP%dK", shopDisc/1000),
-		Title:           fmt.Sprintf("Voucher Shop giam %d.000d", shopDisc/1000),
-		DiscountAmount:  shopDisc,
-		DiscountPercent: 5,
-		MinOrderValue:   listedPrice / 2,
-		CollectURL:      hubURL,
-		ExpiresAt:       &exp,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-	_ = h.voucherRepo.UpsertVoucher(ctx, vShop)
-	generated = append(generated, vShop)
-
-	vPlat := &voucher.ProductVoucher{
-		ID:              uuid.New(),
-		ProductSourceID: sourceID,
-		VoucherType:     voucher.VoucherTypePlatform,
-		VoucherCode:     fmt.Sprintf("PLAT%dK", platDisc/1000),
-		Title:           fmt.Sprintf("Voucher San giam %d.000d", platDisc/1000),
-		DiscountAmount:  platDisc,
-		DiscountPercent: 8,
-		MinOrderValue:   listedPrice * 3 / 4,
-		CollectURL:      hubURL,
-		ExpiresAt:       &exp,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-	_ = h.voucherRepo.UpsertVoucher(ctx, vPlat)
-	generated = append(generated, vPlat)
-
-	if shippingFee > 0 {
-		vShip := &voucher.ProductVoucher{
-			ID:              uuid.New(),
-			ProductSourceID: sourceID,
-			VoucherType:     voucher.VoucherTypeFreeship,
-			Title:           "Freeship Extra ho tro phi van chuyen",
-			DiscountAmount:  shippingFee,
-			MinOrderValue:   0,
-			CollectURL:      freeshipURL,
-			ExpiresAt:       &exp,
-			CreatedAt:       now,
-			UpdatedAt:       now,
-		}
-		_ = h.voucherRepo.UpsertVoucher(ctx, vShip)
-		generated = append(generated, vShip)
-	}
-
-	return generated
-}
-
-// CreateTrackedProductVoucher handles POST /api/v1/tracked-products/{id}/vouchers
 func (h *Handler) CreateTrackedProductVoucher(w http.ResponseWriter, r *http.Request) {
 	if h.voucherRepo == nil {
 		http.Error(w, "voucher service unavailable", http.StatusServiceUnavailable)

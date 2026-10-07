@@ -24,9 +24,7 @@ import (
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
-	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
 	"github.com/tiendang/deal-hunter/internal/notification"
-	"github.com/tiendang/deal-hunter/internal/notification/zalo"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
@@ -34,6 +32,8 @@ import (
 	"github.com/tiendang/deal-hunter/internal/voucher"
 	"github.com/tiendang/deal-hunter/pkg/affiliate"
 	"github.com/tiendang/deal-hunter/pkg/database"
+	"github.com/tiendang/deal-hunter/tests/fakemarket"
+	"github.com/tiendang/deal-hunter/tests/fakezalo"
 )
 
 func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
@@ -61,7 +61,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.Register(mock.NewMockAdapter())
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -259,7 +259,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	}
 
 	// 8. Verify Zalo Notifier 2-Step Combo Injection (Section 4.4)
-	mockZalo := zalo.NewMockZaloClient()
+	mockZalo := fakezalo.NewMockZaloClient()
 	notifierSvc := notification.NewNotifierService(notifRepo, q, mockZalo, "template-voucher-test", logger)
 	notifierSvc.SetAffiliateTransformer(affTr)
 	notifierSvc.SetVoucherRepository(voucherRepo)

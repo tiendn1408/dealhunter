@@ -55,7 +55,7 @@ func TestExtractFromHTML_JsonLd(t *testing.T) {
 	if prod.SellerName != "Sony Official Store" {
 		t.Errorf("expected seller 'Sony Official Store', got '%s'", prod.SellerName)
 	}
-	if !prod.InStock {
+	if prod.InStock == nil || !*prod.InStock {
 		t.Errorf("expected InStock to be true")
 	}
 }
@@ -86,8 +86,15 @@ func TestExtractFromHTML_OpenGraph(t *testing.T) {
 	if prod.Price != 2850000 {
 		t.Errorf("expected price 2850000, got %d", prod.Price)
 	}
-	if prod.SellerName != "Samsung Flagship Store" {
-		t.Errorf("expected seller 'Samsung Flagship Store', got '%s'", prod.SellerName)
+	// og:site_name is the site, not the seller; values the page does not state stay unknown
+	if prod.SellerName != "" {
+		t.Errorf("expected unknown seller, got '%s'", prod.SellerName)
+	}
+	if prod.InStock != nil {
+		t.Errorf("expected unknown stock status, got %v", *prod.InStock)
+	}
+	if prod.ShippingFee != 0 {
+		t.Errorf("expected unknown shipping fee (0), got %d", prod.ShippingFee)
 	}
 }
 
@@ -116,17 +123,15 @@ func TestParseVNDPrice(t *testing.T) {
 	}
 }
 
-func TestExtractSlugTitle(t *testing.T) {
-	shopeeURL := "https://shopee.vn/Tai-nghe-Sony-WH-1000XM5-Chinh-Hang-i.88201679.22731853609"
-	title := ExtractSlugTitle(shopeeURL)
-	if title != "Tai Nghe Sony WH 1000XM5 Chinh Hang" {
-		t.Errorf("unexpected shopee slug title: '%s'", title)
+// A page without product content (e.g. an anti-bot challenge) yields no title: nothing is invented from the URL
+func TestExtractFromHTML_NoContentNoTitle(t *testing.T) {
+	prod, err := ExtractFromHTML([]byte(`<html><head></head><body>Checking your browser...</body></html>`),
+		"https://shopee.vn/Tai-nghe-Sony-WH-1000XM5-Chinh-Hang-i.88201679.22731853609")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	lazadaURL := "https://www.lazada.vn/products/tai-nghe-khong-day-sony-wh-1000xm5-i1856950796.html"
-	title2 := ExtractSlugTitle(lazadaURL)
-	if title2 != "Tai Nghe Khong Day Sony Wh 1000xm5" {
-		t.Errorf("unexpected lazada slug title: '%s'", title2)
+	if prod.Title != "" || prod.Price != 0 || prod.InStock != nil {
+		t.Fatalf("expected empty extraction, got %+v", prod)
 	}
 }
 

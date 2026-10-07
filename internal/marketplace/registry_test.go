@@ -27,6 +27,7 @@ func TestRegistryDetect(t *testing.T) {
 	reg.Register(&dummyAdapter{name: "shopee"})
 	reg.Register(&dummyAdapter{name: "lazada"})
 	reg.Register(&dummyAdapter{name: "tiktok"})
+	// An adapter named "mock" registered like a real one gets no hosts: fake platforms never resolve
 	reg.Register(&dummyAdapter{name: "mock"})
 
 	tests := []struct {
@@ -45,8 +46,12 @@ func TestRegistryDetect(t *testing.T) {
 			shouldErr:    false,
 		},
 		{
-			url:          "https://mock.dealhunter.vn/item/999",
-			expectedName: "mock",
+			url:       "https://mock.dealhunter.vn/item/999",
+			shouldErr: true,
+		},
+		{
+			url:          "https://vt.tiktok.com/ZSabc/",
+			expectedName: "tiktok",
 			shouldErr:    false,
 		},
 		{
@@ -87,5 +92,17 @@ func TestRegistryDetect(t *testing.T) {
 				t.Errorf("expected adapter %s, got %s", tt.expectedName, m.Name())
 			}
 		})
+	}
+}
+
+func TestRegistryRegisterForHosts(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterForHosts(&dummyAdapter{name: "fake"}, "fake.test")
+
+	if m, err := reg.Detect("https://fake.test/item/1"); err != nil || m.Name() != "fake" {
+		t.Fatalf("expected fake adapter, got %v err=%v", m, err)
+	}
+	if _, err := reg.Detect("https://shopee.vn/product/1/2"); err == nil {
+		t.Fatal("expected unregistered real platform to be rejected")
 	}
 }

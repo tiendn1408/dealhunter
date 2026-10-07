@@ -32,6 +32,7 @@ Header `X-User-ID` **khong con duoc chap nhan** (bi bo qua); request khong co to
   - `409 Conflict`: Trung lap ban ghi (vi du: san pham nguon da ton tai).
   - `422 Unprocessable Entity`: Du lieu khong thoa man dieu kien nghiep vu.
   - `500 Internal Server Error`: Loi he thong hoac co so du lieu.
+  - `502 Bad Gateway`: Khong doc duoc san pham tu san (trang bi chan, da go hoac thay doi). He thong **khong** thay the bang du lieu gia (tieu de tu URL, gia cu, nguoi ban mac dinh).
 
 ---
 
@@ -237,7 +238,7 @@ He thong **khong** co `demo-login` hay token gia lap (`mock-google-*`); Google l
         "platform": "tiktok",
         "listed_price": 99000,
         "effective_price": 94000,
-        "affiliate_url": "https://vt.tiktok.com/xxxx?sub_id=...",
+        "affiliate_url": "https://shop.tiktok.com/view/product/1729482910294819284",
         "is_best_deal": true
       },
       {

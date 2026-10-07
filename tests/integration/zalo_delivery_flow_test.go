@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/notification/zalo"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
+	"github.com/tiendang/deal-hunter/tests/fakezalo"
 )
 
 func TestZaloDeliveryLifecycleFlow(t *testing.T) {
@@ -50,7 +52,7 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 	q := queue.NewRedisStreamQueue(rdb, streamName, "zalo-group")
 	_ = q.Init(ctx)
 
-	mockZalo := zalo.NewMockZaloClient()
+	mockZalo := fakezalo.NewMockZaloClient()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	notifier := notification.NewNotifierService(notifRepo, q, mockZalo, "test_template_001", logger)
 
@@ -155,6 +157,32 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 	}
 	capturedMsgID := *updatedLog.MsgID
 	t.Logf("Notification sent successfully! Captured Zalo MsgID=%s", capturedMsgID)
+
+	// 5b. Without Zalo OA configured, nothing is sent and the log says so (never a fake "sent")
+	t.Log("Step 3b: Processing a notification with Zalo OA not configured...")
+	disabledNotifier := notification.NewNotifierService(notifRepo, q, zalo.NewDisabledClient(), "test_template_001", logger)
+	unsentLog := &notification.NotificationLog{
+		UserID: userID, AlertRuleID: rule.ID, Channel: "zalo", Recipient: "0988123456",
+		Status: notification.StatusQueued, PriceBefore: 6290000, PriceAfter: 5450000,
+	}
+	if err := notifRepo.InsertLog(ctx, unsentLog); err != nil {
+		t.Fatalf("insert notification log failed: %v", err)
+	}
+	unsentPayload, _ := json.Marshal(notification.QueuePayload{
+		NotificationLogID: unsentLog.ID, UserID: userID, AlertRuleID: rule.ID, Recipient: "0988123456",
+		Channel: "zalo", ProductSourceID: source.ID, PriceBefore: 6290000, PriceAfter: 5450000,
+	})
+	_ = disabledNotifier.ProcessMessage(ctx, queue.Message{MsgID: "test-msg-unconfigured", JobID: string(unsentPayload)})
+	unsent, err := notifRepo.GetLog(ctx, unsentLog.ID)
+	if err != nil || unsent == nil {
+		t.Fatalf("get log failed: %v", err)
+	}
+	if unsent.Status != notification.StatusFailed || unsent.ErrorMessage == nil ||
+		!strings.Contains(*unsent.ErrorMessage, "not configured") {
+		t.Fatalf("expected failed log with 'not configured' reason, got status=%s err=%v", unsent.Status, unsent.ErrorMessage)
+	}
+	// keep the feed assertions below about the delivered message only
+	_, _ = dbPool.Exec(ctx, "DELETE FROM notification_logs WHERE id = $1", unsentLog.ID)
 
 	// 6. Simulate Zalo Webhook: Delivery callback (user_received_message)
 	t.Log("Step 4: Simulating Zalo webhook callback (user_received_message -> delivered)...")

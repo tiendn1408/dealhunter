@@ -3,6 +3,7 @@ package zalo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,8 +18,8 @@ import (
 )
 
 const (
-	KeyZaloAccessToken  = "zalo:oa:access_token"
-	KeyZaloRefreshToken = "zalo:oa:refresh_token"
+	KeyZaloAccessToken   = "zalo:oa:access_token"
+	KeyZaloRefreshToken  = "zalo:oa:refresh_token"
 	DefaultRefreshWindow = 12 * time.Hour
 )
 
@@ -70,6 +71,14 @@ type zaloTokenResponse struct {
 	Message      string `json:"message"`
 }
 
+// ErrZaloNotConfigured means Zalo OA credentials are missing, so no real message can be sent.
+var ErrZaloNotConfigured = errors.New("zalo OA is not configured")
+
+// CanRefresh reports whether OAuth refresh credentials are configured.
+func (m *TokenManager) CanRefresh() bool {
+	return m.appID != "" && m.secretKey != "" && m.refreshToken != ""
+}
+
 // RefreshToken requests a new access token from Zalo OAuth API and updates Redis.
 func (m *TokenManager) RefreshToken(ctx context.Context) (string, error) {
 	m.mu.Lock()
@@ -83,14 +92,9 @@ func (m *TokenManager) RefreshToken(ctx context.Context) (string, error) {
 		}
 	}
 
-	// 2. Fallback to sandbox mock token if credentials are missing
+	// 2. Without OAuth credentials there is nothing to refresh; never fabricate a token
 	if m.appID == "" || m.secretKey == "" || currRefreshToken == "" {
-		mockToken := "mock_zalo_access_token_active"
-		if m.redisClient != nil {
-			_ = m.redisClient.Set(ctx, KeyZaloAccessToken, mockToken, 25*time.Hour).Err()
-		}
-		m.logger.Info("Using simulated Zalo access token in development/sandbox mode")
-		return mockToken, nil
+		return "", ErrZaloNotConfigured
 	}
 
 	// 3. Make HTTP request to Zalo OAuth v4 endpoint

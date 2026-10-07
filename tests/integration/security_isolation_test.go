@@ -24,7 +24,6 @@ import (
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
-	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
 	"github.com/tiendang/deal-hunter/internal/matching"
 	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
@@ -32,6 +31,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/queue"
 	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/pkg/database"
+	"github.com/tiendang/deal-hunter/tests/fakemarket"
 )
 
 func TestSecurityAndDataIsolationFlow(t *testing.T) {
@@ -59,7 +59,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.Register(mock.NewMockAdapter())
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -82,7 +82,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	handler.SetAuthService(authSvc, jwtMgr)
 
 	matchingRepo := matching.NewPostgresMatchingRepository(dbPool)
-	searcher := matching.NewMultiPlatformSearcher(nil)
+	searcher := &fakemarket.Searcher{} // no live marketplace traffic from tests
 	matchingSvc := matching.NewMatchingService(matchingRepo, searcher, nil, compSvc)
 	handler.SetMatchingService(matchingSvc)
 

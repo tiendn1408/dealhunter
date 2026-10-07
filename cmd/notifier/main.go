@@ -67,17 +67,21 @@ func main() {
 		rdb,
 		logger,
 	)
-	tokenManager.StartAutoRefresh(ctx, zalo.DefaultRefreshWindow)
 
 	var zaloClient zalo.ZaloClient
-	if cfg.ZaloEnabled && (cfg.ZaloOAAccessToken != "" || cfg.ZaloRefreshToken != "") {
-		logger.Info("Using real Zalo HTTP client with token manager")
+	switch {
+	case !cfg.ZaloEnabled || (cfg.ZaloOAAccessToken == "" && !tokenManager.CanRefresh()):
+		logger.Warn("Zalo OA is NOT configured: notifications will be recorded as failed, nothing is sent",
+			"zalo_enabled", cfg.ZaloEnabled)
+		zaloClient = zalo.NewDisabledClient()
+	default:
+		logger.Info("Using Zalo OA HTTP client", "auto_refresh", tokenManager.CanRefresh())
 		httpCli := zalo.NewHTTPZaloClient(cfg.ZaloOAAccessToken, rdb)
-		httpCli.SetTokenManager(tokenManager)
+		if tokenManager.CanRefresh() {
+			httpCli.SetTokenManager(tokenManager)
+			tokenManager.StartAutoRefresh(ctx, zalo.DefaultRefreshWindow)
+		}
 		zaloClient = httpCli
-	} else {
-		logger.Info("Using Mock Zalo client (sandbox/development mode)")
-		zaloClient = zalo.NewMockZaloClient()
 	}
 
 	// 6. Affiliate Link Engine

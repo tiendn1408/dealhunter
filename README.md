@@ -7,7 +7,7 @@ The system covers product link ingestion, periodic automated scraping, atomic pr
 - **Language**: Go 1.26+ (`chi` router, `slog`, `prometheus`)
 - **Database**: PostgreSQL 15 (`pgx/v5`, connection pooling via `pgxpool`, migrations via `golang-migrate`)
 - **Queue & Cache**: Redis 7 (`Redis Streams` consumer groups `XREADGROUP` / `XACK`, string caching for comparison results with TTL)
-- **Marketplace Adapters**: Shopee Vietnam, Lazada Vietnam, TikTok Shop Vietnam, Mock Adapter
+- **Marketplace Adapters**: Shopee Vietnam, Lazada Vietnam, TikTok Shop Vietnam (real data only; test doubles live in `tests/`)
 
 ## Architecture
 
@@ -15,7 +15,7 @@ The system is organized as a Modular Monolith with Clean Architecture (Ports & A
 1. **API Server (`cmd/api`)**: Handles tracking registration, price history, alert rules, Zalo connection, and cross-platform price comparison endpoints.
 2. **Worker Pool (`cmd/worker`)**: Consumes price fetch jobs from Redis Streams, invokes marketplace adapters, commits atomic price snapshot transactions in PostgreSQL, evaluates alert conditions, and invalidates Redis comparison cache.
 3. **Scheduler (`cmd/scheduler`)**: Periodically queries due tracking records with `SELECT ... FOR UPDATE SKIP LOCKED`, dispatches jobs to Redis Streams, and runs background comparison snapshot refresh every 10 minutes.
-4. **Notifier (`cmd/notifier`)**: Consumes notification events from Redis Streams and delivers price drop notifications via Zalo OA / ZNS (or Mock Sandbox).
+4. **Notifier (`cmd/notifier`)**: Consumes notification events from Redis Streams and delivers price drop notifications via Zalo OA / ZNS. When Zalo is not configured nothing is sent and the notification is recorded as failed.
 
 ## Quick Start
 
@@ -52,7 +52,7 @@ go run cmd/notifier/main.go
 - [x] Domain Models (`internal/domain`, `internal/product`, `internal/pricing`)
 - [x] Concrete PostgreSQL Repositories (`pgx/v5` in `product`, `tracking`, `pricing`, `jobs`)
 - [x] Redis Streams Queue (`internal/queue/redis_stream.go`)
-- [x] Marketplace Adapters (`internal/marketplace/mock`, `lazada`)
+- [x] Marketplace Adapters (`shopee`, `lazada`, `tiktok`)
 - [x] Worker Pool (`internal/jobs/worker.go`) with concurrency & atomic transactions
 - [x] Scheduler (`internal/jobs/scheduler.go`) with `SKIP LOCKED` and next fetch scheduling
 - [x] API Server (`internal/http/handler.go`) with track, list, detail, prices, pause, resume
@@ -62,7 +62,7 @@ go run cmd/notifier/main.go
 ### Phase 2: Alert Rules & Zalo Notification [100% Completed]
 - [x] Database Schema & Migrations (`migrations/000002_alerts.up.sql`)
 - [x] Alert Rule Engine (`internal/alert`): drop percent, target price, lowest in N days
-- [x] Notification Service (`internal/notification`): Zalo OA / ZNS client with Mock Sandbox
+- [x] Notification Service (`internal/notification`): Zalo OA / ZNS client
 - [x] Notifier Worker (`cmd/notifier`): Redis Stream consumer for notification events
 - [x] API Endpoints: alert rules management (`GET/POST /api/v1/tracked-products/{id}/alerts`, `DELETE /api/v1/alerts/{id}`)
 - [x] Notification Center Endpoints (`GET /api/v1/notifications`, `POST /api/v1/notifications/{id}/read`)

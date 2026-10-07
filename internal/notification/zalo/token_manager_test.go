@@ -3,13 +3,12 @@ package zalo
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -29,7 +28,8 @@ func getTestRedis(t *testing.T) *redis.Client {
 	return rdb
 }
 
-func TestTokenManager_SandboxFallback(t *testing.T) {
+// Without OAuth credentials the manager must fail, never fabricate or cache a token
+func TestTokenManager_NotConfigured(t *testing.T) {
 	rdb := getTestRedis(t)
 	defer rdb.Close()
 
@@ -37,18 +37,14 @@ func TestTokenManager_SandboxFallback(t *testing.T) {
 	ctx := context.Background()
 
 	token, err := tm.GetAccessToken(ctx)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, ErrZaloNotConfigured) || token != "" {
+		t.Fatalf("expected ErrZaloNotConfigured and no token, got token=%q err=%v", token, err)
 	}
-
-	if token != "mock_zalo_access_token_active" {
-		t.Errorf("expected sandbox mock token, got %s", token)
+	if tm.CanRefresh() {
+		t.Fatal("expected CanRefresh=false without credentials")
 	}
-
-	// Verify cached in Redis
-	cached, err := rdb.Get(ctx, KeyZaloAccessToken).Result()
-	if err != nil || cached != token {
-		t.Errorf("expected token cached in redis, got %v, err=%v", cached, err)
+	if n, _ := rdb.Exists(ctx, KeyZaloAccessToken).Result(); n != 0 {
+		t.Fatal("expected no access token written to Redis")
 	}
 }
 
@@ -128,7 +124,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func TestTokenManager_AutoRefreshTicker(t *testing.T) {
+func TestTokenManager_AutoRefreshTickerWithoutCredentialsWritesNothing(t *testing.T) {
 	rdb := getTestRedis(t)
 	defer rdb.Close()
 
@@ -137,45 +133,9 @@ func TestTokenManager_AutoRefreshTicker(t *testing.T) {
 	defer cancel()
 
 	tm.StartAutoRefresh(ctx, 20*time.Millisecond)
-
 	time.Sleep(60 * time.Millisecond)
 
-	cached, err := rdb.Get(ctx, KeyZaloAccessToken).Result()
-	if err != nil || cached != "mock_zalo_access_token_active" {
-		t.Errorf("expected auto refresh to populate token in redis, got %s, err=%v", cached, err)
+	if n, _ := rdb.Exists(ctx, KeyZaloAccessToken).Result(); n != 0 {
+		t.Error("expected auto refresh without credentials to write no token")
 	}
-}
-
-func TestMockZaloClient_SendAndGenerateMsgID(t *testing.T) {
-	mock := NewMockZaloClient()
-	ctx := context.Background()
-
-	msgID, err := mock.SendMessage(ctx, "0987654321", "tpl_123", map[string]string{
-		"price_before": "6000000",
-		"price_after":  "5000000",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if msgID == "" {
-		t.Errorf("expected non-empty msgID")
-	}
-
-	if mock.CountSent() != 1 {
-		t.Errorf("expected 1 sent message, got %d", mock.CountSent())
-	}
-
-	if mock.SentMessages[0].MsgID != msgID {
-		t.Errorf("expected tracked msgID %s, got %s", msgID, mock.SentMessages[0].MsgID)
-	}
-
-	// Test failure mode
-	mock.ShouldFail = true
-	mock.FailError = fmt.Errorf("zalo network timeout")
-	_, err = mock.SendMessage(ctx, "0987654321", "tpl_123", nil)
-	if err == nil {
-		t.Errorf("expected error when ShouldFail = true")
-	}
-	_ = uuid.Nil
 }

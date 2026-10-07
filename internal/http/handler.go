@@ -15,6 +15,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/auth"
 	"github.com/tiendang/deal-hunter/internal/comparison"
 	"github.com/tiendang/deal-hunter/internal/domain"
+	"github.com/tiendang/deal-hunter/internal/marketplace"
 	"github.com/tiendang/deal-hunter/internal/matching"
 	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
@@ -168,6 +169,10 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 
 	tracked, err := h.trackingService.TrackURL(r.Context(), userID, req.URL)
 	if err != nil {
+		if errors.Is(err, marketplace.ErrProductUnavailable) {
+			http.Error(w, "Không đọc được thông tin sản phẩm từ sàn (trang bị chặn, đã gỡ hoặc thay đổi). Vui lòng thử lại sau.", http.StatusBadGateway)
+			return
+		}
 		if strings.Contains(err.Error(), "unsupported or unregistered platform") ||
 			strings.Contains(err.Error(), "invalid url") ||
 			strings.Contains(err.Error(), "detect platform") ||
@@ -198,6 +203,11 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 					price = *source.LastEffectivePrice
 				} else if source.LastPrice != nil {
 					price = *source.LastPrice
+				}
+				// Without a real price the price check is skipped and wrong products can be auto-linked
+				// (DATA-11), so matching waits until a price has actually been fetched.
+				if price <= 0 {
+					return
 				}
 				_, _ = h.matchingService.DiscoverAndMatch(bgCtx, uid, source.ProductID, source.Platform, title, price)
 			}
@@ -930,6 +940,10 @@ func (h *Handler) LinkProductSource(w http.ResponseWriter, r *http.Request) {
 		}
 		if errors.Is(err, tracking.ErrProductNotFound) {
 			http.Error(w, "Nhóm sản phẩm không tồn tại", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, marketplace.ErrProductUnavailable) {
+			http.Error(w, "Không đọc được thông tin sản phẩm từ sàn (trang bị chặn, đã gỡ hoặc thay đổi). Vui lòng thử lại sau.", http.StatusBadGateway)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusBadRequest)

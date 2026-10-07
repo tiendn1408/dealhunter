@@ -36,7 +36,7 @@ cp .env.example .env
 | `DEFAULT_POLL_INTERVAL` | `1800` | Chu ky mac dinh giua cac lan kiem tra gia (1800 = 30 phut). |
 | `FETCH_TIMEOUT` | `10s` | Thoi gian timeout toi da cho moi lan goi adapter lay gia. |
 | `MAX_RETRY` | `5` | So lan thu lai toi da truoc khi danh dau job la `dead`. |
-| `ZALO_ENABLED` | `false` | Bat/tat ket noi Zalo thuc te (false dung Mock Sandbox). |
+| `ZALO_ENABLED` | `false` | Bat/tat gui Zalo OA that. Khi tat (hoac thieu token), notifier khong gui gi va ghi thong bao la `failed` (ly do: chua cau hinh Zalo). |
 | `ZALO_OA_ACCESS_TOKEN` | | Token truy cap Zalo OA API. |
 | `ZALO_TEMPLATE_ID` | | Template ID cho ZNS. |
 | `ZALO_APP_ID` | | Application ID Zalo Developer. |

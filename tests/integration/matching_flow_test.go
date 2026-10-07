@@ -23,10 +23,6 @@ import (
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
-	"github.com/tiendang/deal-hunter/internal/marketplace/lazada"
-	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
-	"github.com/tiendang/deal-hunter/internal/marketplace/shopee"
-	"github.com/tiendang/deal-hunter/internal/marketplace/tiktok"
 	"github.com/tiendang/deal-hunter/internal/matching"
 	"github.com/tiendang/deal-hunter/internal/notification"
 	"github.com/tiendang/deal-hunter/internal/pricing"
@@ -34,6 +30,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/queue"
 	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/pkg/database"
+	"github.com/tiendang/deal-hunter/tests/fakemarket"
 )
 
 type testTrackingLinker struct {
@@ -78,18 +75,24 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	comparisonRepo := comparison.NewPostgresRepository(dbPool)
 	matchingRepo := matching.NewPostgresMatchingRepository(dbPool)
 
+	// Test doubles only: no live marketplace traffic from tests
 	registry := marketplace.NewRegistry()
-	registry.Register(shopee.NewShopeeAdapter())
-	registry.Register(lazada.NewLazadaAdapter())
-	registry.Register(tiktok.NewTikTokAdapter())
-	registry.Register(mock.NewMockAdapter())
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
 
 	trackingSvc := tracking.NewTrackingService(registry, productRepo, trackingRepo, jobRepo, q)
 	pricingSvc := pricing.NewPricingService(pricingRepo)
 	comparisonCache := comparison.NewRedisCache(rdb)
 	comparisonSvc := comparison.NewComparisonService(comparisonRepo, comparisonCache)
 
-	searcher := matching.NewMultiPlatformSearcher(nil)
+	runID := uuid.New().String()[:8]
+	searcher := &fakemarket.Searcher{Candidates: map[string][]matching.MatchCandidate{
+		// Same model, official store, same price: should auto-link
+		"tiktok": {{Platform: "tiktok", URL: "https://mock.dealhunter.vn/item/tiktok-sony-wh1000xm6-" + runID,
+			Title: "Tai nghe Sony WH-1000XM6", SellerName: "Sony Official Store", Price: 6290000, IsMall: true}},
+		// Same model but weaker signals: should become a suggestion for review
+		"lazada": {{Platform: "lazada", URL: "https://mock.dealhunter.vn/item/lazada-sony-wh1000xm6-" + runID,
+			Title: "Tai nghe Sony WH-1000XM6 chong on hang cu", SellerName: "Shop Tai Nghe", Price: 4990000, IsMall: false}},
+	}}
 	linker := &testTrackingLinker{trackingSvc: trackingSvc}
 	matchingSvc := matching.NewMatchingService(matchingRepo, searcher, linker, comparisonSvc)
 
@@ -109,7 +112,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	userID := uuid.New()
 
 	t.Log("Step 1: Tracking a product with model code (Sony WH-1000XM5) on Shopee...")
-	testURL := fmt.Sprintf("https://shopee.vn/Tai-nghe-Sony-WH-1000XM5-Chinh-Hang-i.88201679.%d", time.Now().UnixNano())
+	testURL := "https://mock.dealhunter.vn/item/shopee-sony-wh1000xm6-" + runID
 	trackPayload, _ := json.Marshal(map[string]string{
 		"url": testURL,
 	})
@@ -165,6 +168,10 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 
 	t.Logf("Auto-match completed: RefTitle=%q, Discovered=%d, AutoLinked=%d, NewSuggestions=%d",
 		matchResult.ReferenceTitle, matchResult.TotalDiscovered, len(matchResult.AutoLinkedSources), len(matchResult.NewSuggestions))
+	if matchResult.TotalDiscovered != 2 || len(matchResult.AutoLinkedSources) != 1 || len(matchResult.NewSuggestions) != 1 {
+		t.Fatalf("expected 2 discovered, 1 auto-linked, 1 suggestion; got %d/%d/%d",
+			matchResult.TotalDiscovered, len(matchResult.AutoLinkedSources), len(matchResult.NewSuggestions))
+	}
 
 	t.Log("Step 3: Querying match suggestions...")
 	suggReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/api/v1/tracked-products/%s/match-suggestions", ts.URL, trackedID), nil)

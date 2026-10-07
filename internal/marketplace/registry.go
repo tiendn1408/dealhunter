@@ -6,18 +6,35 @@ import (
 	"strings"
 )
 
+// platformDomains maps each supported real marketplace to the hosts its product URLs use.
+var platformDomains = map[string][]string{
+	"shopee": {"shopee.vn", "shopee.com", "shopeemobile.com"},
+	"lazada": {"lazada.vn", "lazada.com"},
+	"tiktok": {"tiktok.com"},
+}
+
 type Registry struct {
 	adapters map[string]Marketplace
+	domains  map[string][]string
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
 		adapters: make(map[string]Marketplace),
+		domains:  make(map[string][]string),
 	}
 }
 
+// Register adds a real marketplace adapter; its hosts come from platformDomains.
 func (r *Registry) Register(m Marketplace) {
 	r.adapters[m.Name()] = m
+	r.domains[m.Name()] = platformDomains[m.Name()]
+}
+
+// RegisterForHosts adds an adapter for explicit hosts. Intended for test adapters only.
+func (r *Registry) RegisterForHosts(m Marketplace, domains ...string) {
+	r.adapters[m.Name()] = m
+	r.domains[m.Name()] = domains
 }
 
 func (r *Registry) Detect(productURL string) (Marketplace, error) {
@@ -31,22 +48,10 @@ func (r *Registry) Detect(productURL string) (Marketplace, error) {
 		return nil, fmt.Errorf("invalid host in url: %s", productURL)
 	}
 
-	// Domain matching logic with strict host/suffix verification
-	if strings.Contains(host, "mock") {
-		if m, ok := r.adapters["mock"]; ok {
-			return m, nil
-		}
-	} else if isDomainMatch(host, "shopee.vn", "shopee.com", "shopeemobile.com") {
-		if m, ok := r.adapters["shopee"]; ok {
-			return m, nil
-		}
-	} else if isDomainMatch(host, "lazada.vn", "lazada.com") {
-		if m, ok := r.adapters["lazada"]; ok {
-			return m, nil
-		}
-	} else if isDomainMatch(host, "tiktok.com") {
-		if m, ok := r.adapters["tiktok"]; ok {
-			return m, nil
+	// Strict host/suffix matching against the registered adapters' domains
+	for name, domains := range r.domains {
+		if isDomainMatch(host, domains...) {
+			return r.adapters[name], nil
 		}
 	}
 

@@ -135,13 +135,14 @@ func Load() (*Config, error) {
 		AuthCookieSecure:    getEnv("AUTH_COOKIE_SECURE", strconv.FormatBool(!isDev)) == "true",
 
 		// Affiliate Marketing
-		AffiliateEnabled:           getEnv("AFFILIATE_ENABLED", "true") == "true",
+		// Affiliate links are off unless real affiliate accounts are configured; no placeholder templates
+		AffiliateEnabled:           getEnv("AFFILIATE_ENABLED", "false") == "true",
 		ShopeeAffiliateID:          getEnv("SHOPEE_AFFILIATE_ID", ""),
-		ShopeeAffiliateURLTemplate: getEnv("SHOPEE_AFFILIATE_URL_TEMPLATE", "https://s.shopee.vn/universal-link?url={URL}&sub_id={SUB_ID}"),
+		ShopeeAffiliateURLTemplate: getEnv("SHOPEE_AFFILIATE_URL_TEMPLATE", ""),
 		LazadaAffiliateID:          getEnv("LAZADA_AFFILIATE_ID", ""),
-		LazadaAffiliateURLTemplate: getEnv("LAZADA_AFFILIATE_URL_TEMPLATE", "https://s.lazada.vn/s.xxxx?url={URL}&aff_sub={SUB_ID}"),
+		LazadaAffiliateURLTemplate: getEnv("LAZADA_AFFILIATE_URL_TEMPLATE", ""),
 		TikTokAffiliateID:          getEnv("TIKTOK_AFFILIATE_ID", ""),
-		TikTokAffiliateURLTemplate: getEnv("TIKTOK_AFFILIATE_URL_TEMPLATE", "https://vt.tiktok.com/xxxx?url={URL}&sub_id={SUB_ID}"),
+		TikTokAffiliateURLTemplate: getEnv("TIKTOK_AFFILIATE_URL_TEMPLATE", ""),
 		AccessTradeDeeplinkURL:     getEnv("ACCESSTRADE_DEEPLINK_URL", ""),
 	}, nil
 }

@@ -20,7 +20,7 @@
 | Bước | Trạng thái | Hạng mục đã xong |
 |---|---|---|
 | **1. Bảo mật xác thực** | ✅ Hoàn thành + rà soát độc lập (2026-10-07) | SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-10, OPS-01, OPS-02, OPS-07 (API), GAP-02a, GAP-02c, DOC-03; một phần SEC-11 (webhook) |
-| **1.5. Loại bỏ toàn bộ mock (NOMOCK)** | ⏳ Kế tiếp | Xem mục 8b |
+| **1.5. Loại bỏ toàn bộ mock (NOMOCK)** | ✅ Hoàn thành (2026-10-07) | NOMOCK-01 → NOMOCK-18; DATA-01, DATA-02, DATA-03, DATA-04, DATA-12; một phần DATA-11 |
 | 2. Phân quyền & validate input | ⏳ Chưa bắt đầu | |
 | 3 → 9 | ⏳ Chưa bắt đầu | |
 
@@ -37,6 +37,20 @@
 - Frontend: access token chỉ trong bộ nhớ (có theo dõi hạn), tự khôi phục phiên; khi phiên thành viên hết hạn **không** gửi lại request dưới danh nghĩa guest mà báo "Phiên đăng nhập đã hết hạn"; đổi danh tính ⇒ reset toàn bộ cache (không lộ dữ liệu người trước); logout thất bại thì báo lỗi, không giả vờ thành công; Docker image web build được.
 
 **Kiểm chứng Bước 1**: unit test (`-race`), 10 integration test với Postgres/Redis thật (25 test + subtest, gồm mọi kịch bản tấn công SEC), E2E trình duyệt thật (Chrome headless, 23 kiểm tra: tạo guest, khôi phục phiên qua reload, 2 tab refresh đồng thời, logout, phiên thành viên khôi phục từ cookie, phiên thành viên hết hạn trong tab, chặn guest kết nối Zalo, không có `X-User-ID`, cookie không đọc được bằng JS). Hai reviewer độc lập (backend, frontend) đã rà soát; mọi phát hiện đã xử lý trừ các mục chuyển sang bước sau dưới đây.
+
+**Kết quả Bước 1.5 (NOMOCK)**:
+- Binary không còn đăng ký adapter sàn giả; registry chỉ nhận host thật của Shopee/Lazada/TikTok (adapter giả chuyển sang `tests/fakemarket`, chỉ test dùng).
+- Scraper không bao giờ trả dữ liệu thay thế: bị chặn/không đọc được ⇒ `ErrProductUnavailable` (API trả `502` kèm thông báo rõ), không còn tiêu đề từ URL, giá cũ giả làm giá mới, người bán mặc định, phí ship 15.000đ hay "còn hàng" mặc định. Sản phẩm chỉ hợp lệ khi trang có **cả tiêu đề và giá** (chặn trường hợp lấy `<title>` của trang anti-bot "Security Check" / trang lỗi làm tên sản phẩm). Tình trạng tồn kho không xác định được lưu là `NULL`.
+- Không còn voucher bịa; GET voucher chỉ đọc dữ liệu thật (danh sách rỗng là câu trả lời hợp lệ).
+- Auto-match: bỏ catalog seed; Lazada/TikTok chưa có tìm kiếm thật (cần tầng headless GAP-01b) nên không trả ứng viên thay vì trả ứng viên giả; không tự chạy auto-match khi chưa có giá thật (phần của DATA-11 — test phát hiện auto-match nền chạy với giá 0 và liên kết sai).
+- Zalo: bỏ `MockZaloClient` và token giả; chưa cấu hình Zalo ⇒ không gửi gì, thông báo ghi `failed` với lý do "zalo OA is not configured" (fake client chuyển sang `tests/fakezalo`).
+- Affiliate tắt mặc định, không còn template placeholder; chỉ chuyển link khi có affiliate ID thật.
+- Frontend: bỏ link/giá mẫu, thẻ minh hoạ có giá cứng, tiến trình tải giả bằng timer, nút "Giả lập giảm giá", nút "Số thử nghiệm Sandbox", platform "Mock Store"; thẻ trang chủ hiển thị sản phẩm thật gần nhất của người dùng hoặc trạng thái trống.
+- Phát hiện thêm và đã sửa: **NOMOCK-15** bộ trích xuất HTML tự gán còn hàng/phí ship/người bán (`og:site_name`)/tiêu đề từ URL; **NOMOCK-16** trang chi tiết tự bịa "giá mục tiêu đã lưu" = 95% giá hiện tại và lưu mục tiêu trong `localStorage` (không theo người dùng) — nay chỉ lấy từ alert rule thật trên server, lưu thất bại thì báo lỗi; **NOMOCK-17** cache metadata sản phẩm trong `localStorage` dùng làm dữ liệu hiển thị; **NOMOCK-18** cài đặt chu kỳ quét giả (nay hiển thị giá trị thật, chỉ đọc).
+- Migration `000010` xoá dữ liệu giả đã lưu: nguồn sàn `mock`, nguồn có tiêu đề placeholder/anti-bot/trang lỗi, trang kết quả tìm kiếm, người bán bịa, voucher bịa, sản phẩm mồ côi. Ở DB local **toàn bộ** sản phẩm/nguồn/voucher hiện có đều là dữ liệu giả và đã bị xoá.
+- Kiểm chứng: unit test (`-race`), integration test (26 test + subtest, không còn gọi mạng tới sàn thật từ test — dùng test double), E2E trình duyệt: 13 kiểm tra no-mock (4 trang không còn dữ liệu giả; dán link Shopee thật bị chặn ⇒ API `502`, người dùng thấy lỗi thật, không có sản phẩm giả được thêm) + 17 kiểm tra phiên của Bước 1 vẫn đạt.
+
+**Hệ quả cần biết**: từ máy hiện tại Shopee trả `403` và Lazada trả trang captcha cho HTTP client thường, nên theo dõi sản phẩm thật sẽ báo lỗi cho tới khi có tầng headless/proxy (GAP-01b/GAP-01c). Đây là trạng thái thật của hệ thống, không còn bị che bởi dữ liệu giả.
 
 **Chuyển sang bước sau**: `GET /products/{id}/comparison` và `/match-suggestions` chưa yêu cầu token (→ Bước 2, SEC-07/08); `POST /tracked-products/{id}/vouchers` vẫn cho mọi người dùng tạo voucher (→ Bước 2, SEC-09); chưa có rate limit cho `POST /auth/guest` (→ Bước 2); chưa kiểm thử với Google Client ID thật trên trình duyệt.
 
@@ -117,18 +131,18 @@
 
 | ID | Vấn đề | Vị trí | Giải pháp |
 |---|---|---|---|
-| **DATA-01** | Scraper bị chặn → 3 adapter trả **giá lần trước** như lần đo mới với `InStock=true`, `CapturedAt=now` | `marketplace/shopee/adapter.go:234-250`, `lazada/adapter.go:135-151`, `tiktok/adapter.go:134-150` | Bỏ fallback; trả `MarketplaceError` retryable (403/429/timeout) để REL-02 xử lý; metrics ghi nhận thất bại |
-| **DATA-02** | `ResolveProduct` khi bị chặn vẫn thành công với tiêu đề placeholder ("San pham Shopee") và giá 0 | `shopee/adapter.go:151-167` | Trả lỗi rõ ràng cho người dùng ("không lấy được thông tin, thử lại sau") hoặc tạo tracking ở trạng thái `pending_resolve` |
-| **DATA-03** | Voucher bịa: GET tự sinh voucher giả (`SHOP15K`, `PLAT24K`) và lưu DB; lỗi lưu bị bỏ qua; GET đồng thời sinh trùng | `internal/http/voucher_handler.go:80-81,125-211`; `internal/voucher/repository_pg.go:36` | Xoá hoàn toàn logic sinh voucher giả; GET chỉ đọc; unique key voucher theo `(product_source_id, voucher_type, voucher_code)`; migration dọn voucher giả đã lưu |
-| **DATA-04** | Affiliate bật mặc định với template placeholder `s.lazada.vn/s.xxxx`, `vt.tiktok.com/xxxx`; `Transform` không kiểm tra ID rỗng | `pkg/config/config.go:116-122`; `pkg/affiliate/affiliate.go:81-94` | Mặc định `AFFILIATE_ENABLED=false`, template rỗng; thiếu ID hoặc template → giữ link gốc (fail-safe theo spec) |
+| **DATA-01** ✅ | Scraper bị chặn → 3 adapter trả **giá lần trước** như lần đo mới với `InStock=true`, `CapturedAt=now` | `marketplace/shopee/adapter.go:234-250`, `lazada/adapter.go:135-151`, `tiktok/adapter.go:134-150` | Bỏ fallback; trả `MarketplaceError` retryable (403/429/timeout) để REL-02 xử lý; metrics ghi nhận thất bại |
+| **DATA-02** ✅ | `ResolveProduct` khi bị chặn vẫn thành công với tiêu đề placeholder ("San pham Shopee") và giá 0 | `shopee/adapter.go:151-167` | Trả lỗi rõ ràng cho người dùng ("không lấy được thông tin, thử lại sau") hoặc tạo tracking ở trạng thái `pending_resolve` |
+| **DATA-03** ✅ | Voucher bịa: GET tự sinh voucher giả (`SHOP15K`, `PLAT24K`) và lưu DB; lỗi lưu bị bỏ qua; GET đồng thời sinh trùng | `internal/http/voucher_handler.go:80-81,125-211`; `internal/voucher/repository_pg.go:36` | Xoá hoàn toàn logic sinh voucher giả; GET chỉ đọc; unique key voucher theo `(product_source_id, voucher_type, voucher_code)`; migration dọn voucher giả đã lưu |
+| **DATA-04** ✅ | Affiliate bật mặc định với template placeholder `s.lazada.vn/s.xxxx`, `vt.tiktok.com/xxxx`; `Transform` không kiểm tra ID rỗng | `pkg/config/config.go:116-122`; `pkg/affiliate/affiliate.go:81-94` | Mặc định `AFFILIATE_ENABLED=false`, template rỗng; thiếu ID hoặc template → giữ link gốc (fail-safe theo spec) |
 | **DATA-05** | Ghép URL affiliate không encode `{RAW_URL}`/`{AFFILIATE_ID}`; `detectPlatform` so khớp substring; AccessTrade bọc mọi URL | `pkg/affiliate/affiliate.go:77-123` | `url.QueryEscape`; nhận diện nền tảng theo host (`url.Parse` + so hậu tố domain); chỉ bọc URL thuộc whitelist sàn |
 | **DATA-06** | SubID không đúng spec (cắt 8 ký tự UUID); notifier dùng `ProductSourceID`, API dùng `ProductID`; khách ẩn danh đều là `u_00000000` | `pkg/affiliate/affiliate.go:98-110`; `notifier.go:65`; `voucher_handler.go:65` | Thống nhất `u_{user_id}_p_{product_id}` đầy đủ (hoặc bảng mapping short-id) và cùng 1 nguồn ID ở mọi nơi |
 | **DATA-07** | Công thức giá thứ 2 không có `max(0, …)`, dùng `SalePrice` thay `ListedPrice`; adapter tự tính `price + shipping` inline; `pricing.Price.EffectivePrice()` không dùng | `internal/pricing/model.go:17-22` | Một hàm `EffectivePrice` duy nhất, có floor 0, dùng ở adapter, voucher engine và API |
 | **DATA-08** | Cột `price_snapshots.shop_discount` / `platform_coupon` (migration 000007) không bao giờ được ghi/đọc | `migrations/000007_vouchers.up.sql:24-26` | Ghi giá trị khi tính snapshot, hoặc xoá cột nếu không dùng; đồng bộ tài liệu API |
 | **DATA-09** | Mô hình voucher mơ hồ: `DiscountAmount` vừa là số tiền cố định vừa là trần; voucher freeship % tính trên giá hàng; min order so với giá niêm yết thay vì subtotal sau giảm shop; ví dụ spec §4.2 sai | `internal/voucher/model.go:71-86` | Tách `discount_amount` và `max_discount`; freeship tính trên phí ship; min order so với subtotal sau shop voucher; sửa ví dụ spec |
 | **DATA-10** | Matching dương tính giả: regex coi `128gb` là mã model; `strings.Contains` khiến `a5` khớp `a54`; overlap bất kỳ nâng điểm text ≥ 0.9 | `internal/matching/normalizer.go:30`; `internal/matching/scoring.go:31-46` | Loại token dung lượng khỏi model code; so khớp nguyên token; model code khác nhau → loại hẳn |
-| **DATA-11** | Auto-match lúc mới track: giá = 0 → điểm giá trung tính 0.5 → có thể auto-link sai giá 10 lần; thiếu lọc cứng ±35% | `internal/http/handler.go:166-174`; `scoring.go:106-107` | Chỉ auto-match sau khi có giá đầu tiên; áp lọc cứng ±35% theo spec GAP-03 |
-| **DATA-12** | Searcher production trả catalog seed (TikTok luôn seed; Lazada/Shopee fallback seed khi bị chặn); Lazada dùng URL trang tìm kiếm làm URL sản phẩm | `internal/matching/searcher.go:93-140` | Seed chỉ dùng khi `APP_ENV != production`; bị chặn → trả rỗng; chỉ chấp nhận URL trang sản phẩm |
+| **DATA-11** (một phần) | Auto-match lúc mới track: giá = 0 → điểm giá trung tính 0.5 → có thể auto-link sai giá 10 lần; thiếu lọc cứng ±35% | `internal/http/handler.go:166-174`; `scoring.go:106-107` | Chỉ auto-match sau khi có giá đầu tiên; áp lọc cứng ±35% theo spec GAP-03 |
+| **DATA-12** ✅ | Searcher production trả catalog seed (TikTok luôn seed; Lazada/Shopee fallback seed khi bị chặn); Lazada dùng URL trang tìm kiếm làm URL sản phẩm | `internal/matching/searcher.go:93-140` | Seed chỉ dùng khi `APP_ENV != production`; bị chặn → trả rỗng; chỉ chấp nhận URL trang sản phẩm |
 | **DATA-13** | Payload ZNS không khớp template: giá thô thay vì `27.990.000đ`; thiếu `product_name`, `tracking_id`; gửi `user_id` thay vì phone; phone định dạng `0xxx`; `COALESCE(zalo_id, phone)` ưu tiên Zalo ID | `notifier.go:59-73`; `zalo/client.go:38-75`; `notification/repository_pg.go:344` | Map đúng các biến template spec Phase 2 §5.2-5.3; chuẩn hoá phone `84xxxxxxxxx`; ZNS luôn dùng phone |
 
 **Các lỗi nhỏ thuộc nhóm DATA (gom chung)**:
@@ -241,6 +255,12 @@ Theo yêu cầu "dữ liệu thật, việc thật". Phần auth (demo login, to
 | **NOMOCK-12** | Platform `"mock"` / badge "Mock Store"; biến `NEXT_PUBLIC_ENABLE_MOCK_SANDBOX` | `dealhunter-web/lib/formatting.ts:163,213-220`, `.env.example` | Xoá |
 | **NOMOCK-13** | Cài đặt chu kỳ quét chỉ lưu localStorage, báo "đã lưu" nhưng backend không dùng | `dealhunter-web/app/settings/page.tsx:43-57` | Lưu thật qua API hoặc xoá tuỳ chọn |
 | **NOMOCK-14** | Chuỗi i18n cho tính năng mẫu/giả lập | `dealhunter-web/lib/i18n/dictionaries/{vi,en}.ts` | Xoá cùng các mục trên |
+| **NOMOCK-15** | Bộ trích xuất HTML tự gán còn hàng, phí ship 15.000đ, người bán = `og:site_name`, tiêu đề từ URL | `internal/marketplace/crawler/extractor.go` | Chỉ giá trị có trên trang; tồn kho không rõ = `NULL` |
+| **NOMOCK-16** | "Giá mục tiêu đã lưu" tự bịa (95% giá hiện tại); mục tiêu lưu `localStorage`; lưu thất bại vẫn báo đã lưu | `dealhunter-web/app/tracking/[id]/page.tsx`, `lib/hooks.ts` | Chỉ từ alert rule `target_price` trên server; báo lỗi khi lưu thất bại |
+| **NOMOCK-17** | Cache metadata sản phẩm trong `localStorage` dùng làm dữ liệu hiển thị | `dealhunter-web/lib/api.ts` | Xoá; chỉ dùng dữ liệu server |
+| **NOMOCK-18** | Dữ liệu giả đã lưu trong DB (nguồn `mock`, tiêu đề anti-bot, voucher bịa, người bán bịa) | DB | Migration `000010` |
+
+**Trạng thái**: ✅ toàn bộ NOMOCK-01 → NOMOCK-18 đã hoàn thành (2026-10-07).
 
 **DoD NOMOCK**: `grep -riE "mock|sandbox|seed|simulat|sample|fake"` trên code sản phẩm (ngoài `*_test.go`, `tests/`) không còn kết quả mang nghĩa dữ liệu giả; binary không đăng ký adapter giả; khi sàn/Zalo không khả dụng, UI và API báo lỗi thật.
 

@@ -24,15 +24,15 @@ import (
 	router "github.com/tiendang/deal-hunter/internal/http"
 	"github.com/tiendang/deal-hunter/internal/jobs"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
-	"github.com/tiendang/deal-hunter/internal/marketplace/mock"
 	"github.com/tiendang/deal-hunter/internal/notification"
-	"github.com/tiendang/deal-hunter/internal/notification/zalo"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
 	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/pkg/affiliate"
 	"github.com/tiendang/deal-hunter/pkg/database"
+	"github.com/tiendang/deal-hunter/tests/fakemarket"
+	"github.com/tiendang/deal-hunter/tests/fakezalo"
 )
 
 func TestAffiliateLinkEngineFlow(t *testing.T) {
@@ -60,7 +60,7 @@ func TestAffiliateLinkEngineFlow(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.Register(mock.NewMockAdapter())
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -207,7 +207,7 @@ func TestAffiliateLinkEngineFlow(t *testing.T) {
 	}
 
 	// 6. Verify Notifier Service injects deal_url and affiliate_url into Zalo params
-	mockZalo := zalo.NewMockZaloClient()
+	mockZalo := fakezalo.NewMockZaloClient()
 	notifierSvc := notification.NewNotifierService(notifRepo, q, mockZalo, "template-deal-test", logger)
 	notifierSvc.SetAffiliateTransformer(affTr)
 

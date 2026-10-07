@@ -37,7 +37,7 @@ flowchart TD
         PG[("PostgreSQL 15 (Source of Truth)")]
         RedisStream[("Redis Streams (fetch & notif)")]
         RedisCache[("Redis Cache (dh:cmp:product_id)")]
-        Adapters["Marketplace Adapters (Shopee, Lazada, TikTok, Mock)"]
+        Adapters["Marketplace Adapters (Shopee, Lazada, TikTok)"]
     end
 
     API --> TrackingSvc
@@ -88,7 +88,7 @@ dealhunter/
 │   ├── voucher/              # Engine voucher & tinh EffectivePrice toan dien (Phase 3.5)
 │   ├── tracking/             # Service tiep nhan URL va quan ly tracking
 │   ├── jobs/                 # Worker pool logic, Scheduler logic, Job Repo PG
-│   ├── marketplace/          # Port & Adapter san TMDT (Registry, Shopee, Lazada, TikTok, Mock)
+│   ├── marketplace/          # Port & Adapter san TMDT (Registry, Shopee, Lazada, TikTok); adapter gia chi nam trong tests/fakemarket
 │   ├── queue/                # Port & Adapter hang doi (Queue interface, Redis Stream)
 │   └── http/                 # Delivery HTTP (Chi Router, Handlers, Middleware, CORS)
 │
