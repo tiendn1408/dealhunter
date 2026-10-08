@@ -2,6 +2,7 @@ package matching
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -139,8 +140,16 @@ func TestMatchingService_DiscoverAndMatch(t *testing.T) {
 		t.Errorf("expected status 'pending', got '%s'", sugg.Status)
 	}
 
+	// A suggestion cannot be accepted through another product's path (SEC-08)
+	if err := svc.AcceptSuggestion(ctx, userID, uuid.New(), sugg.ID); !errors.Is(err, ErrSuggestionNotFound) {
+		t.Fatalf("expected ErrSuggestionNotFound for foreign product, got %v", err)
+	}
+	if sugg.Status != StatusPending {
+		t.Fatalf("suggestion changed through foreign product path: %s", sugg.Status)
+	}
+
 	// Test Accept
-	if err := svc.AcceptSuggestion(ctx, userID, sugg.ID); err != nil {
+	if err := svc.AcceptSuggestion(ctx, userID, productID, sugg.ID); err != nil {
 		t.Fatalf("unexpected error on accept: %v", err)
 	}
 	if sugg.Status != StatusAccepted {
@@ -157,7 +166,10 @@ func TestMatchingService_DiscoverAndMatch(t *testing.T) {
 		ProductID: productID,
 		Status:    StatusPending,
 	})
-	if err := svc.DismissSuggestion(ctx, dismissID); err != nil {
+	if err := svc.DismissSuggestion(ctx, uuid.New(), dismissID); !errors.Is(err, ErrSuggestionNotFound) {
+		t.Fatalf("expected ErrSuggestionNotFound for foreign product, got %v", err)
+	}
+	if err := svc.DismissSuggestion(ctx, productID, dismissID); err != nil {
 		t.Fatalf("unexpected error on dismiss: %v", err)
 	}
 	d, _ := repo.GetSuggestionByID(ctx, dismissID)

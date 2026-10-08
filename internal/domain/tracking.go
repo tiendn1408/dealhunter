@@ -28,6 +28,10 @@ type TrackingRepository interface {
 	GetTrackingForUser(ctx context.Context, id, userID uuid.UUID) (*TrackedProduct, error)
 	GetTrackingBySource(ctx context.Context, userID, sourceID uuid.UUID) (*TrackedProduct, error)
 	ListTrackingsByUser(ctx context.Context, userID uuid.UUID) ([]*TrackedProduct, error)
+	// UserTracksProduct reports whether the user tracks any source of the product group.
+	UserTracksProduct(ctx context.Context, userID, productID uuid.UUID) (bool, error)
+	// OtherUsersTrackProduct reports whether anyone except userID tracks a source of the product group.
+	OtherUsersTrackProduct(ctx context.Context, productID, userID uuid.UUID) (bool, error)
 	UpdateNextFetchAt(ctx context.Context, tx pgx.Tx, id uuid.UUID, nextFetch time.Time) error
 	UpdateNextFetchAtForUser(ctx context.Context, tx pgx.Tx, id, userID uuid.UUID, nextFetch time.Time) error
 	ClaimDueTrackings(ctx context.Context, limit int) ([]*TrackedProduct, error)

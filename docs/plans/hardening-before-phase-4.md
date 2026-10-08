@@ -13,22 +13,17 @@
 
 ---
 
-## Việc Cần Làm Tiếp (bàn giao cuối ngày 2026-10-07)
+## Việc Cần Làm Tiếp (bàn giao 2026-10-08)
 
-**Trạng thái**: Bước 1 (bảo mật xác thực) và Bước 1.5 (loại bỏ toàn bộ mock) đã xong và đã kiểm chứng. Code **chưa commit** (backend ~46 file, web ~25 file).
+**Trạng thái**: Bước 1, 1.5 đã commit ở backend (`dealhunter-web` **vẫn chưa commit** thay đổi Bước 1 + 1.5). Bước 2 (phân quyền & validate input) đã xong và kiểm chứng, **chưa commit**.
 
 **Việc đầu tiên khi làm tiếp**
-1. Commit thay đổi Bước 1 + 1.5 ở cả 2 repo (`dealhunter`, `dealhunter-web`).
-2. Chọn hướng: **(A)** GAP-01b/01c — tầng headless browser / proxy cho scraper (hiện Shopee trả 403, Lazada trả captcha ⇒ chưa theo dõi được sản phẩm thật nào), hoặc **(B)** tiếp Bước 2 theo kế hoạch. Khuyến nghị: A trước nếu cần demo với dữ liệu thật; B trước nếu ưu tiên an toàn trước khi deploy.
+1. Commit `dealhunter-web` (Bước 1 + 1.5) và backend (Bước 2). Lưu ý: thư mục `extension/` trong backend có thay đổi riêng, không thuộc Bước 2.
+2. Chọn hướng: **(A)** GAP-01b/01c — tầng headless browser / proxy cho scraper, hoặc **(B)** Bước 3 (queue/worker).
 
-**Bước 2 — Phân quyền & validate input** (chưa làm)
-- [ ] SEC-07: `link-source` di chuyển source của người khác — kiểm tra quyền sở hữu.
-- [ ] SEC-08: accept/dismiss match suggestion là IDOR; `product_id` trên path bị bỏ qua.
-- [ ] SEC-09: `POST /tracked-products/{id}/vouchers` — ai cũng tạo được voucher; validate type/percent/amount/`collect_url` (chỉ https + host sàn), bắt buộc hạn dùng.
-- [ ] `GET /products/{id}/comparison` và `/products/{id}/match-suggestions` chưa yêu cầu token, đọc được tracking ID của người khác.
-- [ ] SEC-11 (phần còn lại): giới hạn kích thước body cho các endpoint JSON khác.
-- [ ] SEC-12: không trả lỗi DB cho client; mask số điện thoại trong log.
-- [ ] Rate limit `POST /auth/guest` (mỗi lần gọi tạo 1 user).
+**Bước 2 — Phân quyền & validate input** [DONE] 2026-10-08
+- [x] SEC-07, SEC-08, SEC-09, SEC-11 (phần còn lại), SEC-12; comparison/match-suggestions yêu cầu token + quyền; rate limit `POST /auth/guest`.
+- [ ] Còn lại (chuyển Bước 7): `middleware.RealIP` tin `X-Forwarded-For`/`X-Real-IP` do client gửi ⇒ rate limit guest có thể bị lách nếu API lộ trực tiếp. Khi deploy chỉ cho API nhận kết nối từ reverse proxy và proxy phải **ghi đè** (không nối thêm) header IP.
 
 **Bước 3 → 9** (chi tiết ở các mục 2–8 bên dưới)
 - [ ] Bước 3 — Queue/worker: REL-01 (XAUTOCLAIM reclaim), REL-02 (retry/backoff, `pkg/retry`), REL-03 (claim nguyên tử), REL-04 (lập lịch theo product_source), REL-05 (alert trùng), REL-06/07 (outbox, fetch ngay khi track), REL-10 (Consume quay vòng CPU).
@@ -59,7 +54,7 @@
 |---|---|---|
 | **1. Bảo mật xác thực** | [DONE] Hoàn thành + rà soát độc lập (2026-10-07) | SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, SEC-10, OPS-01, OPS-02, OPS-07 (API), GAP-02a, GAP-02c, DOC-03; một phần SEC-11 (webhook) |
 | **1.5. Loại bỏ toàn bộ mock (NOMOCK)** | [DONE] Hoàn thành (2026-10-07) | NOMOCK-01 → NOMOCK-18; DATA-01, DATA-02, DATA-03, DATA-04, DATA-12; một phần DATA-11 |
-| 2. Phân quyền & validate input | [PENDING] Chưa bắt đầu | |
+| **2. Phân quyền & validate input** | [DONE] Hoàn thành (2026-10-08) | SEC-07, SEC-08, SEC-09, SEC-11, SEC-12; phân quyền comparison/match-suggestions/prices/vouchers/alerts; rate limit guest; validate alert & Zalo |
 | 3 → 9 | [PENDING] Chưa bắt đầu | |
 
 **Kết quả Bước 1**:
@@ -90,7 +85,19 @@
 
 **Hệ quả cần biết**: từ máy hiện tại Shopee trả `403` và Lazada trả trang captcha cho HTTP client thường, nên theo dõi sản phẩm thật sẽ báo lỗi cho tới khi có tầng headless/proxy (GAP-01b/GAP-01c). Đây là trạng thái thật của hệ thống, không còn bị che bởi dữ liệu giả.
 
-**Chuyển sang bước sau**: `GET /products/{id}/comparison` và `/match-suggestions` chưa yêu cầu token (→ Bước 2, SEC-07/08); `POST /tracked-products/{id}/vouchers` vẫn cho mọi người dùng tạo voucher (→ Bước 2, SEC-09); chưa có rate limit cho `POST /auth/guest` (→ Bước 2); chưa kiểm thử với Google Client ID thật trên trình duyệt.
+**Kết quả Bước 2 (phân quyền & validate input)**:
+- **Quy tắc quyền nhóm sản phẩm**: người dùng chỉ đọc/thay đổi một nhóm sản phẩm (so sánh, gợi ý ghép, auto-match, lịch sử giá, voucher, alert, chi tiết nguồn) khi đang theo dõi ít nhất một nguồn trong nhóm đó (`TrackingService.ResolveProductForUser` / `ResolveSourceForUser`, truy vấn `UserTracksProduct`). Không có quyền ⇒ `404` (không lộ sự tồn tại). Mọi endpoint này bắt buộc access token. Vẫn nhận cả product ID, tracked_product ID và product_source ID như trước (frontend không phải đổi).
+- **SEC-07**: `link-source` yêu cầu caller theo dõi nhóm đích; nguồn đã thuộc nhóm khác chỉ được chuyển khi không ai khác ngoài caller theo dõi nhóm đó, ngược lại `409` (`ErrSourceInOtherGroup`). Auto-match/accept gợi ý đi qua cùng kiểm tra.
+- **SEC-08**: accept/dismiss kiểm tra gợi ý thuộc `product_id` trên path và caller theo dõi sản phẩm đó (`ErrSuggestionNotFound` ⇒ `404`).
+- **SEC-09**: tạo voucher chỉ dành cho admin (`ADMIN_EMAILS`, email tài khoản Google; để trống ⇒ không ai tạo được). Validate `voucher_type` enum, tiêu đề 1–200 ký tự, mã ≤ 64, amount/min_order ≥ 0, percent 0–100, phải có mức giảm, `expires_at` **bắt buộc** (tương lai, ≤ 1 năm — thay `expires_in_days`), `collect_url` chỉ `https` và host thuộc đúng sàn của nguồn, từ chối field lạ.
+- **SEC-11**: mọi request `/api/v1` giới hạn body 64KB (`LimitBody`).
+- **SEC-12**: lỗi 500 trả "internal server error", chi tiết ghi log kèm `request_id`; `link-source` không còn trả lỗi DB dạng 400; số điện thoại/Zalo ID trong log notifier được mask (`09*****678`), log lỗi parse payload không in payload.
+- **Rate limit `POST /auth/guest`**: 20 lần / 10 phút / IP, bộ đếm Redis dùng chung giữa các instance (`429` + `Retry-After`); Redis lỗi ⇒ cho qua và ghi cảnh báo.
+- Validate thêm: alert `drop_percent` 1–99, `lowest_in_days` 1–365, `expires_in_days` 0–365; Zalo `phone` `^\+?[0-9]{9,15}$`, `zalo_id` `^[0-9A-Za-z_-]{1,64}$`; `GET /notifications?limit` tối đa 100.
+
+**Kiểm chứng Bước 2**: unit test (`-race`), integration test với Postgres/Redis thật — thêm `TestProductGroupAuthorization` (13 endpoint bị chặn với người ngoài, chủ sở hữu vẫn truy cập được, SEC-07 không chiếm được nguồn của người khác nhưng vẫn gộp được nguồn của chính mình, SEC-08 qua 5 tổ hợp path/người dùng, body 70KB ⇒ 400, validate alert/Zalo, guest thứ 4 ⇒ 429) và 13 ca voucher không hợp lệ + guest/member thường bị chặn trong `TestVoucherIntelligenceAndComboFlow`. Đã thử tắt kiểm tra SEC-07/SEC-08 ⇒ test fail đúng chỗ. E2E trình duyệt: session 17/17, member 7/7, no-mock 13/13 vẫn đạt.
+
+**Chuyển sang bước sau (từ Bước 1)**: `GET /products/{id}/comparison` và `/match-suggestions` chưa yêu cầu token (→ Bước 2, SEC-07/08); `POST /tracked-products/{id}/vouchers` vẫn cho mọi người dùng tạo voucher (→ Bước 2, SEC-09); chưa có rate limit cho `POST /auth/guest` (→ Bước 2); chưa kiểm thử với Google Client ID thật trên trình duyệt.
 
 ---
 

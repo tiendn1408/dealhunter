@@ -23,6 +23,18 @@ func (h *Handler) StartGuestSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Every call creates a user row, so creation is rate limited per client IP.
+	if h.guestLimiter != nil {
+		allowed, err := h.guestLimiter.Allow(r.Context(), clientIP(r))
+		if err != nil {
+			h.log().Warn("guest rate limiter unavailable", "err", err)
+		} else if !allowed {
+			w.Header().Set("Retry-After", "600")
+			http.Error(w, "too many guest sessions, try again later", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	sess, err := h.authService.StartGuestSession(r.Context())
 	if err != nil {
 		http.Error(w, "could not start guest session", http.StatusInternalServerError)

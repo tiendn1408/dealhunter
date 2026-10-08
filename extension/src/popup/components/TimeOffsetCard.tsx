@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Clock, RefreshCw, Wifi } from "lucide-react";
+import { Clock, RefreshCw } from "lucide-react";
 import { ClockCalibration } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
@@ -8,72 +8,69 @@ export const TimeOffsetCard: React.FC = () => {
   const [calibration, setCalibration] = useState<ClockCalibration | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const loadCalibration = async () => {
-    const cal = await storage.getCalibration();
-    setCalibration(cal);
-  };
-
   useEffect(() => {
-    loadCalibration();
+    storage.getCalibration().then(setCalibration);
   }, []);
 
   const handleRefresh = async () => {
     setLoading(true);
     try {
-      const res = await chrome.runtime.sendMessage({
-        action: MESSAGE_ACTIONS.CALIBRATE_TIME,
-        samples: 5,
-      });
-      if (res && res.calibration) {
-        setCalibration(res.calibration);
-      }
+      const res = await chrome.runtime.sendMessage({ action: MESSAGE_ACTIONS.CALIBRATE_TIME, samples: 5 });
+      if (res?.calibration) setCalibration(res.calibration);
     } finally {
       setLoading(false);
     }
   };
 
+  const synced = !!calibration?.calibrated;
   const offset = calibration?.offsetMs ?? 0;
-  const rtt = calibration?.rttMs ?? 0;
+  const ageMin = calibration ? Math.round((Date.now() - calibration.lastCalibratedAt) / 60000) : null;
 
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 shadow-2xs space-y-2">
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <div className="flex items-center gap-1.5 font-semibold text-slate-700">
-          <Clock className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Dong Bo Gio Shopee</span>
+    <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+            <Clock className="h-3.5 w-3.5" />
+          </div>
+          <div className="leading-tight">
+            <h2 className="text-[13px] font-semibold text-slate-900">Clock sync</h2>
+            <p className="text-[10px] text-slate-400">
+              {ageMin === null ? "Never synced" : ageMin === 0 ? "Synced just now" : `Synced ${ageMin} min ago`}
+            </p>
+          </div>
         </div>
         <button
           type="button"
           onClick={handleRefresh}
           disabled={loading}
-          className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+          className="flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
         >
-          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
-          <span>Do lai</span>
+          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+          {loading ? "Syncing" : "Re-sync"}
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 pt-0.5">
-        <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
-          <span className="text-[10px] text-slate-400 block font-medium">Do lech dong ho</span>
-          {calibration?.calibrated ? (
-            <span className="font-mono text-sm font-bold text-slate-900">
-              {offset >= 0 ? `+${offset}ms` : `${offset}ms`}
-              <span className="text-[10px] font-semibold text-slate-400"> ±{calibration.errorMs}ms</span>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
+          <span className="block text-[10px] font-medium text-slate-400">Offset vs. Shopee</span>
+          {synced ? (
+            <span className="font-mono text-sm font-bold tabular-nums text-slate-900">
+              {offset >= 0 ? "+" : ""}
+              {offset} ms
+              <span className="ml-1 text-[10px] font-semibold text-slate-400">±{calibration!.errorMs}</span>
             </span>
           ) : (
-            <span className="text-[11px] font-bold text-rose-600">Chua dong bo - bam Do lai</span>
+            <span className="text-[12px] font-semibold text-rose-600">Not synced</span>
           )}
         </div>
-
-        <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
-          <span className="text-[10px] text-slate-400 block font-medium">Do tre mang (RTT)</span>
-          <div className="flex items-center gap-1">
-            <Wifi className="w-3 h-3 text-emerald-600" />
-            <span className="font-mono text-sm font-bold text-slate-900">{rtt}ms</span>
-          </div>
+        <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
+          <span className="block text-[10px] font-medium text-slate-400">Network round trip</span>
+          <span className="font-mono text-sm font-bold tabular-nums text-slate-900">
+            {calibration ? `${calibration.rttMs} ms` : "—"}
+          </span>
         </div>
       </div>
-    </div>
+    </section>
   );
 };

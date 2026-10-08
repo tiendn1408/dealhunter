@@ -1,38 +1,54 @@
-import React, { useState } from "react";
-import { Plus, Zap, Calendar, ExternalLink } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { CalendarClock, Plus } from "lucide-react";
 import { ScheduledTask } from "../../lib/types";
 import { SHOPEE_FLASH_HOURS, SHOPEE_URLS } from "../../lib/constants";
+import { nextDropAt, nextFlashDrop, formatVN } from "../../lib/drop_time";
 import { taskScheduler } from "../../background/scheduler";
 
 interface ScheduleFormProps {
   onTaskCreated: () => void;
 }
 
+const TARGET_PAGES = [
+  { url: SHOPEE_URLS.VOUCHER_HUB, label: "Voucher hub", hint: "shopee.vn/m/ma-giam-gia" },
+  { url: SHOPEE_URLS.SUPER_SALE_1010, label: "10.10 Super Sale", hint: "shopee.vn/m/10-10" },
+  { url: SHOPEE_URLS.CART, label: "Cart", hint: "shopee.vn/cart" },
+];
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
 export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated }) => {
-  const [targetHour, setTargetHour] = useState<number>(0);
+  const [targetHour, setTargetHour] = useState<number>(() => nextFlashDrop(SHOPEE_FLASH_HOURS, Date.now()).hour);
   const [targetUrl, setTargetUrl] = useState<string>(SHOPEE_URLS.VOUCHER_HUB);
-  const [label, setLabel] = useState<string>("San ma 0h Shopee");
   const [keyword, setKeyword] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+
+  // When this hunt will actually run, in Vietnam time
+  const runsAt = useMemo(() => {
+    const at = nextDropAt(targetHour, 0, Date.now(), 0);
+    const today = formatVN(Date.now()).slice(0, 2) <= formatVN(at).slice(0, 2) && at - Date.now() < 24 * 3600 * 1000;
+    const sameDay = new Date(at + 7 * 3600 * 1000).getUTCDate() === new Date(Date.now() + 7 * 3600 * 1000).getUTCDate();
+    return `${sameDay && today ? "Today" : "Tomorrow"} ${pad(targetHour)}:00`;
+  }, [targetHour]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-
     try {
+      const page = TARGET_PAGES.find((p) => p.url === targetUrl);
       const newTask: ScheduledTask = {
         id: Math.random().toString(36).substring(2, 9),
         targetHour,
         targetMinute: 0,
         targetUrl,
-        label: label.trim() || `San ma ${targetHour}h`,
+        label: `${pad(targetHour)}:00 · ${page?.label ?? "Shopee"}`,
         mode: "full_auto", // a scheduled hunt always runs unattended
         keyword: keyword.trim() || undefined,
         status: "pending",
         createdAt: Date.now(),
       };
-
       await taskScheduler.scheduleTask(newTask);
+      setKeyword("");
       onTaskCreated();
     } finally {
       setSubmitting(false);
@@ -40,73 +56,93 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated }) => 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs space-y-3.5">
+    <form onSubmit={handleSubmit} className="space-y-3.5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-black text-slate-900 tracking-tight flex items-center gap-1.5">
-          <Calendar className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Hen Gio San Voucher</span>
-        </h3>
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200">
-          Tu dong 100%
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+            <CalendarClock className="h-3.5 w-3.5" />
+          </div>
+          <div className="leading-tight">
+            <h2 className="text-[13px] font-semibold text-slate-900">Schedule a hunt</h2>
+            <p className="text-[10px] text-slate-400">Opens Shopee 60s early and clicks at the drop</p>
+          </div>
+        </div>
+        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-100">
+          Fully automatic
         </span>
       </div>
 
-      {/* Target Hour Picker */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold text-slate-500">Khung gio san ma</label>
-        <div className="grid grid-cols-6 gap-1">
+      {/* Drop time */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-[11px] font-semibold text-slate-600">Drop time (Vietnam)</label>
+          <span className="text-[10px] font-medium text-slate-400">{runsAt}</span>
+        </div>
+        <div className="grid grid-cols-6 gap-1.5">
           {SHOPEE_FLASH_HOURS.map((hour) => (
             <button
               key={hour}
               type="button"
               onClick={() => setTargetHour(hour)}
-              className={`py-1.5 rounded-xl text-xs font-bold transition-all border ${
+              className={`rounded-xl py-2 text-xs font-bold tabular-nums transition ${
                 targetHour === hour
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
-                  : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
               }`}
             >
-              {hour}h
+              {pad(hour)}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Target URL */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold text-slate-500">Trang Shopee muc tieu</label>
-        <select
-          value={targetUrl}
-          onChange={(e) => setTargetUrl(e.target.value)}
-          className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-        >
-          <option value={SHOPEE_URLS.VOUCHER_HUB}>Hub Ma Giam Gia (shopee.vn/m/ma-giam-gia)</option>
-          <option value={SHOPEE_URLS.SUPER_SALE_1010}>Sieu Sale 10/10 (shopee.vn/m/10-10)</option>
-          <option value={SHOPEE_URLS.CART}>Gio Hang San San (shopee.vn/cart)</option>
-        </select>
+      {/* Target page */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-semibold text-slate-600">Shopee page</label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {TARGET_PAGES.map((p) => (
+            <button
+              key={p.url}
+              type="button"
+              onClick={() => setTargetUrl(p.url)}
+              title={p.hint}
+              className={`rounded-xl px-2 py-2 text-[11px] font-semibold transition ${
+                targetUrl === p.url
+                  ? "bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500"
+                  : "bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Keyword Filter (Optional) */}
-      <div className="space-y-1">
-        <label className="text-[11px] font-semibold text-slate-500">
-          Tu khoa voucher <span className="font-normal text-slate-400">(tuy chon: 500k, 15%, freeship)</span>
+      {/* Keyword */}
+      <div className="space-y-1.5">
+        <label className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+          Voucher keyword
+          <span className="font-normal text-slate-400">recommended</span>
         </label>
         <input
           type="text"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          placeholder="Vi du: 15% hoac 500k"
-          className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          placeholder="Text on the voucher card, e.g. 500k or 15%"
+          className="w-full rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-800 ring-1 ring-slate-200 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
+        <p className="text-[10px] leading-snug text-slate-400">
+          Without a keyword, only a voucher that opens exactly at the drop is clicked.
+        </p>
       </div>
 
       <button
         type="submit"
         disabled={submitting}
-        className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-2.5 text-[13px] font-bold text-white shadow-md shadow-emerald-600/20 transition hover:from-emerald-400 hover:to-teal-400 disabled:opacity-60"
       >
-        <Plus className="w-3.5 h-3.5" />
-        <span>Dat Lich San Ma {targetHour}h00</span>
+        <Plus className="h-4 w-4" />
+        Schedule {pad(targetHour)}:00 hunt
       </button>
     </form>
   );

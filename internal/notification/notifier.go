@@ -51,7 +51,7 @@ func (s *NotifierService) SetVoucherRepository(repo voucher.Repository) {
 func (s *NotifierService) ProcessMessage(ctx context.Context, msg queue.Message) error {
 	var payload QueuePayload
 	if err := json.Unmarshal([]byte(msg.JobID), &payload); err != nil {
-		s.logger.Error("Failed to unmarshal notification payload", "err", err, "raw", msg.JobID)
+		s.logger.Error("Failed to unmarshal notification payload", "err", err, "msg_id", msg.MsgID)
 		_ = s.queue.Ack(ctx, msg.MsgID)
 		return nil
 	}
@@ -106,7 +106,7 @@ func (s *NotifierService) ProcessMessage(ctx context.Context, msg queue.Message)
 		metrics.NotifierFailedTotal.Inc()
 		errMsg := err.Error()
 		_ = s.repo.UpdateStatus(ctx, payload.NotificationLogID, StatusFailed, &errMsg)
-		s.logger.Error("Failed to send Zalo notification", "recipient", payload.Recipient, "err", err)
+		s.logger.Error("Failed to send Zalo notification", "recipient", MaskRecipient(payload.Recipient), "err", err)
 	} else {
 		metrics.NotifierSentTotal.Inc()
 		if msgID != "" {
@@ -118,7 +118,7 @@ func (s *NotifierService) ProcessMessage(ctx context.Context, msg queue.Message)
 				s.logger.Error("Failed to update status in db", "err", err, "id", payload.NotificationLogID)
 			}
 		}
-		s.logger.Info("Notification sent successfully", "recipient", payload.Recipient, "log_id", payload.NotificationLogID, "msg_id", msgID)
+		s.logger.Info("Notification sent successfully", "recipient", MaskRecipient(payload.Recipient), "log_id", payload.NotificationLogID, "msg_id", msgID)
 	}
 
 	_ = s.queue.Ack(ctx, msg.MsgID)

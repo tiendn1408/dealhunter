@@ -322,3 +322,35 @@ func (r *PostgresRepository) SetTrackingActiveForUser(ctx context.Context, id, u
 	}
 	return nil
 }
+
+func (r *PostgresRepository) UserTracksProduct(ctx context.Context, userID, productID uuid.UUID) (bool, error) {
+	query := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM tracked_products tp
+			JOIN product_sources ps ON ps.id = tp.product_source_id
+			WHERE tp.user_id = $1 AND ps.product_id = $2
+		);
+	`
+	var ok bool
+	if err := r.pool.QueryRow(ctx, query, userID, productID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("check product access: %w", err)
+	}
+	return ok, nil
+}
+
+func (r *PostgresRepository) OtherUsersTrackProduct(ctx context.Context, productID, userID uuid.UUID) (bool, error) {
+	query := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM tracked_products tp
+			JOIN product_sources ps ON ps.id = tp.product_source_id
+			WHERE ps.product_id = $1 AND tp.user_id <> $2
+		);
+	`
+	var ok bool
+	if err := r.pool.QueryRow(ctx, query, productID, userID).Scan(&ok); err != nil {
+		return false, fmt.Errorf("check other trackers: %w", err)
+	}
+	return ok, nil
+}

@@ -2,11 +2,14 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/tiendang/deal-hunter/internal/marketplace"
+	"github.com/tiendang/deal-hunter/internal/matching"
+	"github.com/tiendang/deal-hunter/internal/tracking"
 )
 
 // GetMatchSuggestions handles GET /api/v1/products/{product_id}/match-suggestions
@@ -26,15 +29,21 @@ func (h *Handler) GetMatchSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	productID, err := h.resolveCanonicalProductID(r.Context(), rawID)
+	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "product not found", http.StatusNotFound)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
+	if err != nil {
+		h.accessError(w, r, err, "product not found")
 		return
 	}
 
 	suggestions, err := h.matchingService.GetPendingSuggestions(r.Context(), productID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -60,23 +69,15 @@ func (h *Handler) GetTrackedProductMatchSuggestions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	var productID uuid.UUID
-	if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), rawID, userID); err == nil && tracked != nil {
-		if source, err := h.trackingService.GetProductSource(r.Context(), tracked.ProductSourceID); err == nil && source != nil {
-			productID = source.ProductID
-		}
-	} else if source, err := h.trackingService.GetProductSource(r.Context(), rawID); err == nil && source != nil {
-		productID = source.ProductID
-	}
-
-	if productID == uuid.Nil {
-		http.Error(w, "tracking not found", http.StatusNotFound)
+	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
+	if err != nil {
+		h.accessError(w, r, err, "tracking not found")
 		return
 	}
 
 	suggestions, err := h.matchingService.GetPendingSuggestions(r.Context(), productID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -101,17 +102,21 @@ func (h *Handler) AcceptMatchSuggestion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	userID, err := h.resolveUserID(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	userID, productID, ok := h.suggestionScope(w, r)
+	if !ok {
 		return
 	}
-	if err := h.matchingService.AcceptSuggestion(r.Context(), userID, suggestionID); err != nil {
-		if strings.Contains(err.Error(), "suggestion not found") {
+	if err := h.matchingService.AcceptSuggestion(r.Context(), userID, productID, suggestionID); err != nil {
+		switch {
+		case errors.Is(err, matching.ErrSuggestionNotFound):
 			http.Error(w, "suggestion not found", http.StatusNotFound)
-			return
+		case errors.Is(err, tracking.ErrSourceInOtherGroup):
+			http.Error(w, "Sản phẩm gợi ý đang thuộc một nhóm so sánh khác", http.StatusConflict)
+		case errors.Is(err, marketplace.ErrProductUnavailable):
+			http.Error(w, "Không đọc được thông tin sản phẩm từ sàn. Vui lòng thử lại sau.", http.StatusBadGateway)
+		default:
+			h.serverError(w, r, err)
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -136,18 +141,17 @@ func (h *Handler) DismissMatchSuggestion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, err = h.resolveUserID(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	_, productID, ok := h.suggestionScope(w, r)
+	if !ok {
 		return
 	}
 
-	if err := h.matchingService.DismissSuggestion(r.Context(), suggestionID); err != nil {
-		if strings.Contains(err.Error(), "suggestion not found") {
+	if err := h.matchingService.DismissSuggestion(r.Context(), productID, suggestionID); err != nil {
+		if errors.Is(err, matching.ErrSuggestionNotFound) {
 			http.Error(w, "suggestion not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -156,6 +160,26 @@ func (h *Handler) DismissMatchSuggestion(w http.ResponseWriter, r *http.Request)
 		"status": "dismissed",
 		"id":     suggestionID,
 	})
+}
+
+// suggestionScope authenticates the caller and resolves {product_id} to a product group they track (SEC-08).
+func (h *Handler) suggestionScope(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {
+	rawID, err := uuid.Parse(chi.URLParam(r, "product_id"))
+	if err != nil {
+		http.Error(w, "invalid product id", http.StatusBadRequest)
+		return uuid.Nil, uuid.Nil, false
+	}
+	userID, err := h.resolveUserID(r)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return uuid.Nil, uuid.Nil, false
+	}
+	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
+	if err != nil {
+		h.accessError(w, r, err, "suggestion not found")
+		return uuid.Nil, uuid.Nil, false
+	}
+	return userID, productID, true
 }
 
 // TriggerAutoMatch handles POST /api/v1/products/{product_id}/auto-match
@@ -175,9 +199,15 @@ func (h *Handler) TriggerAutoMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	productID, err := h.resolveCanonicalProductID(r.Context(), rawID)
+	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "product not found", http.StatusNotFound)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
+	if err != nil {
+		h.accessError(w, r, err, "product not found")
 		return
 	}
 
@@ -193,14 +223,9 @@ func (h *Handler) TriggerAutoMatch(w http.ResponseWriter, r *http.Request) {
 	refTitle := cmp.ProductTitle
 	refPrice := primarySource.EffectivePrice
 
-	userID, err := h.resolveUserID(r)
-	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
 	result, err := h.matchingService.DiscoverAndMatch(r.Context(), userID, productID, refPlatform, refTitle, refPrice)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -228,17 +253,9 @@ func (h *Handler) TriggerTrackedProductAutoMatch(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var productID uuid.UUID
-	if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), rawID, userID); err == nil && tracked != nil {
-		if source, err := h.trackingService.GetProductSource(r.Context(), tracked.ProductSourceID); err == nil && source != nil {
-			productID = source.ProductID
-		}
-	} else if source, err := h.trackingService.GetProductSource(r.Context(), rawID); err == nil && source != nil {
-		productID = source.ProductID
-	}
-
-	if productID == uuid.Nil {
-		http.Error(w, "tracking not found", http.StatusNotFound)
+	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
+	if err != nil {
+		h.accessError(w, r, err, "tracking not found")
 		return
 	}
 
@@ -251,7 +268,7 @@ func (h *Handler) TriggerTrackedProductAutoMatch(w http.ResponseWriter, r *http.
 	primarySource := cmp.Sources[0]
 	result, err := h.matchingService.DiscoverAndMatch(r.Context(), userID, productID, primarySource.Platform, cmp.ProductTitle, primarySource.EffectivePrice)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 

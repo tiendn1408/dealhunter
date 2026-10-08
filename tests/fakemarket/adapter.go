@@ -134,3 +134,18 @@ func (m *MockAdapter) FetchPrice(ctx context.Context, source *product.ProductSou
 		CapturedAt:      time.Now(),
 	}, nil
 }
+
+// NamedAdapter is a MockAdapter reporting a real platform name, so tests can register it for that
+// marketplace's hosts (e.g. to validate URLs against shopee.vn) without any network traffic.
+type NamedAdapter struct {
+	*MockAdapter
+	name string
+}
+
+func NewNamedAdapter(name string) *NamedAdapter {
+	return &NamedAdapter{MockAdapter: NewMockAdapter(), name: name}
+}
+
+func (n *NamedAdapter) Name() string {
+	return n.name
+}

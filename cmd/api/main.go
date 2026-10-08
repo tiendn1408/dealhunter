@@ -134,6 +134,8 @@ func main() {
 	handler.SetZaloWebhookCredentials(cfg.ZaloAppID, cfg.ZaloWebhookSecret)
 	handler.SetAuthCookieSecure(cfg.AuthCookieSecure)
 	handler.SetCORSAllowedOrigins(cfg.CORSOrigins())
+	handler.SetAdminEmails(cfg.AdminEmailList())
+	handler.SetGuestRateLimiter(router.NewRedisRateLimiter(rdb, "dh:rl:guest", 20, 10*time.Minute))
 	r := router.NewRouter(logger, handler)
 
 	srv := &http.Server{

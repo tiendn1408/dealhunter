@@ -1,7 +1,10 @@
 package voucher
 
 import (
+	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -135,4 +138,40 @@ func CalculateEffectivePrice(listedPrice, shippingFee int64, vouchers []*Product
 		BestFreeshipVoucher: bestFreeshipVoucher,
 		AvailableVouchers:   validVouchers,
 	}
+}
+
+func (t VoucherType) IsValid() bool {
+	switch t {
+	case VoucherTypeShop, VoucherTypePlatform, VoucherTypeFreeship:
+		return true
+	}
+	return false
+}
+
+// MaxVoucherLifetime bounds how far in the future a voucher may expire.
+const MaxVoucherLifetime = 365 * 24 * time.Hour
+
+// Validate checks a voucher before it is stored. Vouchers change every user's effective price and are
+// sent in Zalo messages, so values must be plausible and an expiry is mandatory (SEC-09).
+// CollectURL is checked by the caller against the source's marketplace.
+func (v *ProductVoucher) Validate(now time.Time) error {
+	switch {
+	case !v.VoucherType.IsValid():
+		return errors.New("voucher_type must be shop_voucher, platform_voucher or freeship_voucher")
+	case strings.TrimSpace(v.Title) == "" || utf8.RuneCountInString(v.Title) > 200:
+		return errors.New("title is required (max 200 characters)")
+	case len(v.VoucherCode) > 64:
+		return errors.New("voucher_code is too long (max 64 characters)")
+	case v.DiscountAmount < 0 || v.MinOrderValue < 0:
+		return errors.New("discount_amount and min_order_value must not be negative")
+	case v.DiscountPercent < 0 || v.DiscountPercent > 100:
+		return errors.New("discount_percent must be between 0 and 100")
+	case v.DiscountAmount == 0 && v.DiscountPercent == 0:
+		return errors.New("discount_amount or discount_percent is required")
+	case len(v.CollectURL) > 2048:
+		return errors.New("collect_url is too long")
+	case v.ExpiresAt == nil || !v.ExpiresAt.After(now) || v.ExpiresAt.After(now.Add(MaxVoucherLifetime)):
+		return errors.New("expires_at is required and must be within one year")
+	}
+	return nil
 }

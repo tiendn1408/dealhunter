@@ -125,20 +125,20 @@ export function startHunt(opts: HuntOptions): () => void {
           scrolled = true;
         }
       }
-      status(t, `Cho gio G: con ${(untilDrop / 1000).toFixed(1)}s`);
+      status(t, `Waiting for the drop: ${(untilDrop / 1000).toFixed(1)}s`);
       return;
     }
 
     if (t > opts.targetTimestamp + windowMs) {
-      if (clicks === 0) finish("not_found", "Khong tim thay nut voucher phu hop trong khung gio");
-      else finish("timeout", `Da click ${clicks} lan nhung trang khong xac nhan da luu`);
+      if (clicks === 0) finish("not_found", "No matching voucher button appeared in time");
+      else finish("timeout", `Clicked ${clicks} times but the page never confirmed the voucher was saved`);
       return;
     }
 
     const el = resolve(true);
     const state = elementResolver.getButtonState(el);
-    if (state === "saved") return finish("saved", "Trang hien thi voucher da duoc luu");
-    if (state === "exhausted") return finish("exhausted", "Voucher da het luot");
+    if (state === "saved") return finish("saved", "The page shows the voucher as saved");
+    if (state === "exhausted") return finish("exhausted", "The voucher is fully claimed");
 
     if (el && state === "collectable" && t - lastClickAt >= clickIntervalMs && clicks < maxClicks) {
       if (humanClicker.dispatchClick(el)) {
@@ -146,8 +146,8 @@ export function startHunt(opts: HuntOptions): () => void {
         lastClickAt = t;
       }
     }
-    status(t, clicks > 0 ? `Dang luu ma... ${clicks} click` : "Dang tim nut voucher...");
+    status(t, clicks > 0 ? `Saving... ${clicks} clicks` : "Looking for the voucher button...");
   });
 
-  return () => finish("cancelled", "Da huy");
+  return () => finish("cancelled", "Cancelled");
 }

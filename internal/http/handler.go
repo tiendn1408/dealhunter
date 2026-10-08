@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +41,9 @@ type Handler struct {
 	corsAllowedOrigins   []string
 	affiliateTransformer affiliate.LinkTransformer
 	voucherRepo          voucher.Repository
+	adminEmails          map[string]bool
+	guestLimiter         RateLimiter
+	logger               *slog.Logger
 }
 
 func NewHandler(ts *tracking.TrackingService, ps *pricing.PricingService) *Handler {
@@ -51,6 +56,21 @@ func (h *Handler) SetAffiliateTransformer(transformer affiliate.LinkTransformer)
 
 func (h *Handler) SetVoucherRepository(vr voucher.Repository) {
 	h.voucherRepo = vr
+}
+
+// SetAdminEmails lists the accounts allowed to manage global data such as vouchers.
+func (h *Handler) SetAdminEmails(emails []string) {
+	h.adminEmails = make(map[string]bool, len(emails))
+	for _, e := range emails {
+		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
+			h.adminEmails[e] = true
+		}
+	}
+}
+
+// SetGuestRateLimiter limits how often one client may create guest accounts.
+func (h *Handler) SetGuestRateLimiter(l RateLimiter) {
+	h.guestLimiter = l
 }
 
 func (h *Handler) SetAlertAndNotificationRepos(ar alert.Repository, nr notification.Repository) {
@@ -150,6 +170,22 @@ func (h *Handler) requireMember(w http.ResponseWriter, r *http.Request) (uuid.UU
 	return userID, true
 }
 
+// requireAdmin writes 401/403 and returns false unless the caller is a member listed in ADMIN_EMAILS.
+func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	userID, ok := h.requireMember(w, r)
+	if !ok {
+		return uuid.Nil, false
+	}
+	if len(h.adminEmails) > 0 && h.authService != nil {
+		user, err := h.authService.GetProfile(r.Context(), userID)
+		if err == nil && user != nil && user.Email != nil && h.adminEmails[strings.ToLower(*user.Email)] {
+			return userID, true
+		}
+	}
+	http.Error(w, "forbidden", http.StatusForbidden)
+	return uuid.Nil, false
+}
+
 type TrackRequest struct {
 	URL string `json:"url"`
 }
@@ -173,14 +209,11 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Không đọc được thông tin sản phẩm từ sàn (trang bị chặn, đã gỡ hoặc thay đổi). Vui lòng thử lại sau.", http.StatusBadGateway)
 			return
 		}
-		if strings.Contains(err.Error(), "unsupported or unregistered platform") ||
-			strings.Contains(err.Error(), "invalid url") ||
-			strings.Contains(err.Error(), "detect platform") ||
-			strings.Contains(err.Error(), "cannot parse") {
+		if isBadProductURL(err) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -289,7 +322,7 @@ func (h *Handler) ListTrackings(w http.ResponseWriter, r *http.Request) {
 
 	trackings, err := h.trackingService.ListTrackings(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -326,35 +359,36 @@ func (h *Handler) GetTracking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback: check if id is a product_source_id directly
-	if source, err := h.trackingService.GetProductSource(r.Context(), id); err == nil && source != nil {
-		enriched := EnrichedTracking{
-			ProductSourceID:    source.ID,
-			Active:             source.Active,
-			Platform:           source.Platform,
-			CanonicalURL:       source.CanonicalURL,
-			LastPrice:          source.LastPrice,
-			LastEffectivePrice: source.LastEffectivePrice,
-			LastInStock:        source.LastInStock,
-			CreatedAt:          source.CreatedAt,
-			UpdatedAt:          source.UpdatedAt,
-		}
-		if source.RawTitle != nil {
-			enriched.Title = *source.RawTitle
-		}
-		if source.SellerName != nil {
-			enriched.SellerName = *source.SellerName
-		}
-		if h.affiliateTransformer != nil && enriched.CanonicalURL != "" {
-			subID := affiliate.FormatSubID(userID, source.ProductID)
-			enriched.AffiliateURL = h.affiliateTransformer.Transform(enriched.CanonicalURL, enriched.Platform, subID)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(enriched)
+	// Fallback: id is a product_source_id in a product group the user tracks (e.g. a compared source)
+	source, err := h.trackingService.ResolveSourceForUser(r.Context(), userID, id)
+	if err != nil {
+		h.accessError(w, r, err, "tracking not found")
 		return
 	}
-
-	http.Error(w, "tracking not found", http.StatusNotFound)
+	enriched := EnrichedTracking{
+		ProductSourceID:    source.ID,
+		ProductID:          source.ProductID,
+		Active:             source.Active,
+		Platform:           source.Platform,
+		CanonicalURL:       source.CanonicalURL,
+		LastPrice:          source.LastPrice,
+		LastEffectivePrice: source.LastEffectivePrice,
+		LastInStock:        source.LastInStock,
+		CreatedAt:          source.CreatedAt,
+		UpdatedAt:          source.UpdatedAt,
+	}
+	if source.RawTitle != nil {
+		enriched.Title = *source.RawTitle
+	}
+	if source.SellerName != nil {
+		enriched.SellerName = *source.SellerName
+	}
+	if h.affiliateTransformer != nil && enriched.CanonicalURL != "" {
+		subID := affiliate.FormatSubID(userID, source.ProductID)
+		enriched.AffiliateURL = h.affiliateTransformer.Transform(enriched.CanonicalURL, enriched.Platform, subID)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(enriched)
 }
 
 func (h *Handler) GetTrackingPrices(w http.ResponseWriter, r *http.Request) {
@@ -371,15 +405,12 @@ func (h *Handler) GetTrackingPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve to productSourceID if the passed ID is a tracked_product ID
-	if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), sourceID, userID); err == nil && tracked != nil {
-		sourceID = tracked.ProductSourceID
-	} else if h.trackingService != nil {
-		if source, err := h.trackingService.GetProductSource(r.Context(), sourceID); err != nil || source == nil {
-			http.Error(w, "tracking not found", http.StatusNotFound)
-			return
-		}
+	source, err := h.trackingService.ResolveSourceForUser(r.Context(), userID, sourceID)
+	if err != nil {
+		h.accessError(w, r, err, "tracking not found")
+		return
 	}
+	sourceID = source.ID
 
 	to := time.Now()
 	from := to.AddDate(0, 0, -30)
@@ -397,7 +428,7 @@ func (h *Handler) GetTrackingPrices(w http.ResponseWriter, r *http.Request) {
 
 	snapshots, err := h.pricingService.GetHistory(r.Context(), sourceID, from, to)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -485,16 +516,14 @@ func (h *Handler) CreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve to productSourceID if the passed ID is a tracked_product ID
+	// Resolve a tracked_product ID or an accessible product_source ID to the source
 	if h.trackingService != nil {
-		if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), sourceID, userID); err == nil && tracked != nil {
-			sourceID = tracked.ProductSourceID
-		} else {
-			if source, err := h.trackingService.GetProductSource(r.Context(), sourceID); err != nil || source == nil {
-				http.Error(w, "product not found", http.StatusNotFound)
-				return
-			}
+		source, err := h.trackingService.ResolveSourceForUser(r.Context(), userID, sourceID)
+		if err != nil {
+			h.accessError(w, r, err, "product not found")
+			return
 		}
+		sourceID = source.ID
 	}
 
 	var req CreateAlertRequest
@@ -510,6 +539,18 @@ func (h *Handler) CreateAlert(w http.ResponseWriter, r *http.Request) {
 
 	if req.ThresholdValue <= 0 {
 		http.Error(w, "threshold_value must be greater than 0", http.StatusBadRequest)
+		return
+	}
+	if req.RuleType == alert.RuleTypeDropPercent && req.ThresholdValue > 99 {
+		http.Error(w, "threshold_value for drop_percent must be between 1 and 99", http.StatusBadRequest)
+		return
+	}
+	if req.RuleType == alert.RuleTypeLowestInDays && req.ThresholdValue > 365 {
+		http.Error(w, "threshold_value for lowest_in_days must be between 1 and 365", http.StatusBadRequest)
+		return
+	}
+	if req.ExpiresInDays != nil && (*req.ExpiresInDays < 0 || *req.ExpiresInDays > 365) {
+		http.Error(w, "expires_in_days must be between 0 and 365", http.StatusBadRequest)
 		return
 	}
 
@@ -534,7 +575,7 @@ func (h *Handler) CreateAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.alertRepo.CreateRule(r.Context(), rule); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -563,19 +604,17 @@ func (h *Handler) ListAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.trackingService != nil {
-		if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), sourceID, userID); err == nil && tracked != nil {
-			sourceID = tracked.ProductSourceID
-		} else {
-			if source, err := h.trackingService.GetProductSource(r.Context(), sourceID); err != nil || source == nil {
-				http.Error(w, "product not found", http.StatusNotFound)
-				return
-			}
+		source, err := h.trackingService.ResolveSourceForUser(r.Context(), userID, sourceID)
+		if err != nil {
+			h.accessError(w, r, err, "product not found")
+			return
 		}
+		sourceID = source.ID
 	}
 
 	rules, err := h.alertRepo.ListRulesBySourceAndUser(r.Context(), sourceID, userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -651,7 +690,7 @@ func (h *Handler) GetAlertLogs(w http.ResponseWriter, r *http.Request) {
 
 	logs, err := h.notifRepo.ListRuleLogs(r.Context(), alertID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -681,13 +720,13 @@ func (h *Handler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 	limit := 30
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
+			limit = min(l, 100)
 		}
 	}
 
 	notifs, err := h.notifRepo.ListUserNotifications(r.Context(), userID, limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -721,7 +760,7 @@ func (h *Handler) MarkNotificationAsRead(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.notifRepo.MarkAsRead(r.Context(), notifID, userID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -746,7 +785,7 @@ func (h *Handler) ListUserAlerts(w http.ResponseWriter, r *http.Request) {
 
 	rules, err := h.alertRepo.ListRulesByUser(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -774,13 +813,18 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 
 	profile, err := h.notifRepo.GetUserProfile(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(profile)
 }
+
+var (
+	phonePattern  = regexp.MustCompile(`^\+?[0-9]{9,15}$`)
+	zaloIDPattern = regexp.MustCompile(`^[0-9A-Za-z_-]{1,64}$`)
+)
 
 type ConnectZaloRequest struct {
 	ZaloID string `json:"zalo_id,omitempty"`
@@ -799,8 +843,17 @@ func (h *Handler) ConnectZalo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.ZaloID, req.Phone = strings.TrimSpace(req.ZaloID), strings.TrimSpace(req.Phone)
 	if req.ZaloID == "" && req.Phone == "" {
 		http.Error(w, "either zalo_id or phone is required", http.StatusBadRequest)
+		return
+	}
+	if req.Phone != "" && !phonePattern.MatchString(req.Phone) {
+		http.Error(w, "invalid phone number", http.StatusBadRequest)
+		return
+	}
+	if req.ZaloID != "" && !zaloIDPattern.MatchString(req.ZaloID) {
+		http.Error(w, "invalid zalo_id", http.StatusBadRequest)
 		return
 	}
 
@@ -816,7 +869,7 @@ func (h *Handler) ConnectZalo(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Zalo ID hoặc số điện thoại đã được liên kết với một tài khoản khác", http.StatusConflict)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -840,7 +893,7 @@ func (h *Handler) DisconnectZalo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.notifRepo.DisconnectUserZalo(r.Context(), userID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -851,26 +904,6 @@ func (h *Handler) DisconnectZalo(w http.ResponseWriter, r *http.Request) {
 }
 
 // Phase 3: Cross-platform Price Comparison Handlers
-
-func (h *Handler) resolveCanonicalProductID(ctx context.Context, rawID uuid.UUID) (uuid.UUID, error) {
-	if h.comparisonSvc != nil {
-		if exists, _ := h.comparisonSvc.ProductExists(ctx, rawID); exists {
-			return rawID, nil
-		}
-	}
-
-	if tracked, err := h.trackingService.GetTracking(ctx, rawID); err == nil && tracked != nil {
-		if source, err := h.trackingService.GetProductSource(ctx, tracked.ProductSourceID); err == nil && source != nil {
-			return source.ProductID, nil
-		}
-	}
-
-	if source, err := h.trackingService.GetProductSource(ctx, rawID); err == nil && source != nil {
-		return source.ProductID, nil
-	}
-
-	return uuid.Nil, errors.New("product not found")
-}
 
 func (h *Handler) GetProductComparison(w http.ResponseWriter, r *http.Request) {
 	if h.comparisonSvc == nil {
@@ -885,15 +918,21 @@ func (h *Handler) GetProductComparison(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	productID, err := h.resolveCanonicalProductID(r.Context(), rawID)
+	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "product not found", http.StatusNotFound)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
+	if err != nil {
+		h.accessError(w, r, err, "product not found")
 		return
 	}
 
 	comparisonResult, err := h.comparisonSvc.GetComparison(r.Context(), productID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -914,9 +953,9 @@ func (h *Handler) LinkProductSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	productID, err := h.resolveCanonicalProductID(r.Context(), rawID)
+	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "product not found", http.StatusNotFound)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -926,27 +965,28 @@ func (h *Handler) LinkProductSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := h.resolveUserID(r)
+	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.accessError(w, r, err, "product not found")
 		return
 	}
 
 	source, err := h.trackingService.LinkSourceToProduct(r.Context(), userID, productID, req.URL)
 	if err != nil {
-		if errors.Is(err, tracking.ErrSourceAlreadyLinked) {
+		switch {
+		case errors.Is(err, tracking.ErrSourceAlreadyLinked):
 			http.Error(w, "Sản phẩm từ đường dẫn này đã được liên kết với nhóm sản phẩm", http.StatusConflict)
-			return
-		}
-		if errors.Is(err, tracking.ErrProductNotFound) {
+		case errors.Is(err, tracking.ErrSourceInOtherGroup):
+			http.Error(w, "Sản phẩm từ đường dẫn này đang thuộc một nhóm so sánh khác", http.StatusConflict)
+		case errors.Is(err, tracking.ErrProductNotFound):
 			http.Error(w, "Nhóm sản phẩm không tồn tại", http.StatusNotFound)
-			return
-		}
-		if errors.Is(err, marketplace.ErrProductUnavailable) {
+		case errors.Is(err, marketplace.ErrProductUnavailable):
 			http.Error(w, "Không đọc được thông tin sản phẩm từ sàn (trang bị chặn, đã gỡ hoặc thay đổi). Vui lòng thử lại sau.", http.StatusBadGateway)
-			return
+		case isBadProductURL(err):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			h.serverError(w, r, err)
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -975,7 +1015,7 @@ func (h *Handler) ListProductGroups(w http.ResponseWriter, r *http.Request) {
 
 	groups, err := h.comparisonSvc.GetUserMultiSourceProducts(r.Context(), userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -1008,23 +1048,15 @@ func (h *Handler) GetTrackedProductComparison(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	var productID uuid.UUID
-	if tracked, err := h.trackingService.GetTrackingForUser(r.Context(), rawID, userID); err == nil && tracked != nil {
-		if source, err := h.trackingService.GetProductSource(r.Context(), tracked.ProductSourceID); err == nil && source != nil {
-			productID = source.ProductID
-		}
-	} else if source, err := h.trackingService.GetProductSource(r.Context(), rawID); err == nil && source != nil {
-		productID = source.ProductID
-	}
-
-	if productID == uuid.Nil {
-		http.Error(w, "tracking not found", http.StatusNotFound)
+	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
+	if err != nil {
+		h.accessError(w, r, err, "tracking not found")
 		return
 	}
 
 	comparisonResult, err := h.comparisonSvc.GetComparison(r.Context(), productID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 

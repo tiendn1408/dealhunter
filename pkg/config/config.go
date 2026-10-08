@@ -32,6 +32,7 @@ type Config struct {
 	ZaloWebhookSecret   string
 	ZaloEnabled         bool
 	CORSAllowedOrigins  string
+	AdminEmails         string
 	JWTSecret           string
 	GoogleClientID      string
 	AccessTokenTTL      time.Duration
@@ -128,6 +129,7 @@ func Load() (*Config, error) {
 		ZaloWebhookSecret:   zaloWebhookSecret,
 		ZaloEnabled:         zaloEnabled,
 		CORSAllowedOrigins:  getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000"),
+		AdminEmails:         getEnv("ADMIN_EMAILS", ""),
 		JWTSecret:           getEnv("JWT_SECRET", DevJWTSecret),
 		GoogleClientID:      getEnv("GOOGLE_CLIENT_ID", ""),
 		AccessTokenTTL:      accessTTL,
@@ -173,6 +175,17 @@ func (c *Config) CORSOrigins() []string {
 		}
 	}
 	return origins
+}
+
+// AdminEmailList returns ADMIN_EMAILS (comma-separated Google account emails allowed to manage vouchers).
+func (c *Config) AdminEmailList() []string {
+	var emails []string
+	for _, e := range strings.Split(c.AdminEmails, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			emails = append(emails, e)
+		}
+	}
+	return emails
 }
 
 // ValidateAPI fails fast on insecure API configuration. Production rules are strict;

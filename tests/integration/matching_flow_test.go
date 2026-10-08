@@ -207,6 +207,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 
 		t.Log("Step 5: Verifying cross-platform comparison after accepting suggestion...")
 		cmpReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/api/v1/products/%s/comparison", ts.URL, suggList.ProductID), nil)
+		cmpReq.Header.Set("Authorization", bearerFor(t, jwtMgr, userID))
 		cmpResp, err := client.Do(cmpReq)
 		if err != nil || cmpResp.StatusCode != http.StatusOK {
 			t.Fatalf("get comparison failed: status=%d, err=%v", cmpResp.StatusCode, err)
@@ -223,6 +224,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	} else if len(matchResult.AutoLinkedSources) > 0 {
 		t.Log("Step 4b: Verifying cross-platform comparison after auto-link...")
 		cmpReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/api/v1/products/%s/comparison", ts.URL, matchResult.ProductID), nil)
+		cmpReq.Header.Set("Authorization", bearerFor(t, jwtMgr, userID))
 		cmpResp, err := client.Do(cmpReq)
 		if err != nil || cmpResp.StatusCode != http.StatusOK {
 			t.Fatalf("get comparison failed: status=%d, err=%v", cmpResp.StatusCode, err)

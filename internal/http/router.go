@@ -12,6 +12,7 @@ import (
 
 func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 	r := chi.NewRouter()
+	handler.logger = logger
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -31,6 +32,8 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 	r.Handle("/metrics", promhttp.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(LimitBody(maxJSONBodyBytes))
+
 		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)

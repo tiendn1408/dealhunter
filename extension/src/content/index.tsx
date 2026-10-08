@@ -64,8 +64,8 @@ if (document.readyState === "loading") {
 /** Why this tab cannot hunt, if Shopee redirected it away from the voucher page. */
 function shopeeBlockReason(): string | null {
   const path = window.location.pathname;
-  if (path.startsWith("/verify/")) return "Shopee chuyen sang trang xac minh (captcha) - hay mo Shopee, xac minh va dang nhap truoc gio G";
-  if (path.startsWith("/buyer/login")) return "Chua dang nhap Shopee tren trinh duyet nay";
+  if (path.startsWith("/verify/")) return "Shopee redirected to a verification (captcha) page - open Shopee, verify and sign in before the drop";
+  if (path.startsWith("/buyer/login")) return "Not signed in to Shopee in this browser";
   return null;
 }
 

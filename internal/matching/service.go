@@ -168,14 +168,26 @@ func (s *MatchingService) GetPendingSuggestions(ctx context.Context, productID u
 	return s.repo.GetSuggestionsByProductID(ctx, productID)
 }
 
-// AcceptSuggestion accepts a suggestion, links the candidate source, and updates status.
-func (s *MatchingService) AcceptSuggestion(ctx context.Context, userID, suggestionID uuid.UUID) error {
+// ErrSuggestionNotFound is returned when the suggestion does not exist or belongs to another product.
+var ErrSuggestionNotFound = errors.New("suggestion not found")
+
+func (s *MatchingService) suggestionForProduct(ctx context.Context, productID, suggestionID uuid.UUID) (*MatchSuggestion, error) {
 	sugg, err := s.repo.GetSuggestionByID(ctx, suggestionID)
 	if err != nil {
-		return fmt.Errorf("get suggestion: %w", err)
+		return nil, fmt.Errorf("get suggestion: %w", err)
 	}
-	if sugg == nil {
-		return fmt.Errorf("suggestion not found: %s", suggestionID)
+	if sugg == nil || sugg.ProductID != productID {
+		return nil, ErrSuggestionNotFound
+	}
+	return sugg, nil
+}
+
+// AcceptSuggestion accepts a suggestion of productID, links the candidate source, and updates status.
+// The caller must already be authorized for productID.
+func (s *MatchingService) AcceptSuggestion(ctx context.Context, userID, productID, suggestionID uuid.UUID) error {
+	sugg, err := s.suggestionForProduct(ctx, productID, suggestionID)
+	if err != nil {
+		return err
 	}
 
 	if s.linker != nil {
@@ -197,7 +209,11 @@ func (s *MatchingService) AcceptSuggestion(ctx context.Context, userID, suggesti
 	return nil
 }
 
-// DismissSuggestion rejects a match suggestion so it will not bother the user.
-func (s *MatchingService) DismissSuggestion(ctx context.Context, suggestionID uuid.UUID) error {
+// DismissSuggestion rejects a match suggestion of productID so it will not bother the user.
+// The caller must already be authorized for productID.
+func (s *MatchingService) DismissSuggestion(ctx context.Context, productID, suggestionID uuid.UUID) error {
+	if _, err := s.suggestionForProduct(ctx, productID, suggestionID); err != nil {
+		return err
+	}
 	return s.repo.UpdateSuggestionStatus(ctx, suggestionID, StatusDismissed)
 }

@@ -62,6 +62,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 
 	registry := marketplace.NewRegistry()
 	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewNamedAdapter("shopee"), "shopee.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -94,6 +95,8 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	handler.SetAuthService(authSvc, jwtMgr)
 	handler.SetAffiliateTransformer(affTr)
 	handler.SetVoucherRepository(voucherRepo)
+	adminEmail := fmt.Sprintf("voucher-admin-%s@dealhunter.vn", uuid.New().String()[:8])
+	handler.SetAdminEmails([]string{strings.ToUpper(adminEmail)})
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	r := router.NewRouter(logger, handler)
@@ -107,6 +110,8 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	loginData := *loginDataPtr
 	userToken := loginData.AccessToken
 	userID := loginData.User.ID
+	_, adminDataPtr, _ := googleLogin(t, server.URL, adminEmail, "")
+	adminToken := adminDataPtr.AccessToken
 
 	// 2. Track a Shopee product
 	mockShopeeURL := fmt.Sprintf("https://mock.dealhunter.vn/item/shopee-keyboard-%s", uuid.New().String()[:8])
@@ -127,7 +132,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 
 	listedPrice := int64(200000)
 	shippingFee := int64(15000)
-	_, err = dbPool.Exec(ctx, "UPDATE product_sources SET last_price = $1, last_shipping_fee = $2, last_effective_price = $1::bigint + $2::bigint WHERE id = $3", listedPrice, shippingFee, trackData.ProductSourceID)
+	_, err = dbPool.Exec(ctx, "UPDATE product_sources SET platform = 'shopee', last_price = $1, last_shipping_fee = $2, last_effective_price = $1::bigint + $2::bigint WHERE id = $3", listedPrice, shippingFee, trackData.ProductSourceID)
 	if err != nil {
 		t.Fatalf("Failed to update product source prices: %v", err)
 	}
@@ -162,6 +167,62 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 			initialResp.Calculation.ShopDiscount, initialResp.Calculation.PlatformCoupon)
 	}
 
+	// SEC-09: only admins create vouchers, and every field is validated
+	postVoucher := func(bearer string, body map[string]interface{}) int {
+		t.Helper()
+		payload, _ := json.Marshal(body)
+		req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v1/tracked-products/%s/vouchers", server.URL, trackData.ID), bytes.NewBuffer(payload))
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("post voucher: %v", err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	validVoucher := func() map[string]interface{} {
+		return map[string]interface{}{
+			"voucher_type":    "shop_voucher",
+			"title":           "Giam 10.000d",
+			"discount_amount": 10000,
+			"expires_at":      time.Now().Add(24 * time.Hour),
+		}
+	}
+	guestBearer, _, _ := startGuest(t, server.URL)
+	if code := postVoucher("", validVoucher()); code != http.StatusUnauthorized {
+		t.Errorf("anonymous voucher create: expected 401, got %d", code)
+	}
+	if code := postVoucher(strings.TrimPrefix(guestBearer, "Bearer "), validVoucher()); code != http.StatusForbidden {
+		t.Errorf("guest voucher create: expected 403, got %d", code)
+	}
+	if code := postVoucher(userToken, validVoucher()); code != http.StatusForbidden {
+		t.Errorf("non-admin member voucher create: expected 403, got %d", code)
+	}
+	for name, mutate := range map[string]func(map[string]interface{}){
+		"percent over 100":   func(b map[string]interface{}) { b["discount_percent"] = 101 },
+		"negative amount":    func(b map[string]interface{}) { b["discount_amount"] = -1 },
+		"no discount":        func(b map[string]interface{}) { b["discount_amount"] = 0 },
+		"unknown type":       func(b map[string]interface{}) { b["voucher_type"] = "cashback" },
+		"empty title":        func(b map[string]interface{}) { b["title"] = "  " },
+		"missing expiry":     func(b map[string]interface{}) { delete(b, "expires_at") },
+		"expired":            func(b map[string]interface{}) { b["expires_at"] = time.Now().Add(-time.Hour) },
+		"expiry over a year": func(b map[string]interface{}) { b["expires_at"] = time.Now().AddDate(2, 0, 0) },
+		"phishing host":      func(b map[string]interface{}) { b["collect_url"] = "https://shopee.vn.evil.com/claim" },
+		"http collect_url":   func(b map[string]interface{}) { b["collect_url"] = "http://shopee.vn/claim" },
+		"other marketplace":  func(b map[string]interface{}) { b["collect_url"] = "https://mock.dealhunter.vn/claim" },
+		"javascript url":     func(b map[string]interface{}) { b["collect_url"] = "javascript:alert(1)" },
+		"unknown field":      func(b map[string]interface{}) { b["expires_in_days"] = 3 },
+	} {
+		body := validVoucher()
+		mutate(body)
+		if code := postVoucher(adminToken, body); code != http.StatusBadRequest {
+			t.Errorf("invalid voucher (%s): expected 400, got %d", name, code)
+		}
+	}
+
 	// 4. Add Shop Voucher via POST /api/v1/tracked-products/{id}/vouchers
 	shopVoucherPayload, _ := json.Marshal(map[string]interface{}{
 		"voucher_type":    "shop_voucher",
@@ -170,10 +231,11 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 		"discount_amount": 20000,
 		"min_order_value": 50000,
 		"collect_url":     "https://shopee.vn/m/voucher-shop-claim",
+		"expires_at":      time.Now().Add(72 * time.Hour),
 	})
 	reqAddShopVoucher, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v1/tracked-products/%s/vouchers", server.URL, trackData.ID), bytes.NewBuffer(shopVoucherPayload))
 	reqAddShopVoucher.Header.Set("Content-Type", "application/json")
-	reqAddShopVoucher.Header.Set("Authorization", "Bearer "+userToken)
+	reqAddShopVoucher.Header.Set("Authorization", "Bearer "+adminToken)
 	respAddShopVoucher, err := client.Do(reqAddShopVoucher)
 	if err != nil || respAddShopVoucher.StatusCode != http.StatusCreated {
 		t.Fatalf("Add shop voucher failed: %v, status: %d", err, respAddShopVoucher.StatusCode)
@@ -188,10 +250,11 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 		"discount_amount": 30000,
 		"min_order_value": 80000,
 		"collect_url":     "https://shopee.vn/m/voucher-san-claim",
+		"expires_at":      time.Now().Add(72 * time.Hour),
 	})
 	reqAddPlatform, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/api/v1/tracked-products/%s/vouchers", server.URL, trackData.ID), bytes.NewBuffer(platformCouponPayload))
 	reqAddPlatform.Header.Set("Content-Type", "application/json")
-	reqAddPlatform.Header.Set("Authorization", "Bearer "+userToken)
+	reqAddPlatform.Header.Set("Authorization", "Bearer "+adminToken)
 	respAddPlatform, err := client.Do(reqAddPlatform)
 	if err != nil || respAddPlatform.StatusCode != http.StatusCreated {
 		t.Fatalf("Add platform coupon failed: %v, status: %d", err, respAddPlatform.StatusCode)

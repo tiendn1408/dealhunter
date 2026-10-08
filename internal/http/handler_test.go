@@ -618,7 +618,10 @@ func TestGetProductComparison_Handler(t *testing.T) {
 	}
 
 	compSvc := comparison.NewComparisonService(compRepo, nil)
+	store := newFakeStore()
+	store.addTrackedSource(defaultUserID, productID)
 	handler := newTestHandler()
+	handler.trackingService = store.trackingService()
 	handler.SetComparisonService(compSvc)
 
 	r := chi.NewRouter()
@@ -626,6 +629,15 @@ func TestGetProductComparison_Handler(t *testing.T) {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/products/{product_id}/comparison", handler.GetProductComparison)
 	})
+
+	// A user who does not track any source of the product cannot read its comparison.
+	outsiderReq := httptest.NewRequest(http.MethodGet, "/api/v1/products/"+productID.String()+"/comparison", nil)
+	authAs(outsiderReq, uuid.New())
+	outsiderW := httptest.NewRecorder()
+	r.ServeHTTP(outsiderW, outsiderReq)
+	if outsiderW.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for a user not tracking the product, got %d", outsiderW.Code)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/products/"+productID.String()+"/comparison", nil)
 	w := httptest.NewRecorder()
