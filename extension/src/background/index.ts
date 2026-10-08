@@ -72,8 +72,8 @@ async function getPriceContext(url: string): Promise<PriceContextResponse> {
   if (!session) return { signedIn: false };
   try {
     const context = await apiClient.getProductPriceContext(url, session.accessToken);
-    const { dealHunterWebUrl } = await storage.getSettings();
-    return { signedIn: true, context, webUrl: dealHunterWebUrl };
+    const { webUrl } = await storage.getEndpoints();
+    return { signedIn: true, context, webUrl };
   } catch (err) {
     if (err instanceof SessionRejectedError) {
       await webSession.clear();

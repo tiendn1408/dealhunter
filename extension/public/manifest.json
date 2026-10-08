@@ -10,7 +10,10 @@
     "scripting"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "https://dealhunter.vn/*",
+    "https://api.dealhunter.vn/*",
+    "http://localhost/*"
   ],
   "background": {
     "service_worker": "background.js",

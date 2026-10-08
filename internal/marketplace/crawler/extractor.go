@@ -326,10 +326,13 @@ func ParseVNDPrice(priceStr string) (int64, error) {
 	clean = strings.ReplaceAll(clean, "đ", "")
 	clean = strings.ReplaceAll(clean, " ", "")
 
-	// The last ',' or '.' is a decimal separator only when 1-2 digits follow it (6290000.00,
-	// 6.290.000,00, 6,290,000.5); every other separator groups thousands (6.290.000, 6,290,000).
+	// The last ',' or '.' is a decimal separator when 1-2 digits follow it (6290000.00, 6.290.000,00,
+	// 6,290,000.5), or when it is the only separator and more than 3 digits precede it (6290000.000 —
+	// thousands groups never exceed 3 digits). Every other separator groups thousands (6.290.000, 1.500).
 	if i := strings.LastIndexAny(clean, ".,"); i >= 0 {
-		if frac := len(clean) - i - 1; frac >= 1 && frac <= 2 {
+		frac := len(clean) - i - 1
+		onlySeparator := strings.IndexAny(clean, ".,") == i
+		if (frac >= 1 && frac <= 2) || (onlySeparator && i > 3) {
 			clean = clean[:i]
 		}
 	}

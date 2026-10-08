@@ -32,6 +32,10 @@ func getTestDatabaseURL(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("invalid TEST_DATABASE_URL: %v", err)
 	}
+	// pgx also takes the database name from a dbname query parameter, which would override the path
+	if db := u.Query().Get("dbname"); db != "" && !strings.HasSuffix(db, "_test") {
+		t.Fatalf("TEST_DATABASE_URL dbname parameter must end in _test (got %q)", db)
+	}
 	if !strings.HasSuffix(strings.TrimPrefix(u.Path, "/"), "_test") {
 		t.Fatalf("TEST_DATABASE_URL must point to a database whose name ends in _test (got %q); run `make test-db`", u.Redacted())
 	}

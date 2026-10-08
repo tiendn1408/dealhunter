@@ -31,7 +31,7 @@ func (h *Handler) GetMatchSuggestions(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (h *Handler) GetTrackedProductMatchSuggestions(w http.ResponseWriter, r *ht
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -180,7 +180,7 @@ func (h *Handler) suggestionScope(w http.ResponseWriter, r *http.Request) (uuid.
 	}
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return uuid.Nil, uuid.Nil, false
 	}
 	productID, err := h.trackingService.ResolveProductForUser(r.Context(), userID, rawID)
@@ -210,7 +210,7 @@ func (h *Handler) TriggerAutoMatch(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -225,7 +225,12 @@ func (h *Handler) TriggerAutoMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cmp, err := h.comparisonSvc.GetComparison(r.Context(), productID)
-	if err != nil || cmp == nil || len(cmp.Sources) == 0 {
+	if err != nil {
+		// The caller's access to productID was checked above: a failure here is not "not found" (SEC-12)
+		h.serverError(w, r, err)
+		return
+	}
+	if cmp == nil || len(cmp.Sources) == 0 {
 		http.Error(w, "product sources not found", http.StatusNotFound)
 		return
 	}
@@ -240,6 +245,10 @@ func (h *Handler) TriggerAutoMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.matchingService.DiscoverAndMatch(r.Context(), userID, productID, refPlatform, refTitle, refPrice)
+	if errors.Is(err, matching.ErrSearchUnavailable) {
+		http.Error(w, "Không tìm kiếm được trên sàn lúc này (sàn đang chặn hoặc giới hạn truy cập). Vui lòng thử lại sau.", http.StatusBadGateway)
+		return
+	}
 	if errors.Is(err, matching.ErrNoReferencePrice) {
 		http.Error(w, "product has no price yet; try again after the first price fetch", http.StatusConflict)
 		return
@@ -269,7 +278,7 @@ func (h *Handler) TriggerTrackedProductAutoMatch(w http.ResponseWriter, r *http.
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -283,7 +292,12 @@ func (h *Handler) TriggerTrackedProductAutoMatch(w http.ResponseWriter, r *http.
 		return
 	}
 	cmp, err := h.comparisonSvc.GetComparison(r.Context(), productID)
-	if err != nil || cmp == nil || len(cmp.Sources) == 0 {
+	if err != nil {
+		// The caller's access to productID was checked above: a failure here is not "not found" (SEC-12)
+		h.serverError(w, r, err)
+		return
+	}
+	if cmp == nil || len(cmp.Sources) == 0 {
 		http.Error(w, "product sources not found", http.StatusNotFound)
 		return
 	}
@@ -294,6 +308,10 @@ func (h *Handler) TriggerTrackedProductAutoMatch(w http.ResponseWriter, r *http.
 		refPrice = *primarySource.EffectivePrice
 	}
 	result, err := h.matchingService.DiscoverAndMatch(r.Context(), userID, productID, primarySource.Platform, cmp.ProductTitle, refPrice)
+	if errors.Is(err, matching.ErrSearchUnavailable) {
+		http.Error(w, "Không tìm kiếm được trên sàn lúc này (sàn đang chặn hoặc giới hạn truy cập). Vui lòng thử lại sau.", http.StatusBadGateway)
+		return
+	}
 	if errors.Is(err, matching.ErrNoReferencePrice) {
 		http.Error(w, "product has no price yet; try again after the first price fetch", http.StatusConflict)
 		return

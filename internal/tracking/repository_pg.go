@@ -345,7 +345,7 @@ func (r *PostgresRepository) WithGroupLock(ctx context.Context, productIDs []uui
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `SELECT id FROM products WHERE id = ANY($1) ORDER BY id FOR UPDATE`, productIDs); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT id FROM products WHERE id = ANY($1) ORDER BY id FOR NO KEY UPDATE`, productIDs); err != nil {
 		return fmt.Errorf("lock product groups: %w", err)
 	}
 	if err := fn(tx); err != nil {

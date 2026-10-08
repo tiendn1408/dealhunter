@@ -172,7 +172,11 @@ func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*Ses
 		return nil, ErrInvalidRefreshToken
 	}
 
-	return s.buildSession(user, raw, next.ExpiresAt, nil)
+	sess, err := s.buildSession(user, raw, next.ExpiresAt, nil)
+	if err != nil {
+		return nil, &RotatedError{Err: err, RefreshToken: raw, ExpiresAt: next.ExpiresAt}
+	}
+	return sess, nil
 }
 
 // RotatedError reports a refresh that failed after the refresh token was rotated.

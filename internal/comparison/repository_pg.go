@@ -105,7 +105,7 @@ func (r *PostgresRepository) UpsertComparisonSnapshot(ctx context.Context, produ
 			(id, product_id, source_id, platform, seller_name, canonical_url,
 			 listed_price, shipping_fee, effective_price, in_stock, is_best_deal,
 			 captured_at, refreshed_at)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+		VALUES (gen_random_uuid(), $1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9, $10, $11, NOW())
 		ON CONFLICT (product_id, source_id) DO UPDATE
 		SET platform        = EXCLUDED.platform,
 			seller_name     = EXCLUDED.seller_name,

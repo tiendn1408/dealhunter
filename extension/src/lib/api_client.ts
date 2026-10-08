@@ -12,11 +12,47 @@ export function shopeeIds(url: string): { shopId: string; itemId: string } | nul
 
 interface Tracking {
   ID: string;
+  ProductSourceID?: string;
   Title?: string;
   Platform?: string;
   CanonicalURL?: string;
   LastPrice?: number | null;
   LastEffectivePrice?: number | null;
+}
+
+interface ComparisonSource {
+  source_id?: string;
+  platform?: string;
+  canonical_url?: string;
+  effective_price?: number | null;
+}
+
+interface Comparison {
+  sources?: ComparisonSource[];
+  best_deal?: { platform?: string; effective_price?: number | null } | null;
+}
+
+/**
+ * How much cheaper (percent) `bestPrice` is than the viewed Shopee source's own effective price, from the
+ * comparison sources. The viewed source is the Shopee source of the tracking (same source ID, or the same
+ * shop/item IDs when the ID is not available). Undefined when that price is unknown or not higher.
+ */
+export function savingVsViewedSource(
+  sources: ComparisonSource[] | undefined,
+  tracking: { ProductSourceID?: string; CanonicalURL?: string },
+  bestPrice: number
+): number | undefined {
+  if (!Array.isArray(sources) || !(bestPrice > 0)) return undefined;
+  const trackedIds = tracking.CanonicalURL ? shopeeIds(tracking.CanonicalURL) : null;
+  const viewed = sources.find((s) => {
+    if (s.platform !== "shopee") return false;
+    if (tracking.ProductSourceID) return s.source_id === tracking.ProductSourceID;
+    const ids = s.canonical_url ? shopeeIds(s.canonical_url) : null;
+    return !!ids && !!trackedIds && ids.shopId === trackedIds.shopId && ids.itemId === trackedIds.itemId;
+  });
+  const viewedPrice = viewed?.effective_price;
+  if (typeof viewedPrice !== "number" || !(viewedPrice > 0) || viewedPrice <= bestPrice) return undefined;
+  return ((viewedPrice - bestPrice) / viewedPrice) * 100;
 }
 
 /**
@@ -25,8 +61,8 @@ interface Tracking {
  */
 export class DealHunterApiClient {
   private async get(path: string, token: string): Promise<Response> {
-    const { dealHunterApiUrl } = await storage.getSettings();
-    const res = await fetch(`${dealHunterApiUrl}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    const { apiUrl } = await storage.getEndpoints();
+    const res = await fetch(`${apiUrl}${path}`, { headers: { Authorization: `Bearer ${token}` } });
     if (res.status === 401) throw new SessionRejectedError();
     return res;
   }
@@ -55,12 +91,14 @@ export class DealHunterApiClient {
     // The comparison is optional: without it the badge just has no cross-platform line
     const cmpRes = await this.get(`/tracked-products/${matched.ID}/comparison`, token);
     if (cmpRes.ok) {
-      const cmp = await cmpRes.json();
+      const cmp = (await cmpRes.json()) as Comparison | null;
       const best = cmp?.best_deal;
       if (best && typeof best.effective_price === "number" && best.effective_price > 0) {
         context.bestDealPlatform = best.platform;
         context.bestDealPrice = best.effective_price;
-        context.savingsPercent = typeof best.saving_percent === "number" ? best.saving_percent : undefined;
+        // Not the server's saving_percent: that one is relative to the most expensive source, not to
+        // the Shopee listing being viewed
+        context.savingsPercent = savingVsViewedSource(cmp?.sources, matched, best.effective_price);
       }
     }
     return context;

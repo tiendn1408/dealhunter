@@ -159,7 +159,7 @@ func (c *Client) Fetch(ctx context.Context, targetURL string, customHeaders map[
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if err != nil {
-		return nil, fmt.Errorf("read response body: %w", err)
+		return nil, retry.Network(fmt.Errorf("read response body: %w", err)) // connection dropped mid-body
 	}
 
 	finalURL := targetURL

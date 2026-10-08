@@ -135,7 +135,7 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 

@@ -57,9 +57,13 @@ func (m *mockMatchingRepo) UpdateSuggestionStatus(_ context.Context, id uuid.UUI
 
 type mockSearcher struct {
 	candidates []*MatchCandidate
+	failOn     string // platform whose search fails
 }
 
 func (ms *mockSearcher) Search(_ context.Context, platform, _ string) ([]*MatchCandidate, error) {
+	if platform == ms.failOn {
+		return nil, ErrSearchUnavailable
+	}
 	var matched []*MatchCandidate
 	for _, c := range ms.candidates {
 		if c.Platform == platform {
@@ -233,5 +237,20 @@ func TestMatchingService_SharedGroupOnlySuggests(t *testing.T) {
 	}
 	if len(result.NewSuggestions) != 1 {
 		t.Fatalf("the high-confidence candidate must become a suggestion, got %d", len(result.NewSuggestions))
+	}
+}
+
+// A blocked search is a failure, not "no match"; with candidates from another platform it is partial.
+func TestMatchingService_SearchFailureIsReported(t *testing.T) {
+	ctx := context.Background()
+	svc := NewMatchingService(newMockMatchingRepo(), &mockSearcher{failOn: "lazada"}, &mockLinker{}, &mockComparisonProvider{})
+	if _, err := svc.DiscoverAndMatch(ctx, uuid.New(), uuid.New(), "shopee", "Tai nghe Sony WH-1000XM5", 6290000); !errors.Is(err, ErrSearchUnavailable) {
+		t.Fatalf("expected ErrSearchUnavailable when nothing could be searched, got %v", err)
+	}
+
+	withTikTok := &mockSearcher{failOn: "lazada", candidates: []*MatchCandidate{{Platform: "tiktok", URL: "https://shop.tiktok.com/view/product/1", Title: "Tai nghe Sony WH-1000XM5", Price: 6200000}}}
+	svc = NewMatchingService(newMockMatchingRepo(), withTikTok, &mockLinker{}, &mockComparisonProvider{})
+	if res, err := svc.DiscoverAndMatch(ctx, uuid.New(), uuid.New(), "shopee", "Tai nghe Sony WH-1000XM5", 6290000); err != nil || res.TotalDiscovered != 1 {
+		t.Fatalf("candidates from another platform must still be returned, got %+v %v", res, err)
 	}
 }

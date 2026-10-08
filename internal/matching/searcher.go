@@ -1,6 +1,7 @@
 package matching
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,6 +46,9 @@ func (s *MultiPlatformSearcher) Search(ctx context.Context, targetPlatform, quer
 	}
 }
 
+// ErrSearchUnavailable means a marketplace search could not be read (blocked, rate limited, unreachable).
+var ErrSearchUnavailable = errors.New("marketplace search unavailable")
+
 // searchShopee searches Shopee for candidate items.
 func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) ([]*MatchCandidate, error) {
 	apiURL := fmt.Sprintf("https://shopee.vn/api/v4/search/search_items?by=relevancy&keyword=%s&limit=5&newest=0&order=desc&page_type=search&scenario=PAGE_GLOBAL_SEARCH&version=2", url.QueryEscape(query))
@@ -52,9 +56,13 @@ func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) 
 	resp, err := s.crawler.Fetch(ctx, apiURL, map[string]string{
 		"Referer": "https://shopee.vn/",
 	})
+	if err != nil {
+		// Blocked, rate limited or unreachable: a failure, not "no candidates"
+		return nil, fmt.Errorf("%w: shopee: %w", ErrSearchUnavailable, err)
+	}
 
 	var candidates []*MatchCandidate
-	if err == nil && resp.StatusCode == 200 {
+	if resp.StatusCode == 200 {
 		var apiResp struct {
 			Items []struct {
 				ItemBasic struct {
@@ -69,7 +77,10 @@ func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) 
 			} `json:"items"`
 		}
 
-		if jErr := json.Unmarshal(resp.Body, &apiResp); jErr == nil && len(apiResp.Items) > 0 {
+		if jErr := json.Unmarshal(resp.Body, &apiResp); jErr != nil {
+			// An anti-bot page answered with 200 instead of the search JSON
+			return nil, fmt.Errorf("%w: shopee: unreadable search response: %w", ErrSearchUnavailable, jErr)
+		} else if len(apiResp.Items) > 0 {
 			for _, item := range apiResp.Items {
 				b := item.ItemBasic
 				if b.ItemID <= 0 || b.Name == "" {
@@ -89,7 +100,7 @@ func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) 
 		}
 	}
 
-	// Blocked or empty search yields no candidates; nothing is substituted
+	// An empty result is a real "no candidates"; nothing is ever substituted
 	return candidates, nil
 }
 

@@ -39,6 +39,9 @@ type BestDealSummary struct {
 	EffectivePrice        int64   `json:"effective_price"`
 	SavingVsMostExpensive int64   `json:"saving_vs_most_expensive"`
 	SavingPercent         float64 `json:"saving_percent"`
+	// ShippingIncluded is false when some source's shipping fee is unknown: then every source is compared
+	// on its item price alone, and effective_price above is that price.
+	ShippingIncluded bool `json:"shipping_included"`
 }
 
 // ProductGroupSummary represents a product with multiple sources tracked by a user.
@@ -54,17 +57,40 @@ type ProductGroupSummary struct {
 // Only sources with a known EffectivePrice > 0 that are not known to be out of stock are eligible.
 // It sets IsBestDeal = true on the winning source in-place and returns a BestDealSummary.
 func IdentifyBestDeal(sources []SourcePrice) *BestDealSummary {
+	eligible := func(s SourcePrice) bool {
+		return s.EffectivePrice != nil && *s.EffectivePrice > 0 && (s.InStock == nil || *s.InStock)
+	}
+	// Price plus shipping is only comparable when every candidate's shipping is known; otherwise all are
+	// compared on the item price, never a mix of both.
+	shippingIncluded := true
+	for _, s := range sources {
+		if eligible(s) && s.ShippingFee == nil {
+			shippingIncluded = false
+		}
+	}
+	// Without a known shipping fee the effective price already is the item price; a known fee is taken
+	// back out so every source is compared on the item price alone.
+	priceOf := func(s SourcePrice) (int64, bool) {
+		price := *s.EffectivePrice
+		if !shippingIncluded && s.ShippingFee != nil {
+			price -= *s.ShippingFee
+		}
+		return price, price > 0
+	}
+
 	var (
 		bestIdx   = -1
 		bestPrice int64
 		maxPrice  int64
 	)
-
 	for i, s := range sources {
-		if s.EffectivePrice == nil || *s.EffectivePrice <= 0 || (s.InStock != nil && !*s.InStock) {
+		if !eligible(s) {
 			continue
 		}
-		price := *s.EffectivePrice
+		price, ok := priceOf(s)
+		if !ok {
+			continue
+		}
 		if bestIdx == -1 || price < bestPrice {
 			bestIdx = i
 			bestPrice = price
@@ -90,5 +116,6 @@ func IdentifyBestDeal(sources []SourcePrice) *BestDealSummary {
 		EffectivePrice:        bestPrice,
 		SavingVsMostExpensive: saving,
 		SavingPercent:         savingPct,
+		ShippingIncluded:      shippingIncluded,
 	}
 }

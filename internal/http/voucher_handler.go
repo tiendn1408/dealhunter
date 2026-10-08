@@ -31,7 +31,7 @@ func (h *Handler) GetTrackedProductVouchers(w http.ResponseWriter, r *http.Reque
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -131,7 +131,12 @@ func (h *Handler) CreateTrackedProductVoucher(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if tracked, err := h.trackingService.GetTracking(r.Context(), sourceID); err == nil && tracked != nil {
+	tracked, err := h.trackingService.GetTracking(r.Context(), sourceID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		h.serverError(w, r, err)
+		return
+	}
+	if tracked != nil {
 		sourceID = tracked.ProductSourceID
 	}
 	source, err := h.trackingService.GetProductSource(r.Context(), sourceID)

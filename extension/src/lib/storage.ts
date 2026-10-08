@@ -1,5 +1,6 @@
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from "./constants";
 import { ScheduledTask, ClockCalibration, ExtensionSettings } from "./types";
+import { DealHunterEndpoints, resolveEndpoints } from "./endpoints";
 
 export const storage = {
   async getTasks(): Promise<ScheduledTask[]> {
@@ -56,6 +57,11 @@ export const storage = {
     await chrome.storage.local.set({
       [STORAGE_KEYS.SETTINGS]: { ...current, ...settings },
     });
+  },
+
+  /** Validated DealHunter API/web URLs (pushed by the web app; dev defaults otherwise). */
+  async getEndpoints(): Promise<DealHunterEndpoints> {
+    return resolveEndpoints(await this.getSettings());
   },
 
   async getLanguage(): Promise<"en" | "vi"> {

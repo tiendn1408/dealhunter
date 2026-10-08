@@ -137,6 +137,48 @@ func TestAuthRepositoryRaces(t *testing.T) {
 		}
 	})
 
+	t.Run("a guest refresh racing that guest's migration never deadlocks", func(t *testing.T) {
+		for round := 0; round < 20; round++ {
+			guest := &auth.User{ID: uuid.New(), AuthProvider: "guest"}
+			if err := repo.UpsertUser(ctx, guest); err != nil {
+				t.Fatal(err)
+			}
+			member, err := repo.UpsertGoogleUser(ctx, auth.GoogleIdentity{Sub: "sub-" + uuid.NewString(), Email: "dl-" + uuid.NewString()[:8] + "@example.com"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tok := &auth.RefreshToken{ID: uuid.New(), UserID: guest.ID, TokenHash: uuid.NewString(), ExpiresAt: time.Now().Add(time.Hour)}
+			tok.FamilyID = tok.ID
+			if err := repo.CreateRefreshToken(ctx, tok); err != nil {
+				t.Fatal(err)
+			}
+
+			var rotateErr, migrateErr error
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				_, rotateErr = repo.RotateRefreshToken(ctx, tok.TokenHash, &auth.RefreshToken{ID: uuid.New(), TokenHash: uuid.NewString(), ExpiresAt: time.Now().Add(time.Hour)})
+			}()
+			go func() { defer wg.Done(); _, migrateErr = repo.MigrateGuestData(ctx, guest.ID, member.ID) }()
+			wg.Wait()
+
+			var pgErr *pgconn.PgError
+			for _, err := range []error{rotateErr, migrateErr} {
+				if errors.As(err, &pgErr) && pgErr.Code == "40P01" {
+					t.Fatalf("round %d: deadlock: %v", round, err)
+				}
+			}
+			if migrateErr != nil {
+				t.Fatalf("round %d: migration failed: %v", round, migrateErr)
+			}
+			// Whichever ran first, the guest has no usable session afterwards
+			if _, err := repo.RotateRefreshToken(ctx, tok.TokenHash, &auth.RefreshToken{ID: uuid.New(), TokenHash: uuid.NewString(), ExpiresAt: time.Now().Add(time.Hour)}); err == nil {
+				t.Fatalf("round %d: guest session survived the migration", round)
+			}
+		}
+	})
+
 	t.Run("guest Zalo link moves as a pair, never mixed", func(t *testing.T) {
 		suffix := uuid.NewString()[:8]
 		guest := &auth.User{ID: uuid.New(), AuthProvider: "guest"}

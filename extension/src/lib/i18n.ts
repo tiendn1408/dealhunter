@@ -122,6 +122,7 @@ export const I18N = {
     betterDealPrefix: "Better deal on",
     cheaperBy: (percent: number, price: string) =>
       `Cheaper by ${percent}% (Only ${price})`,
+    onlyPrice: (price: string) => `Only ${price}`,
     recordedPrice: "DealHunter recorded price:",
     noDataYet: "No price data yet",
     viewHistoryWeb: "View price history on Web",
@@ -250,6 +251,7 @@ export const I18N = {
     betterDealPrefix: "Giá tốt hơn trên",
     cheaperBy: (percent: number, price: string) =>
       `Rẻ hơn ${percent}% (Chỉ còn ${price})`,
+    onlyPrice: (price: string) => `Chỉ còn ${price}`,
     recordedPrice: "Giá DealHunter ghi nhận:",
     noDataYet: "Chưa có dữ liệu giá",
     viewHistoryWeb: "Xem lịch sử giá trên Web",

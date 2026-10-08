@@ -202,3 +202,26 @@ func TestIdentifyBestDeal_UnknownValues(t *testing.T) {
 		t.Error("sources without price or out of stock must not be the best deal")
 	}
 }
+
+// Item prices are compared with item prices: a known shipping fee on one source and an unknown one on
+// another must not make the latter look cheaper.
+func TestIdentifyBestDeal_MixedShippingKnowledge(t *testing.T) {
+	sources := []SourcePrice{
+		// Lazada: 980.000 + 30.000 shipping
+		{SourceID: uuid.New(), Platform: "lazada", EffectivePrice: i64(1010000), ShippingFee: i64(30000)},
+		// Shopee: 1.000.000, shipping unknown
+		{SourceID: uuid.New(), Platform: "shopee", EffectivePrice: i64(1000000)},
+	}
+	best := IdentifyBestDeal(sources)
+	if best == nil || best.Platform != "lazada" || best.EffectivePrice != 980000 || best.ShippingIncluded {
+		t.Fatalf("expected lazada on item price 980000 without shipping, got %+v", best)
+	}
+
+	known := []SourcePrice{
+		{SourceID: uuid.New(), Platform: "lazada", EffectivePrice: i64(1010000), ShippingFee: i64(30000)},
+		{SourceID: uuid.New(), Platform: "shopee", EffectivePrice: i64(1000000), ShippingFee: i64(0)},
+	}
+	if best := IdentifyBestDeal(known); best == nil || best.Platform != "shopee" || !best.ShippingIncluded {
+		t.Fatalf("with every fee known the total decides, got %+v", best)
+	}
+}

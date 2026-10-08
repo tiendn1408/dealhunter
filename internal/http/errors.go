@@ -21,6 +21,16 @@ func (h *Handler) log() *slog.Logger {
 	return slog.Default()
 }
 
+// authError answers a failed resolveUserID: an invalid or ended session is 401, anything else
+// (e.g. the database was unreachable while checking the guest account) is a logged 500.
+func (h *Handler) authError(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, ErrUnauthorized) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	h.serverError(w, r, err)
+}
+
 // serverError logs the internal error and returns a generic 500, so database or upstream details
 // never reach the client (SEC-12).
 func (h *Handler) serverError(w http.ResponseWriter, r *http.Request, err error) {

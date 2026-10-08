@@ -90,9 +90,13 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 	// comparison, so there it only makes suggestions; auto-linking a shared group is left to the system.
 	canAutoLink := s.linker != nil && s.linker.CanEditGroup(ctx, userID, productID) == nil
 
+	var searchErr error
+
 	for _, targetPlatform := range targetPlatforms {
 		candidates, err := s.searcher.Search(ctx, targetPlatform, norm.SearchQuery)
 		if err != nil {
+			// Other platforms may still answer; if none did, the caller gets the failure (not "no match")
+			searchErr = err
 			continue
 		}
 
@@ -179,6 +183,11 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 		}
 	}
 
+	// Nothing found because a search failed is a failure, not "no match" (Lazada/TikTok have no live
+	// search yet, so a blocked Shopee search must not look like an empty answer)
+	if result.TotalDiscovered == 0 && searchErr != nil {
+		return nil, searchErr
+	}
 	return result, nil
 }
 

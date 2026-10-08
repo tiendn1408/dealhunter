@@ -106,12 +106,10 @@ func (r *PostgresUserRepository) RotateRefreshToken(ctx context.Context, oldHash
 	// A token that was already rotated is being replayed: treat as theft. A token revoked by
 	// logout or migration is simply invalid.
 	if revoked && rotated {
-		if _, err := tx.Exec(ctx,
-			`UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`, userID); err != nil {
-			return uuid.Nil, fmt.Errorf("revoke sessions after reuse: %w", err)
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return uuid.Nil, fmt.Errorf("commit reuse revocation: %w", err)
+		// Release this transaction's shared user lock first: revoking every session takes it exclusively
+		_ = tx.Rollback(ctx)
+		if err := r.revokeAllSessions(ctx, userID); err != nil {
+			return uuid.Nil, err
 		}
 		return uuid.Nil, ErrRefreshTokenReused
 	}
@@ -166,11 +164,53 @@ func (r *PostgresUserRepository) RevokeRefreshFamily(ctx context.Context, tokenH
 // Rotation and logout both take it before touching any token row, so they never interleave (a logout
 // can no longer miss a token a concurrent rotation is about to commit) and cannot deadlock.
 // An unknown hash takes no lock; the caller's own lookup then rejects it.
+//
+// It first takes the user's session lock in shared mode (userSessionLockKey). Revoking every session of
+// a user and merging a guest take it exclusively, so they wait for rotations in flight and see the
+// tokens those commit; taking it before any row lock keeps the order the same everywhere (no deadlock
+// between a guest's refresh and that guest's migration).
 func lockRefreshFamily(ctx context.Context, tx pgx.Tx, tokenHash string) error {
+	if _, err := tx.Exec(ctx, `
+		SELECT pg_advisory_xact_lock_shared(`+userSessionLockKey+`)
+		FROM refresh_tokens WHERE token_hash = $1`, tokenHash); err != nil {
+		return fmt.Errorf("lock user sessions: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `
 		SELECT pg_advisory_xact_lock(hashtextextended(family_id::text, 0))
 		FROM refresh_tokens WHERE token_hash = $1`, tokenHash); err != nil {
 		return fmt.Errorf("lock refresh family: %w", err)
+	}
+	return nil
+}
+
+// userSessionLockKey is the advisory-lock key of a user's sessions, as an SQL expression of user_id.
+const userSessionLockKey = `hashtextextended('sessions:' || user_id::text, 0)`
+
+// revokeAllSessions revokes every session of userID (refresh-token reuse = theft). It holds the user's
+// session lock exclusively, so a rotation of another login committing meanwhile is revoked too.
+func (r *PostgresUserRepository) revokeAllSessions(ctx context.Context, userID uuid.UUID) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserSessions(ctx, tx, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL`, userID); err != nil {
+		return fmt.Errorf("revoke sessions after reuse: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit reuse revocation: %w", err)
+	}
+	return nil
+}
+
+// lockUserSessions takes the user's session lock exclusively (see lockRefreshFamily).
+func lockUserSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('sessions:' || $1::text, 0))`, userID); err != nil {
+		return fmt.Errorf("lock user sessions: %w", err)
 	}
 	return nil
 }

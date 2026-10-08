@@ -356,8 +356,12 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 	}
 
 	// Create TrackedProduct with IsPrimary = false if user isn't tracking yet
+	// The link is committed; the caller still has to track the new source, so failures are reported
 	tracked, err := s.trackingRepo.GetTrackingBySource(ctx, userID, source.ID)
-	if err == nil && tracked == nil {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("check caller tracking: %w", err)
+	}
+	if tracked == nil {
 		pollInterval := 1800
 		newTracked := &domain.TrackedProduct{
 			ID:                     uuid.New(),
@@ -370,7 +374,9 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 			UpdatedAt:              time.Now(),
 			IsPrimary:              false,
 		}
-		_ = s.trackingRepo.CreateTracking(ctx, newTracked)
+		if err := s.trackingRepo.CreateTracking(ctx, newTracked); err != nil {
+			return nil, fmt.Errorf("track linked source: %w", err)
+		}
 	}
 
 	// Create and enqueue initial fetch job

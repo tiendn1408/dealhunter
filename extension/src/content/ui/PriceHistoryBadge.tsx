@@ -77,11 +77,13 @@ export const PriceHistoryBadge: React.FC = () => {
                   {t.betterDealPrefix} {priceContext.bestDealPlatform.toUpperCase()}!
                 </span>
                 <span>
-                  {priceContext.savingsPercent !== undefined &&
-                    t.cheaperBy(
-                      Math.round(priceContext.savingsPercent),
-                      `${priceContext.bestDealPrice.toLocaleString("vi-VN")}đ`
-                    )}
+                  {/* Percent vs the viewed Shopee listing's own price; omitted when that price is unknown */}
+                  {priceContext.savingsPercent !== undefined && Math.round(priceContext.savingsPercent) >= 1
+                    ? t.cheaperBy(
+                        Math.round(priceContext.savingsPercent),
+                        `${priceContext.bestDealPrice.toLocaleString("vi-VN")}đ`
+                      )
+                    : t.onlyPrice(`${priceContext.bestDealPrice.toLocaleString("vi-VN")}đ`)}
                 </span>
               </div>
             )}

@@ -175,6 +175,12 @@ func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID u
 	}
 	defer tx.Rollback(ctx)
 
+	// Wait for the guest's refreshes in flight and keep new ones out, before any row lock
+	// (see lockRefreshFamily): otherwise a refresh and the migration can deadlock.
+	if err := lockUserSessions(ctx, tx, guestID); err != nil {
+		return nil, err
+	}
+
 	// Validate guest account status and prevent hijacking registered accounts
 	var guestProvider string
 	err = tx.QueryRow(ctx, "SELECT auth_provider FROM users WHERE id = $1 FOR UPDATE", guestID).Scan(&guestProvider)

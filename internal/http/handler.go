@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -176,8 +177,12 @@ func (h *Handler) resolveUserID(r *http.Request) (uuid.UUID, error) {
 	}
 	if claims.Role == auth.RoleGuest && h.authService != nil {
 		user, err := h.authService.GetProfile(r.Context(), claims.UserID)
-		if err != nil || user.AuthProvider != "guest" {
+		if errors.Is(err, auth.ErrUserNotFound) || (err == nil && user.AuthProvider != "guest") {
 			return uuid.Nil, ErrUnauthorized
+		}
+		if err != nil {
+			// A database failure is not an expired session (SEC-12): the caller answers 500
+			return uuid.Nil, fmt.Errorf("load guest account: %w", err)
 		}
 	}
 	return claims.UserID, nil
@@ -239,7 +244,7 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -360,7 +365,7 @@ func (h *Handler) enrichTracking(r *http.Request, t *domain.TrackedProduct) Enri
 func (h *Handler) ListTrackings(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -391,7 +396,7 @@ func (h *Handler) GetTracking(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -445,7 +450,7 @@ func (h *Handler) GetTrackingPrices(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -493,7 +498,7 @@ func (h *Handler) PauseTracking(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -523,7 +528,7 @@ func (h *Handler) ResumeTracking(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -564,7 +569,7 @@ func (h *Handler) CreateAlert(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -651,7 +656,7 @@ func (h *Handler) ListAlerts(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -696,7 +701,7 @@ func (h *Handler) DeactivateAlert(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -731,7 +736,7 @@ func (h *Handler) GetAlertLogs(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -773,7 +778,7 @@ func (h *Handler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -815,7 +820,7 @@ func (h *Handler) MarkNotificationAsRead(w http.ResponseWriter, r *http.Request)
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -843,7 +848,7 @@ func (h *Handler) ListUserAlerts(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -871,7 +876,7 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -1040,7 +1045,7 @@ func (h *Handler) GetProductComparison(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -1075,7 +1080,7 @@ func (h *Handler) LinkProductSource(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -1134,7 +1139,7 @@ func (h *Handler) ListProductGroups(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 
@@ -1169,7 +1174,7 @@ func (h *Handler) GetTrackedProductComparison(w http.ResponseWriter, r *http.Req
 
 	userID, err := h.resolveUserID(r)
 	if err != nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		h.authError(w, r, err)
 		return
 	}
 

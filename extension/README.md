@@ -49,8 +49,12 @@ Extension không tự đăng nhập. Web DealHunter gửi phiên đăng nhập s
 2. Trong `dealhunter-web/.env.local` đặt `NEXT_PUBLIC_EXTENSION_ID=<ID>` rồi khởi động lại web (production: biến `EXTENSION_ID` của `docker-compose.prod.yml`).
 3. Đăng nhập DealHunter web bằng Google. Popup extension hiện "Da ket noi DealHunter".
 - Web chỉ gửi được phiên từ các origin trong `externally_connectable` (`public/manifest.json`) và `DEALHUNTER_WEB_ORIGINS` (`src/lib/constants.ts`): `http://localhost:3000`, `http://localhost:3100`, `https://dealhunter.vn`.
+- **Địa chỉ API / web không cần cấu hình trong extension**: cùng tin nhắn phiên, web gửi kèm `apiUrl` (chính `NEXT_PUBLIC_API_URL` của web) và `webUrl` (origin của trang web). Extension kiểm tra rồi lưu vào `chrome.storage.local` (vẫn giữ sau khi đăng xuất) và dùng cho mọi lệnh gọi API và liên kết:
+  - `apiUrl` phải là http(s) trên `localhost`/`127.0.0.1`, hoặc `https` trên `dealhunter.vn` / `*.dealhunter.vn`; không có query/fragment.
+  - `webUrl` phải trùng origin của trang đã gửi tin nhắn và nằm trong `DEALHUNTER_WEB_ORIGINS`.
+  - Giá trị không hợp lệ bị bỏ qua. Khi chưa nhận được gì từ web, extension dùng mặc định cho dev: `http://localhost:8080/api/v1` và `http://localhost:3000` (`DEFAULT_SETTINGS` trong `src/lib/constants.ts`).
 - Phiên chỉ nằm trong `chrome.storage.session` (mất khi đóng trình duyệt) và chỉ service worker dùng; content script trên Shopee không thấy token.
-- Không mở web quá 15 phút thì phiên hết hạn và thẻ giá ẩn đi cho tới lần mở web tiếp theo. Extension không tự làm mới phiên, vì refresh token xoay vòng nghiêm ngặt: làm mới song song với web sẽ bị coi là dùng lại token và mọi phiên bị thu hồi.
+- Token hết hạn khoảng 15 phút sau lần cuối web làm mới phiên. Web chỉ làm mới khi nó cần gửi yêu cầu tới API (token sắp hết hạn), nên một tab web để nền không gửi yêu cầu nào thì cũng không làm mới: mở tab web (hoặc thao tác trên web) để phiên được làm mới và gửi lại cho extension. Khi token hết hạn, thẻ giá ẩn đi. Extension không tự làm mới phiên, vì refresh token xoay vòng nghiêm ngặt: làm mới song song với web sẽ bị coi là dùng lại token và mọi phiên bị thu hồi.
 - ID của extension nạp từ thư mục (unpacked) phụ thuộc đường dẫn thư mục; nạp lại từ thư mục khác thì phải cập nhật `NEXT_PUBLIC_EXTENSION_ID`.
 
 ---
@@ -104,6 +108,8 @@ npm test
 ```
 - `element_resolver.test.ts`: Kiểm tra nhận diện chính xác các nút "Lưu", "Lưu mã", "Thu thập" và lọc theo từ khóa.
 - `human_clicker.test.ts`: Kiểm tra chuỗi sự kiện chuột mô phỏng tự nhiên với tọa độ ngẫu nhiên.
+- `endpoints.test.ts`: Chỉ chấp nhận URL API/web hợp lệ do web gửi (http(s), host DealHunter), còn lại dùng mặc định dev.
+- `api_client.test.ts`: Phần trăm "Rẻ hơn" tính theo giá của chính nguồn Shopee đang xem; không biết giá thì không hiện phần trăm.
 - `time_calibrator.test.ts`: Thuật toán bắt mốc đổi giây khôi phục đúng độ lệch đồng hồ (sai số ≤ RTT/2); không có mốc đổi giây thì báo "chưa đồng bộ".
 - `hunt_engine.test.ts`: Không click trước giờ G; chỉ báo đã lưu khi trang xác nhận; theo được nút bị React thay mới; báo hết lượt / không tìm thấy / hết giờ đúng sự thật; lọc từ khóa; không bao giờ click nhầm voucher khác.
 - `drop_time.test.ts`: Giờ G theo giờ Việt Nam.
