@@ -140,13 +140,26 @@ export function startHunt(opts: HuntOptions): () => void {
     if (state === "saved") return finish("saved", "The page shows the voucher as saved");
     if (state === "exhausted") return finish("exhausted", "The voucher is fully claimed");
 
-    if (el && state === "collectable" && t - lastClickAt >= clickIntervalMs && clicks < maxClicks) {
+    const isLockedTarget = Boolean(opts.locked && (el === opts.locked || el === current));
+    const isTargetClickable = Boolean(
+      el &&
+      !el.hasAttribute("disabled") &&
+      el.getAttribute("aria-disabled") !== "true" &&
+      !el.classList.contains("disabled")
+    );
+
+    if (
+      el &&
+      (state === "collectable" || (isLockedTarget && isTargetClickable)) &&
+      t - lastClickAt >= clickIntervalMs &&
+      clicks < maxClicks
+    ) {
       if (humanClicker.dispatchClick(el)) {
         clicks++;
         lastClickAt = t;
       }
     }
-    status(t, clicks > 0 ? `Saving... ${clicks} clicks` : "Looking for the voucher button...");
+    status(t, clicks > 0 ? `Target active · ${clicks} clicks` : "Waiting for target button...");
   });
 
   return () => finish("cancelled", "Cancelled");

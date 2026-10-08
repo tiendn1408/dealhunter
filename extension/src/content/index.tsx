@@ -31,7 +31,7 @@ function injectFloatingHUD(force = false) {
   document.body.appendChild(container);
 
   const root = ReactDOM.createRoot(container);
-  root.render(<FloatingHUD onClose={() => container.remove()} />);
+  root.render(<FloatingHUD onClose={() => container.remove()} hostElement={container} />);
 }
 
 // 3. Inject Price History Badge on product pages
@@ -63,6 +63,7 @@ if (document.readyState === "loading") {
 
 /** Why this tab cannot hunt, if Shopee redirected it away from the voucher page. */
 function shopeeBlockReason(): string | null {
+  if (!window.location.hostname.includes("shopee.")) return null;
   const path = window.location.pathname;
   if (path.startsWith("/verify/")) return "Shopee redirected to a verification (captcha) page - open Shopee, verify and sign in before the drop";
   if (path.startsWith("/buyer/login")) return "Not signed in to Shopee in this browser";

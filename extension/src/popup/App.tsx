@@ -26,8 +26,10 @@ export const App: React.FC = () => {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [webUrl, setWebUrl] = useState(DEFAULT_SETTINGS.dealHunterWebUrl);
   const [lang, setLang] = useState<Language>("en");
-  const [currentTabIsShopee, setCurrentTabIsShopee] = useState(false);
   const [activeTabId, setActiveTabId] = useState<number | null>(null);
+  const [activeTabUrl, setActiveTabUrl] = useState<string>("");
+  const [activeTabDomain, setActiveTabDomain] = useState<string>("");
+  const [isWebPage, setIsWebPage] = useState<boolean>(false);
   const [countdownStr, setCountdownStr] = useState("--:--.-");
   const [nextDropHour, setNextDropHour] = useState<number>(0);
   const [account, setAccount] = useState<{ signedIn: boolean; email?: string } | null>(null);
@@ -47,7 +49,18 @@ export const App: React.FC = () => {
         if (active?.id) {
           setActiveTabId(active.id);
           const url = active.url || "";
-          setCurrentTabIsShopee(url.includes("shopee.vn"));
+          setActiveTabUrl(url);
+          if (url.startsWith("http://") || url.startsWith("https://")) {
+            setIsWebPage(true);
+            try {
+              setActiveTabDomain(new URL(url).hostname.replace(/^www\./, ""));
+            } catch {
+              setActiveTabDomain("web");
+            }
+          } else {
+            setIsWebPage(false);
+            setActiveTabDomain("");
+          }
         }
       });
     }
@@ -104,20 +117,38 @@ export const App: React.FC = () => {
     await storage.setLanguage(nextLang);
   };
 
-  // Launch Sniper CTA: If on Shopee, activate in-page HUD immediately! Otherwise open Shopee.
+  // Launch Sniper CTA: If on an active web page, activate in-page HUD directly! Otherwise open Shopee.
   const handleStartSniper = async () => {
-    if (currentTabIsShopee && activeTabId) {
+    if (isWebPage && activeTabId) {
       try {
         await chrome.tabs.sendMessage(activeTabId, { action: MESSAGE_ACTIONS.ACTIVATE_HUD });
         setLaunchedToast(true);
         setTimeout(() => window.close(), 600);
       } catch {
-        // Content script needs injection or page reload
-        chrome.tabs.create({ url: SHOPEE_URLS.VOUCHER_HUB });
+        // Tab was opened before extension was loaded: inject content script via scripting API
+        if (typeof chrome !== "undefined" && chrome.scripting) {
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId: activeTabId },
+              files: ["content.js"],
+            });
+            await chrome.tabs.sendMessage(activeTabId, { action: MESSAGE_ACTIONS.ACTIVATE_HUD });
+            setLaunchedToast(true);
+            setTimeout(() => window.close(), 600);
+            return;
+          } catch (injectErr) {
+            console.warn("Scripting injection failed:", injectErr);
+          }
+        }
+        if (activeTabUrl) {
+          await chrome.tabs.reload(activeTabId);
+        } else {
+          await chrome.tabs.create({ url: SHOPEE_URLS.VOUCHER_HUB });
+        }
         window.close();
       }
     } else {
-      chrome.tabs.create({ url: SHOPEE_URLS.VOUCHER_HUB });
+      await chrome.tabs.create({ url: SHOPEE_URLS.VOUCHER_HUB });
       window.close();
     }
   };
@@ -215,17 +246,17 @@ export const App: React.FC = () => {
                 </span>
                 <span
                   className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold ring-1 ${
-                    currentTabIsShopee
+                    isWebPage
                       ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
                       : "bg-amber-500/10 text-amber-300 ring-amber-500/30"
                   }`}
                 >
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
-                      currentTabIsShopee ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                      isWebPage ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
                     }`}
                   />
-                  {currentTabIsShopee ? t.shopeeTabActive : t.notOnShopeeTab}
+                  {isWebPage ? t.pageActive(activeTabDomain) : t.notOnPage}
                 </span>
               </div>
 
@@ -248,7 +279,7 @@ export const App: React.FC = () => {
                 <span className="text-[13px] font-black tracking-wider uppercase">
                   {launchedToast
                     ? "SNIPER ACTIVATED!"
-                    : currentTabIsShopee
+                    : isWebPage
                     ? t.startOnActiveTab
                     : t.openShopeeAndStart}
                 </span>
@@ -300,7 +331,7 @@ export const App: React.FC = () => {
           </div>
           <span className="flex items-center gap-1 shrink-0 text-slate-500">
             <ShieldCheck className="h-3 w-3 text-emerald-500" />
-            Shopee Web
+            Universal Web
           </span>
         </div>
       </footer>

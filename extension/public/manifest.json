@@ -6,12 +6,11 @@
   "permissions": [
     "storage",
     "alarms",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
-    "https://*.shopee.vn/*",
-    "https://api.dealhunter.vn/*",
-    "http://localhost:8080/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js",
@@ -20,7 +19,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.shopee.vn/*"
+        "<all_urls>"
       ],
       "js": [
         "content.js"
@@ -53,7 +52,7 @@
         "icons/*.png"
       ],
       "matches": [
-        "https://*.shopee.vn/*"
+        "<all_urls>"
       ]
     }
   ]

@@ -195,4 +195,19 @@ describe("startHunt", () => {
     expect(h.outcome?.result).toBe("saved");
     expect(open).not.toHaveBeenCalled();
   });
+
+  it("clicks a user-locked custom button on any website when enabled at drop", () => {
+    document.body.innerHTML = `<div class="event-page"><button id="book-btn" disabled>Mua vé 00:00</button></div>`;
+    const btn = document.getElementById("book-btn") as HTMLButtonElement;
+    const clicks = vi.fn();
+    btn.addEventListener("click", clicks);
+    const h = setup(undefined, btn);
+    h.advanceTo(DROP - 50);
+    expect(clicks).not.toHaveBeenCalled();
+
+    // Event begins at midnight drop: button becomes enabled
+    btn.removeAttribute("disabled");
+    h.advanceTo(DROP + 500);
+    expect(clicks).toHaveBeenCalled();
+  });
 });

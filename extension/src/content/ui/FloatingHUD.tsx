@@ -3,7 +3,7 @@ import { timeSyncClient } from "../core/time_sync_client";
 import { humanClicker } from "../core/human_clicker";
 import { elementResolver } from "../core/element_resolver";
 import { startHunt, HuntOutcome } from "../core/hunt_engine";
-import { formatVN, nextFlashDrop } from "../../lib/drop_time";
+import { formatVN, nextDropAt, nextFlashDrop } from "../../lib/drop_time";
 import { SHOPEE_FLASH_HOURS } from "../../lib/constants";
 import { storage } from "../../lib/storage";
 import { Language, getTranslation } from "../../lib/i18n";
@@ -53,7 +53,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
     text: "",
     tone: "idle",
   });
-  const [targetSlot, setTargetSlot] = useState<"next_flash" | "next_minute">("next_flash");
+  const [targetSlot, setTargetSlot] = useState<"next_flash" | "midnight" | "next_minute">("next_flash");
   const [countdownStr, setCountdownStr] = useState("--:--.-");
   const [targetLabel, setTargetLabel] = useState("--:--:--");
   const [targetSummary, setTargetSummary] = useState<string | null>(null);
@@ -63,6 +63,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
   const cancelHuntRef = useRef<(() => void) | null>(null);
 
   const t = getTranslation(lang);
+  const currentHost = typeof window !== "undefined" ? window.location.hostname.replace(/^www\./, "") : "";
 
   // Initialize language from settings & listen for changes
   useEffect(() => {
@@ -87,11 +88,15 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
     await storage.setLanguage(nextLang);
   };
 
-  // Drop time in Vietnam time (Shopee VN drops are GMT+7 whatever this computer's timezone is)
-  const computeTargetTimestamp = (now: number, mode: "next_flash" | "next_minute") => {
+  // Drop time in Vietnam time (GMT+7)
+  const computeTargetTimestamp = (now: number, mode: "next_flash" | "midnight" | "next_minute") => {
     if (mode === "next_minute") {
       const at = Math.floor(now / 60000) * 60000 + 60000;
       return { timestamp: at, label: formatVN(at).slice(0, 8) };
+    }
+    if (mode === "midnight") {
+      const at = nextDropAt(0, 0, now, 0);
+      return { timestamp: at, label: "00:00:00" };
     }
     const { at } = nextFlashDrop(SHOPEE_FLASH_HOURS, now);
     return { timestamp: at, label: formatVN(at).slice(0, 8) };
@@ -288,7 +293,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
           )}
           <div className="leading-tight">
             <div className="text-[13px] font-bold tracking-tight">DealHunter</div>
-            <div className="text-[10px] font-medium text-slate-400">{t.hudSubtitle}</div>
+            <div className="text-[10px] font-medium text-slate-400">
+              {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -358,6 +365,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
               {(
                 [
                   ["next_flash", t.nextFlashSale],
+                  ["midnight", "00:00"],
                   ["next_minute", t.nextMinute],
                 ] as const
               ).map(([slot, label]) => (
@@ -366,7 +374,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
                   type="button"
                   disabled={isArmed}
                   onClick={() => setTargetSlot(slot)}
-                  className={`rounded-md px-2.5 py-1 text-[10px] font-semibold transition ${
+                  className={`rounded-md px-2 py-1 text-[10px] font-semibold transition ${
                     targetSlot === slot ? "bg-emerald-500 text-white shadow" : "text-slate-400 hover:text-slate-200"
                   } disabled:cursor-not-allowed`}
                 >

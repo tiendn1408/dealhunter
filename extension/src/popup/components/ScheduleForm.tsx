@@ -16,6 +16,8 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang = "en" }) => {
   const [targetHour, setTargetHour] = useState<number>(() => nextFlashDrop(SHOPEE_FLASH_HOURS, Date.now()).hour);
   const [targetUrl, setTargetUrl] = useState<string>(SHOPEE_URLS.VOUCHER_HUB);
+  const [isCustomUrl, setIsCustomUrl] = useState(false);
+  const [customUrlInput, setCustomUrlInput] = useState<string>("");
   const [keyword, setKeyword] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const t = getTranslation(lang);
@@ -25,6 +27,17 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
     { url: SHOPEE_URLS.SUPER_SALE_1010, label: t.superSale1010, hint: "shopee.vn/m/10-10" },
     { url: SHOPEE_URLS.CART, label: t.cartPage, hint: "shopee.vn/cart" },
   ];
+
+  const handleFillCurrentTabUrl = () => {
+    if (typeof chrome !== "undefined" && chrome.tabs) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeUrl = tabs[0]?.url;
+        if (activeUrl && (activeUrl.startsWith("http://") || activeUrl.startsWith("https://"))) {
+          setCustomUrlInput(activeUrl);
+        }
+      });
+    }
+  };
 
   // When this hunt will actually run, in Vietnam time
   const runsAt = useMemo(() => {
@@ -36,15 +49,29 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const finalUrl = isCustomUrl ? customUrlInput.trim() : targetUrl;
+    if (!finalUrl) return;
+
     setSubmitting(true);
     try {
-      const page = targetPages.find((p) => p.url === targetUrl);
+      let pageLabel = "Custom";
+      if (!isCustomUrl) {
+        const page = targetPages.find((p) => p.url === targetUrl);
+        pageLabel = page?.label ?? "Shopee";
+      } else {
+        try {
+          pageLabel = new URL(finalUrl).hostname.replace(/^www\./, "");
+        } catch {
+          pageLabel = "Web";
+        }
+      }
+
       const newTask: ScheduledTask = {
         id: Math.random().toString(36).substring(2, 9),
         targetHour,
         targetMinute: 0,
-        targetUrl,
-        label: `${pad(targetHour)}:00 · ${page?.label ?? "Shopee"}`,
+        targetUrl: finalUrl,
+        label: `${pad(targetHour)}:00 · ${pageLabel}`,
         mode: "full_auto", // a scheduled hunt always runs unattended
         keyword: keyword.trim() || undefined,
         status: "pending",
@@ -102,15 +129,18 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
       {/* Target page */}
       <div className="space-y-1.5">
         <label className="text-[11px] font-semibold text-slate-300">{t.targetPageLabel}</label>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-4 gap-1.5">
           {targetPages.map((p) => (
             <button
               key={p.url}
               type="button"
-              onClick={() => setTargetUrl(p.url)}
+              onClick={() => {
+                setIsCustomUrl(false);
+                setTargetUrl(p.url);
+              }}
               title={p.hint}
-              className={`rounded-xl px-2 py-2 text-[11px] font-semibold transition ${
-                targetUrl === p.url
+              className={`rounded-xl px-1.5 py-2 text-[10px] font-semibold transition ${
+                !isCustomUrl && targetUrl === p.url
                   ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/60 shadow-sm"
                   : "bg-white/[0.04] text-slate-400 ring-1 ring-white/10 hover:bg-white/[0.08] hover:text-slate-200"
               }`}
@@ -118,7 +148,42 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
               {p.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setIsCustomUrl(true);
+              if (!customUrlInput) handleFillCurrentTabUrl();
+            }}
+            className={`rounded-xl px-1.5 py-2 text-[10px] font-semibold transition ${
+              isCustomUrl
+                ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/60 shadow-sm"
+                : "bg-white/[0.04] text-slate-400 ring-1 ring-white/10 hover:bg-white/[0.08] hover:text-slate-200"
+            }`}
+          >
+            {t.customUrl}
+          </button>
         </div>
+
+        {isCustomUrl && (
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <input
+              type="url"
+              required
+              value={customUrlInput}
+              onChange={(e) => setCustomUrlInput(e.target.value)}
+              placeholder={t.customUrlPlaceholder}
+              className="flex-1 rounded-xl bg-black/40 px-3 py-1.5 text-xs text-slate-100 ring-1 ring-white/10 placeholder:text-slate-500 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+            />
+            <button
+              type="button"
+              onClick={handleFillCurrentTabUrl}
+              className="shrink-0 rounded-xl bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-emerald-300 ring-1 ring-white/10 transition hover:bg-white/10"
+              title="Use current active tab URL"
+            >
+              {t.useCurrentTabUrl}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Keyword */}
