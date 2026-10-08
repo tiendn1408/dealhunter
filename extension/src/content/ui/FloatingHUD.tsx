@@ -275,9 +275,17 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
       {/* Header */}
       <div className="flex items-center justify-between bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-transparent px-4 py-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[11px] font-black text-white shadow-lg shadow-emerald-900/50">
-            DH
-          </div>
+          {typeof chrome !== "undefined" && chrome.runtime?.getURL ? (
+            <img
+              src={chrome.runtime.getURL("icons/icon48.png")}
+              alt="DealHunter"
+              className="h-8 w-8 rounded-xl object-cover shadow-lg shadow-emerald-900/50"
+            />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[11px] font-black text-white shadow-lg shadow-emerald-900/50">
+              DH
+            </div>
+          )}
           <div className="leading-tight">
             <div className="text-[13px] font-bold tracking-tight">DealHunter</div>
             <div className="text-[10px] font-medium text-slate-400">{t.hudSubtitle}</div>

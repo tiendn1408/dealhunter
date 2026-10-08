@@ -46,5 +46,15 @@
       "http://localhost:3100/*",
       "https://dealhunter.vn/*"
     ]
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*.png"
+      ],
+      "matches": [
+        "https://*.shopee.vn/*"
+      ]
+    }
+  ]
 }

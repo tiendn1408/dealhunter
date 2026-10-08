@@ -59,9 +59,11 @@ export const App: React.FC = () => {
         <div className="pointer-events-none absolute -left-12 top-6 h-32 w-32 rounded-full bg-teal-500/20 blur-3xl" />
         <div className="relative flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-sm font-black shadow-lg shadow-emerald-900/50">
-              DH
-            </div>
+            <img
+              src="/icons/icon48.png"
+              alt="DealHunter"
+              className="h-10 w-10 rounded-2xl object-cover shadow-lg shadow-emerald-900/50"
+            />
             <div className="leading-tight">
               <h1 className="text-[15px] font-bold tracking-tight">{t.appName}</h1>
               <p className="text-[11px] font-medium text-slate-400">{t.appSubtitle}</p>
