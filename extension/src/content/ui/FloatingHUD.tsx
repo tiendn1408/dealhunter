@@ -5,6 +5,8 @@ import { elementResolver } from "../core/element_resolver";
 import { startHunt, HuntOutcome } from "../core/hunt_engine";
 import { formatVN, nextFlashDrop } from "../../lib/drop_time";
 import { SHOPEE_FLASH_HOURS } from "../../lib/constants";
+import { storage } from "../../lib/storage";
+import { Language, getTranslation } from "../../lib/i18n";
 import {
   Crosshair,
   Zap,
@@ -18,6 +20,7 @@ import {
   CircleAlert,
   CircleX,
   Timer,
+  Languages,
 } from "lucide-react";
 
 interface FloatingHUDProps {
@@ -27,14 +30,6 @@ interface FloatingHUDProps {
 }
 
 type Tone = "idle" | "armed" | "firing" | "success" | "warning" | "error";
-
-const RESULT_VIEW: Record<HuntOutcome["result"], { text: string; tone: Tone }> = {
-  saved: { text: "Voucher saved — confirmed by the page", tone: "success" },
-  exhausted: { text: "Voucher fully claimed (out of stock)", tone: "warning" },
-  not_found: { text: "No matching voucher button appeared", tone: "error" },
-  timeout: { text: "Clicked, but the page never confirmed it — check your voucher wallet", tone: "warning" },
-  cancelled: { text: "Hunt cancelled", tone: "idle" },
-};
 
 const TONE_STYLES: Record<Tone, { dot: string; text: string; ring: string }> = {
   idle: { dot: "bg-slate-500", text: "text-slate-300", ring: "ring-slate-700/60" },
@@ -46,6 +41,7 @@ const TONE_STYLES: Record<Tone, { dot: string; text: string; ring: string }> = {
 };
 
 export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }) => {
+  const [lang, setLang] = useState<Language>("en");
   const [minimized, setMinimized] = useState(false);
   const [isArmed, setIsArmed] = useState(false);
   const [shopeeTimeStr, setShopeeTimeStr] = useState("--:--:--.---");
@@ -54,7 +50,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
   const [calibrated, setCalibrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<{ text: string; tone: Tone }>({
-    text: "Pick the voucher's Save button, then arm.",
+    text: "",
     tone: "idle",
   });
   const [targetSlot, setTargetSlot] = useState<"next_flash" | "next_minute">("next_flash");
@@ -65,6 +61,31 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
 
   const targetElementRef = useRef<HTMLElement | null>(null);
   const cancelHuntRef = useRef<(() => void) | null>(null);
+
+  const t = getTranslation(lang);
+
+  // Initialize language from settings & listen for changes
+  useEffect(() => {
+    storage.getLanguage().then((storedLang) => {
+      setLang(storedLang);
+      setStatus({ text: getTranslation(storedLang).initialHUDPrompt, tone: "idle" });
+    });
+
+    const onChange = (changes: Record<string, chrome.storage.StorageChange>) => {
+      if (changes.dh_settings?.newValue?.language) {
+        const next = changes.dh_settings.newValue.language as Language;
+        setLang(next);
+      }
+    };
+    chrome.storage.onChanged.addListener(onChange);
+    return () => chrome.storage.onChanged.removeListener(onChange);
+  }, []);
+
+  const handleToggleLang = async () => {
+    const nextLang: Language = lang === "en" ? "vi" : "en";
+    setLang(nextLang);
+    await storage.setLanguage(nextLang);
+  };
 
   // Drop time in Vietnam time (Shopee VN drops are GMT+7 whatever this computer's timezone is)
   const computeTargetTimestamp = (now: number, mode: "next_flash" | "next_minute") => {
@@ -117,7 +138,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
   // and Shopee's "Lưu" is usually disabled until the drop.
   const handleSelectTarget = () => {
     setPicking(true);
-    setStatus({ text: "Hover the voucher's Save button and click it to lock.", tone: "armed" });
+    setStatus({ text: t.pickInstruction, tone: "armed" });
 
     const onMouseOver = (e: MouseEvent) => {
       if (!isOwnEvent(e)) (e.target as HTMLElement).classList.add("dh-target-hover");
@@ -134,7 +155,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
       const el = elementResolver.normalizeTarget(e.target as HTMLElement);
       lockTarget(el);
       setPicking(false);
-      setStatus({ text: "Target locked. Arm the sniper when ready.", tone: "idle" });
+      setStatus({ text: t.targetLockedInstruction, tone: "idle" });
 
       window.removeEventListener("mouseover", onMouseOver);
       window.removeEventListener("mouseout", onMouseOut);
@@ -162,12 +183,26 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
     if (buttons.length > 0) {
       lockTarget(buttons[0]);
       setStatus({
-        text: `Found ${buttons.length} button(s); locked the first one — check the green outline.`,
+        text: t.foundButtonsCount(buttons.length),
         tone: "idle",
       });
     } else {
-      setStatus({ text: "No clickable Save button on this page right now.", tone: "error" });
+      setStatus({ text: t.noButtonFound, tone: "error" });
     }
+  };
+
+  const getResultView = (result: HuntOutcome["result"]): { text: string; tone: Tone } => {
+    const tones: Record<HuntOutcome["result"], Tone> = {
+      saved: "success",
+      exhausted: "warning",
+      not_found: "error",
+      timeout: "warning",
+      cancelled: "idle",
+    };
+    return {
+      text: t.outcome[result],
+      tone: tones[result],
+    };
   };
 
   // Arm: the hunt engine waits for the drop, re-finds the button and reports what the page shows
@@ -175,7 +210,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
     const now = timeSyncClient.getShopeeTime();
     const { timestamp } = computeTargetTimestamp(now, targetSlot);
     setIsArmed(true);
-    setStatus({ text: "Armed — waiting for the drop.", tone: "armed" });
+    setStatus({ text: t.armedWaitingDrop, tone: "armed" });
     cancelHuntRef.current = startHunt({
       targetTimestamp: timestamp,
       now: () => timeSyncClient.getShopeeTime(),
@@ -184,7 +219,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
       onDone: (outcome) => {
         cancelHuntRef.current = null;
         setIsArmed(false);
-        const view = RESULT_VIEW[outcome.result];
+        const view = getResultView(outcome.result);
         setStatus({ text: `${view.text} · ${outcome.clicks} clicks`, tone: view.tone });
       },
     });
@@ -199,7 +234,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
   const handleManualTestClick = () => {
     if (targetElementRef.current) {
       humanClicker.dispatchClick(targetElementRef.current);
-      setStatus({ text: "Sent 1 real test click to the locked button.", tone: "idle" });
+      setStatus({ text: t.testClickSuccess, tone: "idle" });
     } else {
       handleAutoDetect();
     }
@@ -207,11 +242,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
 
   const handleRecalibrate = async () => {
     setSyncing(true);
-    setStatus({ text: "Syncing with Shopee's clock...", tone: "idle" });
+    setStatus({ text: t.syncingClock, tone: "idle" });
     await timeSyncClient.calibrate();
     setSyncing(false);
     setStatus({
-      text: timeSyncClient.getIsCalibrated() ? "Clock synced with Shopee." : "Could not sync — check your connection.",
+      text: timeSyncClient.getIsCalibrated() ? t.syncedClockSuccess : t.syncedClockFailed,
       tone: timeSyncClient.getIsCalibrated() ? "success" : "error",
     });
   };
@@ -245,10 +280,19 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
           </div>
           <div className="leading-tight">
             <div className="text-[13px] font-bold tracking-tight">DealHunter</div>
-            <div className="text-[10px] font-medium text-slate-400">Voucher Sniper · Shopee</div>
+            <div className="text-[10px] font-medium text-slate-400">{t.hudSubtitle}</div>
           </div>
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={handleToggleLang}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-white/10 transition hover:bg-white/10"
+            title={lang === "en" ? "Đổi sang Tiếng Việt" : "Switch to English"}
+          >
+            <Languages className="h-3 w-3" />
+            <span>{lang.toUpperCase()}</span>
+          </button>
           <button
             type="button"
             onClick={() => setMinimized(true)}
@@ -274,7 +318,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
         {/* Shopee clock */}
         <div className="rounded-2xl bg-white/[0.03] p-3 ring-1 ring-white/5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Shopee server time</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t.shopeeServerTime}</span>
             <button
               type="button"
               onClick={handleRecalibrate}
@@ -284,14 +328,14 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
                   ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30 hover:bg-emerald-500/20"
                   : "bg-rose-500/10 text-rose-300 ring-rose-500/30 hover:bg-rose-500/20"
               }`}
-              title="Re-sync with Shopee's clock"
+              title={t.resyncClockTooltip}
             >
               <RefreshCw className={`h-2.5 w-2.5 ${syncing ? "animate-spin" : ""}`} />
               {syncing
-                ? "Syncing..."
+                ? t.syncingClock
                 : calibrated
                 ? `${offsetMs >= 0 ? "+" : ""}${offsetMs} ms ±${errorMs}`
-                : "Not synced · retry"}
+                : t.notSyncedRetry}
             </button>
           </div>
           <div className="mt-1 text-center font-mono text-[28px] font-bold leading-none tabular-nums tracking-tight text-emerald-300">
@@ -305,8 +349,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
             <div className="flex rounded-lg bg-black/30 p-0.5 ring-1 ring-white/5">
               {(
                 [
-                  ["next_flash", "Next flash sale"],
-                  ["next_minute", "Next minute"],
+                  ["next_flash", t.nextFlashSale],
+                  ["next_minute", t.nextMinute],
                 ] as const
               ).map(([slot, label]) => (
                 <button
@@ -326,7 +370,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
           </div>
           <div className="mt-2.5 flex items-end justify-between">
             <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              <Timer className="h-3 w-3" /> Drop in
+              <Timer className="h-3 w-3" /> {t.dropIn}
             </span>
             <span
               className={`font-mono text-xl font-bold leading-none tabular-nums ${
@@ -341,19 +385,19 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
         {/* Target voucher */}
         <div className="rounded-2xl bg-white/[0.03] p-3 ring-1 ring-white/5">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Target voucher</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t.targetVoucher}</span>
             {targetSummary ? (
               <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-                Locked
+                {t.locked}
               </span>
             ) : (
               <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-400 ring-1 ring-white/10">
-                Opens at drop
+                {t.opensAtDrop}
               </span>
             )}
           </div>
           <p className="mb-2.5 truncate text-[11px] text-slate-300" title={targetSummary ?? undefined}>
-            {targetSummary ?? "Not picked — only a voucher that opens exactly at the drop will be clicked."}
+            {targetSummary ?? t.notPickedText}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -363,7 +407,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
               className="flex items-center justify-center gap-1.5 rounded-xl bg-white/5 py-2 text-[11px] font-semibold text-slate-100 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
             >
               <Crosshair className="h-3.5 w-3.5 text-emerald-300" />
-              {picking ? "Click a button..." : "Pick button"}
+              {picking ? t.pickingButton : t.pickButton}
             </button>
             <button
               type="button"
@@ -372,7 +416,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
               className="flex items-center justify-center gap-1.5 rounded-xl bg-white/5 py-2 text-[11px] font-semibold text-slate-100 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
             >
               <ScanSearch className="h-3.5 w-3.5 text-emerald-300" />
-              Auto-detect
+              {t.autoDetect}
             </button>
           </div>
         </div>
@@ -388,7 +432,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
           }`}
         >
           <Zap className="h-4 w-4" />
-          {isArmed ? "Disarm" : "Arm sniper"}
+          {isArmed ? t.disarm : t.armSniper}
         </button>
 
         <button
@@ -396,10 +440,10 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
           onClick={handleManualTestClick}
           disabled={isArmed}
           className="flex w-full items-center justify-center gap-1.5 text-[11px] font-medium text-slate-400 transition hover:text-slate-200 disabled:opacity-40"
-          title="Sends one real click — it saves the voucher if it is already open"
+          title={t.testClickTooltip}
         >
           <MousePointerClick className="h-3.5 w-3.5" />
-          Send one test click
+          {t.testClick}
         </button>
 
         {/* Status */}

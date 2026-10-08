@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
 export const DEALHUNTER_WEB_ORIGINS = ["http://localhost:3000", "http://localhost:3100", "https://dealhunter.vn"];
 
 export const DEFAULT_SETTINGS = {
+  language: "en" as const,
   burstIntervalMs: 35, // 35ms between clicks
   burstDurationMs: 2000, // 2.0s maximum burst window
   preWarmSeconds: 60, // Open tab 60s in advance

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { shopeeAdapter } from "../adapters/shopee_adapter";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { PriceContextResponse } from "../../lib/types";
+import { storage } from "../../lib/storage";
+import { Language, getTranslation } from "../../lib/i18n";
 import { ShieldCheck, ExternalLink, X } from "lucide-react";
 
 /**
@@ -11,6 +13,20 @@ import { ShieldCheck, ExternalLink, X } from "lucide-react";
 export const PriceHistoryBadge: React.FC = () => {
   const [visible, setVisible] = useState(true);
   const [response, setResponse] = useState<PriceContextResponse | null>(null);
+  const [lang, setLang] = useState<Language>("en");
+
+  const t = getTranslation(lang);
+
+  useEffect(() => {
+    storage.getLanguage().then(setLang);
+    const onChange = (changes: Record<string, chrome.storage.StorageChange>) => {
+      if (changes.dh_settings?.newValue?.language) {
+        setLang(changes.dh_settings.newValue.language);
+      }
+    };
+    chrome.storage.onChanged.addListener(onChange);
+    return () => chrome.storage.onChanged.removeListener(onChange);
+  }, []);
 
   useEffect(() => {
     const fetchContext = async () => {
@@ -40,7 +56,7 @@ export const PriceHistoryBadge: React.FC = () => {
       <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
         <div className="flex items-center gap-1.5 text-xs font-bold text-pine-900">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span>DealHunter Intelligence</span>
+          <span>{t.priceBadgeTitle}</span>
         </div>
         <button
           type="button"
@@ -57,18 +73,25 @@ export const PriceHistoryBadge: React.FC = () => {
             priceContext.bestDealPlatform !== "shopee" &&
             priceContext.bestDealPrice !== undefined && (
               <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-2 rounded-xl">
-                <span className="font-bold block">Gia tot hon tren {priceContext.bestDealPlatform.toUpperCase()}!</span>
+                <span className="font-bold block">
+                  {t.betterDealPrefix} {priceContext.bestDealPlatform.toUpperCase()}!
+                </span>
                 <span>
-                  {priceContext.savingsPercent !== undefined && <>Re hon {Math.round(priceContext.savingsPercent)}% </>}
-                  (Chi con {priceContext.bestDealPrice.toLocaleString("vi-VN")}d)
+                  {priceContext.savingsPercent !== undefined &&
+                    t.cheaperBy(
+                      Math.round(priceContext.savingsPercent),
+                      `${priceContext.bestDealPrice.toLocaleString("vi-VN")}đ`
+                    )}
                 </span>
               </div>
             )}
 
           <div className="flex items-center justify-between text-slate-600">
-            <span>Gia DealHunter ghi nhan:</span>
+            <span>{t.recordedPrice}</span>
             <span className="font-bold text-slate-900">
-              {priceContext.currentPrice !== null ? `${priceContext.currentPrice.toLocaleString("vi-VN")}d` : "Chua co du lieu"}
+              {priceContext.currentPrice !== null
+                ? `${priceContext.currentPrice.toLocaleString("vi-VN")}đ`
+                : t.noDataYet}
             </span>
           </div>
 
@@ -78,20 +101,20 @@ export const PriceHistoryBadge: React.FC = () => {
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 py-1.5 px-2 rounded-lg transition-colors mt-1"
           >
-            <span>Xem lich su gia tren Web</span>
+            <span>{t.viewHistoryWeb}</span>
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
       ) : (
         <div className="text-[11px] text-slate-500 py-1 space-y-1">
-          <p>Ban chua theo doi san pham nay tren DealHunter.</p>
+          <p>{t.notTrackingYet}</p>
           <a
             href={`${webUrl}?url=${encodeURIComponent(window.location.href)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-emerald-600 font-bold hover:underline"
           >
-            <span>Theo doi gia ngay</span>
+            <span>{t.trackPriceNow}</span>
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
@@ -99,3 +122,4 @@ export const PriceHistoryBadge: React.FC = () => {
     </div>
   );
 };
+

@@ -5,20 +5,27 @@ import { TaskList } from "./components/TaskList";
 import { storage } from "../lib/storage";
 import { DEFAULT_SETTINGS, MESSAGE_ACTIONS } from "../lib/constants";
 import { ScheduledTask } from "../lib/types";
-import { ExternalLink, ShieldCheck } from "lucide-react";
+import { Language, getTranslation } from "../lib/i18n";
+import { ExternalLink, ShieldCheck, Languages } from "lucide-react";
 
 export const App: React.FC = () => {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [webUrl, setWebUrl] = useState(DEFAULT_SETTINGS.dealHunterWebUrl);
+  const [lang, setLang] = useState<Language>("en");
   // null while loading; the web app hands its sign-in over to the extension
   const [account, setAccount] = useState<{ signedIn: boolean; email?: string } | null>(null);
+
+  const t = getTranslation(lang);
 
   const loadTasks = async () => {
     setTasks(await storage.getTasks());
   };
 
   useEffect(() => {
-    storage.getSettings().then((s) => setWebUrl(s.dealHunterWebUrl));
+    storage.getSettings().then((s) => {
+      setWebUrl(s.dealHunterWebUrl);
+      if (s.language) setLang(s.language);
+    });
     chrome.runtime
       .sendMessage({ action: MESSAGE_ACTIONS.GET_WEB_SESSION })
       .then(setAccount)
@@ -30,10 +37,19 @@ export const App: React.FC = () => {
     // Hunts finish in the background: refresh the list when their status changes
     const onChange = (changes: Record<string, chrome.storage.StorageChange>) => {
       if (changes.dh_scheduled_tasks) loadTasks();
+      if (changes.dh_settings?.newValue?.language) {
+        setLang(changes.dh_settings.newValue.language);
+      }
     };
     chrome.storage.onChanged.addListener(onChange);
     return () => chrome.storage.onChanged.removeListener(onChange);
   }, []);
+
+  const handleToggleLang = async () => {
+    const nextLang: Language = lang === "en" ? "vi" : "en";
+    setLang(nextLang);
+    await storage.setLanguage(nextLang);
+  };
 
   return (
     <div className="min-h-[520px] bg-slate-50">
@@ -47,19 +63,30 @@ export const App: React.FC = () => {
               DH
             </div>
             <div className="leading-tight">
-              <h1 className="text-[15px] font-bold tracking-tight">DealHunter Assistant</h1>
-              <p className="text-[11px] font-medium text-slate-400">Shopee voucher sniper</p>
+              <h1 className="text-[15px] font-bold tracking-tight">{t.appName}</h1>
+              <p className="text-[11px] font-medium text-slate-400">{t.appSubtitle}</p>
             </div>
           </div>
-          <a
-            href={webUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white ring-1 ring-white/15 transition hover:bg-white/15"
-          >
-            Web app
-            <ExternalLink className="h-3 w-3" />
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleLang}
+              className="flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-emerald-300 ring-1 ring-white/15 transition hover:bg-white/20"
+              title={lang === "en" ? "Đổi sang Tiếng Việt" : "Switch to English"}
+            >
+              <Languages className="h-3 w-3" />
+              <span>{lang.toUpperCase()}</span>
+            </button>
+            <a
+              href={webUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white ring-1 ring-white/15 transition hover:bg-white/15"
+            >
+              {t.webApp}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
         </div>
       </header>
 
@@ -67,29 +94,28 @@ export const App: React.FC = () => {
         {account && (
           <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600 shadow-sm">
             {account.signedIn ? (
-              <span>
-                Da ket noi DealHunter{account.email ? `: ${account.email}` : ""}. Gia theo doi hien tren trang san pham Shopee.
-              </span>
+              <span>{t.accountConnected(account.email)}</span>
             ) : (
               <span>
-                Chua dang nhap DealHunter web: chi dung cac tinh nang san deal.{" "}
+                {t.accountNotConnected}{" "}
                 <a href={webUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-emerald-700 hover:underline">
-                  Dang nhap
+                  {t.signInLink}
                 </a>{" "}
-                de xem gia theo doi ngay tren Shopee.
+                {t.signInSuffix}
               </span>
             )}
           </div>
         )}
-        <TimeOffsetCard />
-        <ScheduleForm onTaskCreated={loadTasks} />
-        <TaskList tasks={tasks} onTasksChanged={loadTasks} />
+        <TimeOffsetCard lang={lang} />
+        <ScheduleForm onTaskCreated={loadTasks} lang={lang} />
+        <TaskList tasks={tasks} onTasksChanged={loadTasks} lang={lang} />
 
         <p className="flex items-center justify-center gap-1.5 pt-1 text-[10px] text-slate-400">
           <ShieldCheck className="h-3 w-3 text-emerald-600" />
-          Runs in your browser with your own Shopee account.
+          {t.footerSafety}
         </p>
       </main>
     </div>
   );
 };
+

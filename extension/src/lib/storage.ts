@@ -57,4 +57,13 @@ export const storage = {
       [STORAGE_KEYS.SETTINGS]: { ...current, ...settings },
     });
   },
+
+  async getLanguage(): Promise<"en" | "vi"> {
+    const settings = await this.getSettings();
+    return settings.language || "en";
+  },
+
+  async setLanguage(language: "en" | "vi"): Promise<void> {
+    await this.saveSettings({ language });
+  },
 };

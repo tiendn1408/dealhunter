@@ -26,6 +26,7 @@ export interface ClockCalibration {
 }
 
 export interface ExtensionSettings {
+  language: "en" | "vi"; // default: 'en'
   burstIntervalMs: number; // default: 35ms
   burstDurationMs: number; // default: 2000ms
   preWarmSeconds: number; // default: 60s
