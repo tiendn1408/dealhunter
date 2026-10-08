@@ -78,9 +78,7 @@ func (a *TikTokAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 				Price: pricing.Price{
 					ListedPrice: listedPrice,
 					SalePrice:   price,
-					ShippingFee: extracted.ShippingFee,
 				},
-				InStock: extracted.InStock != nil && *extracted.InStock,
 			}, nil
 		}
 	}
@@ -96,15 +94,11 @@ func (a *TikTokAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, targetURL)
 		if extractErr == nil && extracted.Price > 0 {
-			shipping := extracted.ShippingFee
-			if shipping <= 0 && source.LastShippingFee != nil {
-				shipping = *source.LastShippingFee
-			}
 			return &pricing.PriceSnapshot{
 				ProductSourceID: source.ID,
 				Price:           extracted.Price,
-				ShippingFee:     shipping,
-				EffectivePrice:  extracted.Price + shipping,
+				ShippingFee:     extracted.ShippingFee,
+				EffectivePrice:  pricing.EffectivePriceOf(extracted.Price, extracted.ShippingFee),
 				Currency:        extracted.Currency,
 				InStock:         extracted.InStock,
 				CapturedAt:      time.Now(),

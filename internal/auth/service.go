@@ -164,7 +164,9 @@ func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*Ses
 
 	user, err := s.repo.GetByID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("load session user: %w", err)
+		// The old token is already revoked; the client must still receive the new one, or its retry
+		// would look like token reuse and end every session.
+		return nil, &RotatedError{Err: fmt.Errorf("load session user: %w", err), RefreshToken: raw, ExpiresAt: next.ExpiresAt}
 	}
 	if user.AuthProvider == "migrated" {
 		return nil, ErrInvalidRefreshToken
@@ -172,6 +174,17 @@ func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*Ses
 
 	return s.buildSession(user, raw, next.ExpiresAt, nil)
 }
+
+// RotatedError reports a refresh that failed after the refresh token was rotated.
+// It carries the new refresh token so the caller can still hand it to the client.
+type RotatedError struct {
+	Err          error
+	RefreshToken string
+	ExpiresAt    time.Time
+}
+
+func (e *RotatedError) Error() string { return e.Err.Error() }
+func (e *RotatedError) Unwrap() error { return e.Err }
 
 // Logout ends the login the refresh token belongs to (every token in its family).
 func (s *AuthService) Logout(ctx context.Context, rawRefreshToken string) error {

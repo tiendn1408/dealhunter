@@ -93,8 +93,8 @@ func TestExtractFromHTML_OpenGraph(t *testing.T) {
 	if prod.InStock != nil {
 		t.Errorf("expected unknown stock status, got %v", *prod.InStock)
 	}
-	if prod.ShippingFee != 0 {
-		t.Errorf("expected unknown shipping fee (0), got %d", prod.ShippingFee)
+	if prod.ShippingFee != nil {
+		t.Errorf("expected unknown shipping fee, got %d", *prod.ShippingFee)
 	}
 }
 
@@ -110,6 +110,10 @@ func TestParseVNDPrice(t *testing.T) {
 		{"6290000 VND", 6290000},
 		{"6290000.00", 6290000},
 		{" 15.000 đ ", 15000},
+		{"6,290,000.00", 6290000},
+		{"6.290.000,00", 6290000},
+		{"6290000,5", 6290000},
+		{"1.500", 1500},
 	}
 
 	for _, tc := range tests {

@@ -2,15 +2,19 @@
 
 -- 1. Product sources that are not real marketplace products:
 --    the fake "mock" platform, placeholder/anti-bot/error-page titles, and search-result pages.
+--    Sources created by POST /track never stored raw_title (the title lived only in products.title),
+--    so the title is taken from raw_title when present and from the product otherwise.
 CREATE TEMP TABLE fake_sources ON COMMIT DROP AS
-SELECT id FROM product_sources
-WHERE platform = 'mock'
-   OR canonical_url ILIKE '%mock.dealhunter.vn%'
-   OR raw_title IS NULL
-   OR btrim(raw_title) = ''
-   OR raw_title IN ('San pham', 'San pham Shopee', 'San pham Lazada', 'San pham TikTok Shop', 'Security Check')
-   OR raw_title ILIKE 'Xin lỗi!%'
-   OR canonical_url ILIKE '%/catalog/?q=%';
+SELECT s.id
+FROM product_sources s
+JOIN products p ON p.id = s.product_id
+CROSS JOIN LATERAL (SELECT btrim(COALESCE(NULLIF(btrim(s.raw_title), ''), p.title, '')) AS title) t
+WHERE s.platform = 'mock'
+   OR s.canonical_url ILIKE '%mock.dealhunter.vn%'
+   OR t.title = ''
+   OR t.title IN ('San pham', 'San pham Shopee', 'San pham Lazada', 'San pham TikTok Shop', 'Security Check')
+   OR t.title ILIKE 'Xin lỗi!%'
+   OR s.canonical_url ILIKE '%/catalog/?q=%';
 
 -- Tables without ON DELETE CASCADE first
 DELETE FROM tracked_products WHERE product_source_id IN (SELECT id FROM fake_sources);

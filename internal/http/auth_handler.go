@@ -65,8 +65,11 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid google token", http.StatusUnauthorized)
 		case errors.Is(err, auth.ErrGoogleNotConfigured):
 			http.Error(w, "google login is not configured", http.StatusServiceUnavailable)
+		case errors.Is(err, auth.ErrAccountConflict):
+			// The email belongs to an account bound to a different Google identity.
+			http.Error(w, "email is linked to another google account", http.StatusConflict)
 		default:
-			http.Error(w, "google login failed", http.StatusInternalServerError)
+			h.serverError(w, r, err)
 		}
 		return
 	}
@@ -89,12 +92,18 @@ func (h *Handler) RefreshSession(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := h.authService.Refresh(r.Context(), cookie.Value)
 	if err != nil {
-		h.clearRefreshCookie(w)
 		if errors.Is(err, auth.ErrInvalidRefreshToken) || errors.Is(err, auth.ErrRefreshTokenReused) {
+			h.clearRefreshCookie(w)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		http.Error(w, "refresh failed", http.StatusInternalServerError)
+		// Transient failure: keep the session cookie (or hand over the already rotated one)
+		// so the session survives a retry.
+		var rotated *auth.RotatedError
+		if errors.As(err, &rotated) {
+			h.setRefreshCookie(w, rotated.RefreshToken, rotated.ExpiresAt)
+		}
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeSession(w, sess)
@@ -156,20 +165,24 @@ func (h *Handler) guestIDFromRequest(r *http.Request) uuid.UUID {
 }
 
 func (h *Handler) writeSession(w http.ResponseWriter, sess *auth.Session) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     refreshCookieName,
-		Value:    sess.RefreshToken,
-		Path:     refreshCookiePath,
-		Expires:  sess.RefreshExpiresAt,
-		MaxAge:   int(time.Until(sess.RefreshExpiresAt).Seconds()),
-		HttpOnly: true,
-		Secure:   h.authCookieSecure,
-		SameSite: http.SameSiteLaxMode,
-	})
+	h.setRefreshCookie(w, sess.RefreshToken, sess.RefreshExpiresAt)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(sess)
+}
+
+func (h *Handler) setRefreshCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     refreshCookieName,
+		Value:    token,
+		Path:     refreshCookiePath,
+		Expires:  expiresAt,
+		MaxAge:   int(time.Until(expiresAt).Seconds()),
+		HttpOnly: true,
+		Secure:   h.authCookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func (h *Handler) clearRefreshCookie(w http.ResponseWriter) {

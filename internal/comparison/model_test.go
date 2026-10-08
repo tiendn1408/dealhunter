@@ -13,22 +13,22 @@ func TestIdentifyBestDeal_MultipleSources(t *testing.T) {
 		{
 			SourceID:       uuid.New(),
 			Platform:       "shopee",
-			EffectivePrice: 6290000,
-			InStock:        true,
+			EffectivePrice: i64(6290000),
+			InStock:        boolp(true),
 			CapturedAt:     &now,
 		},
 		{
 			SourceID:       uuid.New(),
 			Platform:       "lazada",
-			EffectivePrice: 6390000,
-			InStock:        true,
+			EffectivePrice: i64(6390000),
+			InStock:        boolp(true),
 			CapturedAt:     &now,
 		},
 		{
 			SourceID:       uuid.New(),
 			Platform:       "tiktok",
-			EffectivePrice: 6190000,
-			InStock:        true,
+			EffectivePrice: i64(6190000),
+			InStock:        boolp(true),
 			CapturedAt:     &now,
 		},
 	}
@@ -64,14 +64,14 @@ func TestIdentifyBestDeal_OutOfStockIgnored(t *testing.T) {
 		{
 			SourceID:       uuid.New(),
 			Platform:       "shopee",
-			EffectivePrice: 5000000,
-			InStock:        false, // cheaper but out of stock
+			EffectivePrice: i64(5000000),
+			InStock:        boolp(false), // cheaper but out of stock
 		},
 		{
 			SourceID:       uuid.New(),
 			Platform:       "lazada",
-			EffectivePrice: 6000000,
-			InStock:        true,
+			EffectivePrice: i64(6000000),
+			InStock:        boolp(true),
 		},
 	}
 
@@ -99,14 +99,14 @@ func TestIdentifyBestDeal_AllOutOfStock(t *testing.T) {
 		{
 			SourceID:       uuid.New(),
 			Platform:       "shopee",
-			EffectivePrice: 5000000,
-			InStock:        false,
+			EffectivePrice: i64(5000000),
+			InStock:        boolp(false),
 		},
 		{
 			SourceID:       uuid.New(),
 			Platform:       "lazada",
-			EffectivePrice: 6000000,
-			InStock:        false,
+			EffectivePrice: i64(6000000),
+			InStock:        boolp(false),
 		},
 	}
 
@@ -128,8 +128,8 @@ func TestIdentifyBestDeal_SingleSource(t *testing.T) {
 		{
 			SourceID:       uuid.New(),
 			Platform:       "shopee",
-			EffectivePrice: 6290000,
-			InStock:        true,
+			EffectivePrice: i64(6290000),
+			InStock:        boolp(true),
 		},
 	}
 
@@ -157,20 +157,20 @@ func TestIdentifyBestDeal_ZeroOrNegativePriceIgnored(t *testing.T) {
 		{
 			SourceID:       uuid.New(),
 			Platform:       "shopee",
-			EffectivePrice: 0,
-			InStock:        true,
+			EffectivePrice: i64(0),
+			InStock:        boolp(true),
 		},
 		{
 			SourceID:       uuid.New(),
 			Platform:       "lazada",
-			EffectivePrice: -1000,
-			InStock:        true,
+			EffectivePrice: i64(-1000),
+			InStock:        boolp(true),
 		},
 		{
 			SourceID:       uuid.New(),
 			Platform:       "tiktok",
-			EffectivePrice: 6190000,
-			InStock:        true,
+			EffectivePrice: i64(6190000),
+			InStock:        boolp(true),
 		},
 	}
 
@@ -180,5 +180,25 @@ func TestIdentifyBestDeal_ZeroOrNegativePriceIgnored(t *testing.T) {
 	}
 	if bestDeal.Platform != "tiktok" {
 		t.Errorf("expected tiktok, got %s", bestDeal.Platform)
+	}
+}
+
+func i64(v int64) *int64 { return &v }
+func boolp(v bool) *bool { return &v }
+
+// Unknown stock is not "out of stock"; an unknown price cannot compete.
+func TestIdentifyBestDeal_UnknownValues(t *testing.T) {
+	sources := []SourcePrice{
+		{SourceID: uuid.New(), Platform: "shopee", EffectivePrice: nil, InStock: boolp(true)},
+		{SourceID: uuid.New(), Platform: "lazada", EffectivePrice: i64(6000000), InStock: nil},
+		{SourceID: uuid.New(), Platform: "tiktok", EffectivePrice: i64(5000000), InStock: boolp(false)},
+	}
+
+	bestDeal := IdentifyBestDeal(sources)
+	if bestDeal == nil || bestDeal.Platform != "lazada" {
+		t.Fatalf("expected lazada (stock unknown) to win, got %+v", bestDeal)
+	}
+	if sources[0].IsBestDeal || sources[2].IsBestDeal {
+		t.Error("sources without price or out of stock must not be the best deal")
 	}
 }

@@ -88,14 +88,14 @@ Tat ca endpoint dang nhap / refresh tra ve cung dinh dang **Session** va dat coo
   { "id_token": "<credential tu Google Identity Services>" }
   ```
 - Backend kiem tra `aud == GOOGLE_CLIENT_ID`, `iss` la Google, `email_verified == true`.
-- **Ma loi**: `401` token khong hop le; `503` chua cau hinh `GOOGLE_CLIENT_ID`.
+- **Ma loi**: `401` token khong hop le; `409` email da gan voi mot tai khoan Google khac (`sub` khac); `503` chua cau hinh `GOOGLE_CLIENT_ID`.
 
 ### 3.3. Khong Co Dang Nhap Demo / Token Gia
 He thong **khong** co `demo-login` hay token gia lap (`mock-google-*`); Google la phuong thuc dang nhap duy nhat.
 
 ### 3.3a. Lam Moi Phien
 - **Endpoint**: `POST /api/v1/auth/refresh` (gui kem cookie `dh_refresh`)
-- **Response `200 OK`**: Session moi + cookie moi. `401` neu cookie thieu, het han, da thu hoi hoac bi dung lai.
+- **Response `200 OK`**: Session moi + cookie moi. `401` neu cookie thieu, het han, da thu hoi hoac bi dung lai (cookie bi xoa). `500` khi loi tam thoi: cookie duoc giu nguyen, hoac duoc thay bang token moi neu token cu da xoay vong, nen co the thu lai.
 
 ### 3.3b. Dang Xuat
 - **Endpoint**: `POST /api/v1/auth/logout` (gui kem cookie `dh_refresh`)
@@ -276,6 +276,7 @@ He thong **khong** co `demo-login` hay token gia lap (`mock-google-*`); Google l
 - **Endpoint**: `POST /api/v1/products/{product_id}/auto-match`
 - **Endpoint**: `POST /api/v1/tracked-products/{id}/auto-match`
 - **Response `200 OK`**: Kich hoat job tim kiem ung vien da san ngam.
+- **`409 Conflict`**: San pham chua co gia (chua fetch duoc lan nao); auto-match chi chay khi da co gia that (DATA-11). Ung vien khong co gia chi duoc goi y, khong tu lien ket.
 
 ### 7.2. Lay Danh Sach Goi Y So Khop (Suggestions)
 - **Endpoint**: `GET /api/v1/products/{product_id}/match-suggestions`

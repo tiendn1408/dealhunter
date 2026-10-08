@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -45,10 +44,7 @@ func (l *testTrackingLinker) LinkSource(ctx context.Context, userID, productID u
 func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	ctx := context.Background()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable"
-	}
+	dbURL := getTestDatabaseURL(t)
 
 	dbPool, err := database.NewPostgresPool(ctx, dbURL)
 	if err != nil {
@@ -56,7 +52,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	}
 	defer dbPool.Close()
 
-	rdb := getTestRedisClient()
+	rdb := getTestRedisClient(t)
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Skipf("Skipping integration test: Redis not reachable: %v", err)
 	}
@@ -140,7 +136,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	_ = pricingRepo.InsertSnapshot(ctx, nil, &pricing.PriceSnapshot{
 		ProductSourceID: trackResp.ProductSourceID,
 		Price:           seedPrice,
-		ShippingFee:     15000,
+		ShippingFee:     ptrInt64(15000),
 		EffectivePrice:  effPrice,
 		Currency:        "VND",
 		CapturedAt:      time.Now(),

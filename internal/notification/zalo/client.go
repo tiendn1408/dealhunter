@@ -114,5 +114,6 @@ func (c *HTTPZaloClient) SendMessage(ctx context.Context, recipient string, temp
 		}
 	}
 
-	return "", nil
+	// Without a msg_id the send cannot be confirmed or tracked, so it is not reported as sent.
+	return "", fmt.Errorf("zalo response has no msg_id (HTTP %d)", resp.StatusCode)
 }

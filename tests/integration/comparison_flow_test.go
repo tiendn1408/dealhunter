@@ -5,7 +5,6 @@ package integration
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -24,10 +23,7 @@ import (
 func TestEndToEndComparisonFlow(t *testing.T) {
 	ctx := context.Background()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable"
-	}
+	dbURL := getTestDatabaseURL(t)
 
 	dbPool, err := database.NewPostgresPool(ctx, dbURL)
 	if err != nil {
@@ -35,7 +31,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 	}
 	defer dbPool.Close()
 
-	rdb := getTestRedisClient()
+	rdb := getTestRedisClient(t)
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Skipf("Skipping integration test: Redis not reachable: %v", err)
 	}
@@ -79,7 +75,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 	_ = pricingRepo.InsertSnapshot(ctx, nil, &pricing.PriceSnapshot{
 		ProductSourceID: source1.ID,
 		Price:           6290000,
-		ShippingFee:     15000,
+		ShippingFee:     ptrInt64(15000),
 		EffectivePrice:  6305000,
 		Currency:        "VND",
 		InStock:         &inStock,
@@ -119,7 +115,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 	_ = pricingRepo.InsertSnapshot(ctx, nil, &pricing.PriceSnapshot{
 		ProductSourceID: source2.ID,
 		Price:           6190000,
-		ShippingFee:     12000,
+		ShippingFee:     ptrInt64(12000),
 		EffectivePrice:  6202000,
 		Currency:        "VND",
 		InStock:         &inStock,

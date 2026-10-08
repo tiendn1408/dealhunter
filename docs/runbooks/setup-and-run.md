@@ -236,5 +236,13 @@ curl -X POST http://localhost:8080/api/v1/tracked-products/<id>/vouchers \
 
 3. **Chay test tich hop toan dien (E2E Integration Test)**:
    ```bash
-   DATABASE_URL="postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable" REDIS_URL="redis://localhost:6380" go test -tags=integration -v ./tests/integration/...
+   make test-integration
    ```
+   - Test chay tren DB rieng `dealdb_test` va Redis DB 15 (`TEST_DATABASE_URL`, `TEST_REDIS_URL`), `make` tu tao + migrate DB nay.
+   - Test **tu choi chay** neu ten DB khong ket thuc bang `_test` hoac Redis la DB 0, de khong bao gio ghi du lieu test vao DB dev.
+
+4. **Xoa toan bo du lieu dev (chi dung du lieu that)**:
+   ```bash
+   make db-reset
+   ```
+   - Drop moi bang cua `dealdb`, migrate lai tu dau va `FLUSHDB` Redis DB 0. Khong the hoan tac.

@@ -5,7 +5,6 @@ package integration
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -19,10 +18,7 @@ import (
 func TestJobIdempotencyOnReplay(t *testing.T) {
 	ctx := context.Background()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable"
-	}
+	dbURL := getTestDatabaseURL(t)
 
 	dbPool, err := database.NewPostgresPool(ctx, dbURL)
 	if err != nil {

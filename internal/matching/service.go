@@ -39,8 +39,16 @@ func NewMatchingService(repo MatchingRepository, searcher CandidateSearcher, lin
 	}
 }
 
+// ErrNoReferencePrice is returned when the reference product has no fetched price yet.
+var ErrNoReferencePrice = errors.New("reference product has no price yet")
+
 // DiscoverAndMatch performs cross-marketplace matching for a reference product.
 func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productID uuid.UUID, refPlatform, refTitle string, refPrice int64) (*AutoMatchResult, error) {
+	// Without a real price the price check is neutral and wrong products can be auto-linked (DATA-11).
+	if refPrice <= 0 {
+		return nil, ErrNoReferencePrice
+	}
+
 	norm := NormalizeTitle(refTitle)
 	if norm.CleanTitle == "" {
 		return &AutoMatchResult{ProductID: productID}, nil
@@ -103,7 +111,8 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 
 			score := ScoreMatch(norm, refPrice, cand.Title, cand.Price, cand.SellerName, cand.IsMall)
 
-			if score >= ThresholdAutoLink && s.linker != nil {
+			// A candidate without a price was never price-checked, so it can only be suggested.
+			if score >= ThresholdAutoLink && cand.Price > 0 && s.linker != nil {
 				// High confidence: Auto-link directly
 				err := s.linker.LinkSource(ctx, userID, productID, cand.URL)
 				if err == nil {

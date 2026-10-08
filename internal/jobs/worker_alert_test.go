@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/alert"
 	"github.com/tiendang/deal-hunter/internal/notification"
+	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
 )
@@ -229,4 +230,25 @@ func (s *simpleMockQueue) Ack(ctx context.Context, msgID string) error {
 }
 func (s *simpleMockQueue) ReclaimPending(ctx context.Context) error {
 	return nil
+}
+
+func TestShouldEvaluateAlerts(t *testing.T) {
+	in, out := true, false
+	cases := []struct {
+		name     string
+		oldPrice int64
+		snap     pricing.PriceSnapshot
+		want     bool
+	}{
+		{"price dropped, in stock", 1000000, pricing.PriceSnapshot{Price: 850000, InStock: &in}, true},
+		{"price dropped, stock unknown", 1000000, pricing.PriceSnapshot{Price: 850000}, true},
+		{"price dropped, out of stock", 1000000, pricing.PriceSnapshot{Price: 850000, InStock: &out}, false},
+		{"price unchanged", 1000000, pricing.PriceSnapshot{Price: 1000000, InStock: &in}, false},
+		{"first price", 0, pricing.PriceSnapshot{Price: 850000, InStock: &in}, false},
+	}
+	for _, tc := range cases {
+		if got := shouldEvaluateAlerts(tc.oldPrice, &tc.snap); got != tc.want {
+			t.Errorf("%s: expected %v, got %v", tc.name, tc.want, got)
+		}
+	}
 }

@@ -31,13 +31,13 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Database & Redis connections
-	dbPool, err := pgxpool.New(ctx, "postgres://dealuser:dealpass@localhost:5433/dealdb?sslmode=disable")
+	dbPool, err := pgxpool.New(ctx, getTestDatabaseURL(t))
 	if err != nil {
 		t.Skipf("Skipping integration test: PostgreSQL not reachable: %v", err)
 	}
 	defer dbPool.Close()
 
-	rdb := getTestRedisClient()
+	rdb := getTestRedisClient(t)
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Skipf("Skipping integration test: Redis not reachable: %v", err)
 	}

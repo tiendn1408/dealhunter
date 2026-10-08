@@ -33,19 +33,18 @@ func (r *PostgresRepository) UpsertVoucher(ctx context.Context, v *ProductVouche
 			discount_amount, discount_percent, min_order_value, collect_url,
 			expires_at, created_at, updated_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		ON CONFLICT (id) DO UPDATE SET
-			voucher_type = EXCLUDED.voucher_type,
-			voucher_code = EXCLUDED.voucher_code,
+		ON CONFLICT (product_source_id, voucher_type, (COALESCE(voucher_code, ''))) DO UPDATE SET
 			title = EXCLUDED.title,
 			discount_amount = EXCLUDED.discount_amount,
 			discount_percent = EXCLUDED.discount_percent,
 			min_order_value = EXCLUDED.min_order_value,
 			collect_url = EXCLUDED.collect_url,
 			expires_at = EXCLUDED.expires_at,
-			updated_at = NOW();
+			updated_at = NOW()
+		RETURNING id, created_at, updated_at;
 	`
 
-	_, err := r.pool.Exec(ctx, query,
+	err := r.pool.QueryRow(ctx, query,
 		v.ID,
 		v.ProductSourceID,
 		v.VoucherType,
@@ -58,7 +57,7 @@ func (r *PostgresRepository) UpsertVoucher(ctx context.Context, v *ProductVouche
 		v.ExpiresAt,
 		v.CreatedAt,
 		v.UpdatedAt,
-	)
+	).Scan(&v.ID, &v.CreatedAt, &v.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("upsert voucher: %w", err)
 	}

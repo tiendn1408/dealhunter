@@ -221,9 +221,17 @@ func (h *Handler) TriggerAutoMatch(w http.ResponseWriter, r *http.Request) {
 	primarySource := cmp.Sources[0]
 	refPlatform := primarySource.Platform
 	refTitle := cmp.ProductTitle
-	refPrice := primarySource.EffectivePrice
+	// Sources are ordered by price with unknown prices last; no price means matching cannot run yet
+	var refPrice int64
+	if primarySource.EffectivePrice != nil {
+		refPrice = *primarySource.EffectivePrice
+	}
 
 	result, err := h.matchingService.DiscoverAndMatch(r.Context(), userID, productID, refPlatform, refTitle, refPrice)
+	if errors.Is(err, matching.ErrNoReferencePrice) {
+		http.Error(w, "product has no price yet; try again after the first price fetch", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -266,7 +274,15 @@ func (h *Handler) TriggerTrackedProductAutoMatch(w http.ResponseWriter, r *http.
 	}
 
 	primarySource := cmp.Sources[0]
-	result, err := h.matchingService.DiscoverAndMatch(r.Context(), userID, productID, primarySource.Platform, cmp.ProductTitle, primarySource.EffectivePrice)
+	var refPrice int64
+	if primarySource.EffectivePrice != nil {
+		refPrice = *primarySource.EffectivePrice
+	}
+	result, err := h.matchingService.DiscoverAndMatch(r.Context(), userID, productID, primarySource.Platform, cmp.ProductTitle, refPrice)
+	if errors.Is(err, matching.ErrNoReferencePrice) {
+		http.Error(w, "product has no price yet; try again after the first price fetch", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		h.serverError(w, r, err)
 		return

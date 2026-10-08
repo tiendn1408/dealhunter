@@ -177,3 +177,33 @@ func TestMatchingService_DiscoverAndMatch(t *testing.T) {
 		t.Errorf("expected status 'dismissed', got '%s'", d.Status)
 	}
 }
+
+func TestMatchingService_DiscoverAndMatch_RequiresPrices(t *testing.T) {
+	ctx := context.Background()
+	candidate := &MatchCandidate{
+		Platform:   "lazada",
+		URL:        "https://lazada.vn/products/tai-nghe-sony-wh-1000xm5-i1.html",
+		Title:      "Tai nghe Sony WH-1000XM5",
+		SellerName: "Sony Official Store",
+		IsMall:     true,
+	}
+
+	// Reference product without a fetched price: nothing is searched or linked (DATA-11).
+	linker := &mockLinker{}
+	svc := NewMatchingService(newMockMatchingRepo(), &mockSearcher{candidates: []*MatchCandidate{candidate}}, linker, &mockComparisonProvider{})
+	if _, err := svc.DiscoverAndMatch(ctx, uuid.New(), uuid.New(), "shopee", "Tai nghe Sony WH-1000XM5", 0); !errors.Is(err, ErrNoReferencePrice) {
+		t.Fatalf("expected ErrNoReferencePrice, got %v", err)
+	}
+
+	// Candidate without a price scores above the auto-link threshold but must not be auto-linked.
+	if score := ScoreMatch(NormalizeTitle("Tai nghe Sony WH-1000XM5"), 6290000, candidate.Title, 0, candidate.SellerName, true); score < ThresholdAutoLink {
+		t.Fatalf("test setup: expected score >= %.2f, got %.2f", ThresholdAutoLink, score)
+	}
+	result, err := svc.DiscoverAndMatch(ctx, uuid.New(), uuid.New(), "shopee", "Tai nghe Sony WH-1000XM5", 6290000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.AutoLinkedSources) != 0 || len(linker.linkedURLs) != 0 {
+		t.Fatalf("candidate without price was auto-linked: %v", result.AutoLinkedSources)
+	}
+}

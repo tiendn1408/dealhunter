@@ -101,7 +101,6 @@ func (m *MockAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marke
 			SalePrice:   price,
 			ShippingFee: shipping,
 		},
-		InStock: true,
 	}, nil
 }
 
@@ -127,7 +126,7 @@ func (m *MockAdapter) FetchPrice(ctx context.Context, source *product.ProductSou
 	return &pricing.PriceSnapshot{
 		ProductSourceID: source.ID,
 		Price:           currentPrice,
-		ShippingFee:     shipping,
+		ShippingFee:     &shipping,
 		EffectivePrice:  currentPrice + shipping,
 		Currency:        "VND",
 		InStock:         &inStock,

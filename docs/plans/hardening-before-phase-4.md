@@ -15,10 +15,10 @@
 
 ## Việc Cần Làm Tiếp (bàn giao 2026-10-08)
 
-**Trạng thái**: Bước 1, 1.5 đã commit ở backend (`dealhunter-web` **vẫn chưa commit** thay đổi Bước 1 + 1.5). Bước 2 (phân quyền & validate input) đã xong và kiểm chứng, **chưa commit**.
+**Trạng thái**: Bước 1, 1.5, 2 đã commit ở cả backend và `dealhunter-web` (web: `1280ca1`). Rà soát lại Bước 1 + 1.5 ngày 2026-10-08 phát hiện và đã sửa thêm một số lỗi — xem mục **"Rà soát lại Bước 1 + 1.5"** bên dưới (các sửa này **chưa commit**).
 
 **Việc đầu tiên khi làm tiếp**
-1. Commit `dealhunter-web` (Bước 1 + 1.5) và backend (Bước 2). Lưu ý: thư mục `extension/` trong backend có thay đổi riêng, không thuộc Bước 2.
+1. Commit các sửa của đợt rà soát lại Bước 1 + 1.5 (backend + web).
 2. Chọn hướng: **(A)** GAP-01b/01c — tầng headless browser / proxy cho scraper, hoặc **(B)** Bước 3 (queue/worker).
 
 **Bước 2 — Phân quyền & validate input** [DONE] 2026-10-08
@@ -96,6 +96,36 @@
 - Validate thêm: alert `drop_percent` 1–99, `lowest_in_days` 1–365, `expires_in_days` 0–365; Zalo `phone` `^\+?[0-9]{9,15}$`, `zalo_id` `^[0-9A-Za-z_-]{1,64}$`; `GET /notifications?limit` tối đa 100.
 
 **Kiểm chứng Bước 2**: unit test (`-race`), integration test với Postgres/Redis thật — thêm `TestProductGroupAuthorization` (13 endpoint bị chặn với người ngoài, chủ sở hữu vẫn truy cập được, SEC-07 không chiếm được nguồn của người khác nhưng vẫn gộp được nguồn của chính mình, SEC-08 qua 5 tổ hợp path/người dùng, body 70KB ⇒ 400, validate alert/Zalo, guest thứ 4 ⇒ 429) và 13 ca voucher không hợp lệ + guest/member thường bị chặn trong `TestVoucherIntelligenceAndComboFlow`. Đã thử tắt kiểm tra SEC-07/SEC-08 ⇒ test fail đúng chỗ. E2E trình duyệt: session 17/17, member 7/7, no-mock 13/13 vẫn đạt.
+
+**Rà soát lại Bước 1 + 1.5 (2026-10-08)** — đối chiếu code với từng khẳng định ở trên:
+- [x] **Migration `000010` xoá cả sản phẩm thật**: `TrackURL` không ghi `product_sources.raw_title` (tên chỉ nằm ở `products.title`), còn `000010` coi mọi nguồn `raw_title IS NULL` là giả ⇒ mọi sản phẩm thêm qua `POST /tracked-products` bị xoá kèm tracking/snapshot/alert. Đã sửa: `TrackURL` ghi `raw_title`; `000010` xét tên theo `raw_title`, nếu trống thì theo `products.title`. Câu "toàn bộ sản phẩm ở DB local đều là giả" ở trên **không đáng tin** — có thể là hệ quả của lỗi này. Kiểm chứng trên Postgres tạm: nguồn thật (có/không `raw_title`) được giữ, nguồn `mock` / tiêu đề placeholder / anti-bot / không tên bị xoá.
+- [x] API trả `Title` rỗng cho sản phẩm vừa track (cùng nguyên nhân). Migration `000011` điền lại `raw_title` từ `products.title`.
+- [x] **DATA-03 thiếu unique key voucher** (upsert dùng `ON CONFLICT (id)` với id luôn mới ⇒ POST lặp lại tạo bản trùng). Migration `000011` dọn bản trùng (giữ bản cập nhật mới nhất) và tạo unique index `(product_source_id, voucher_type, COALESCE(voucher_code, ''))`; upsert dùng khoá này và trả về id thật của dòng.
+- [x] **DATA-11 còn hở ở auto-match thủ công**: `POST /products/{id}/auto-match` và `/tracked-products/{id}/auto-match` chạy với giá 0 ⇒ điểm giá trung tính có thể đạt đúng ngưỡng tự liên kết 0.85. `DiscoverAndMatch` nay trả `ErrNoReferencePrice` (API `409`) khi chưa có giá, và ứng viên không có giá chỉ được gợi ý, không tự liên kết. Có unit test.
+- [x] **Email Google đã gắn với `sub` khác trả `500` thay vì `409`** như mô tả. Đã map `ErrAccountConflict` ⇒ `409`, có test HTTP; frontend hiển thị thông báo riêng.
+- [x] **Refresh lỗi tạm thời (500) xoá cookie** ⇒ thành viên mất phiên vì DB chập chờn. Nay chỉ xoá cookie khi token không hợp lệ / bị dùng lại; nếu lỗi xảy ra **sau** khi đã xoay vòng thì vẫn gửi cookie mới (giữ cookie cũ sẽ bị coi là dùng lại và thu hồi mọi phiên). Có test HTTP cho 5 trường hợp.
+- [x] **Web — phiên thành viên hết hạn vẫn gửi request dưới danh nghĩa guest**: chỉ chặn ở nhánh 401, còn nhánh refresh chủ động trước khi gửi (token sắp hết hạn) thì không. `safeFetch` nay ghi danh tính trước khi gửi và ném `SessionExpiredError` nếu danh tính đổi (cả trước khi gửi lẫn sau 401); chỉ ép refresh khi token chưa được request khác thay; refresh trả về guest (tab khác đã logout) cũng báo "phiên đã hết hạn".
+- [x] **Web — vòng lặp render vô hạn ở trang chi tiết** (`useAlerts` với mặc định `= []` tạo mảng mới mỗi render ⇒ effect `setAlerts` chạy mãi khi đang tải hoặc lỗi).
+- [ ] Còn mở (chuyển bước sau):
+  - Phân loại lỗi retryable (403/429/timeout) của DATA-01 làm cùng REL-02 (Bước 3).
+  - Bước 7: `APP_ENV` không đặt ⇒ mặc định `development` (chấp nhận JWT secret dev) — nên fail-closed; `POST /auth/zalo/disconnect` nằm ngoài CSRF guard `/auth/*` (dùng Bearer nên không khai thác được).
+  - Web: settings hiện "Chưa liên kết Zalo" khi tải hồ sơ Zalo lỗi; `npm run lint` chưa cấu hình ESLint.
+  - Race hẹp: logout đồng thời với refresh có thể để sống token vừa xoay vòng; 2 lần đăng nhập Google đầu tiên đồng thời ⇒ lần sau `409`; `RoleFor` coi `migrated` là `user` (nên chỉ `google`).
+
+**Chỉ dùng dữ liệu thật (2026-10-08)** — dự án đang phát triển, toàn bộ dữ liệu local là dữ liệu test/mock:
+- [x] **Nguyên nhân dữ liệu mock quay lại**: integration test ghi thẳng vào DB dev (`DATABASE_URL`, mặc định `dealdb`) và Redis DB 0 — sau migration `000010` DB dev vẫn có 645 user test (`*@dealhunter.vn`) và 132 sản phẩm, phần lớn `mock.dealhunter.vn`. Nay test dùng `TEST_DATABASE_URL` / `TEST_REDIS_URL` (mặc định `dealdb_test`, Redis DB 15) và **từ chối chạy** nếu tên DB không kết thúc bằng `_test` hoặc Redis là DB 0. `make test-integration` tự tạo + migrate `dealdb_test`.
+- [ ] **Xoá dữ liệu dev**: `make db-reset` (drop mọi bảng, migrate lại, `FLUSHDB` Redis DB 0) — cần chạy thủ công.
+- [x] Giá trị không rõ là `NULL`, không phải `0`/`false`/giá trị cũ (migration `000012`):
+  - Phí ship: adapter không còn chép phí ship lần trước vào snapshot mới; không đo được ⇒ `NULL`, giá hiệu dụng = giá hàng (`pricing.EffectivePriceOf`). `price_snapshots.shipping_fee`, `comparison_snapshots.shipping_fee` cho phép `NULL`.
+  - Comparison: `listed_price`, `shipping_fee`, `effective_price`, `in_stock` trả `null` khi không rõ (trước ép `0`/`FALSE`); tồn kho không rõ vẫn được xét deal tốt nhất, chỉ "hết hàng" rõ ràng mới bị loại; giá không rõ không được xét.
+  - `marketplace.ProductData` bỏ `InStock bool` (ép không rõ thành hết hàng).
+  - Người bán rỗng lưu `NULL`.
+  - GET voucher: `calculation: null` khi chưa có giá (trước trả "giá về tay 0đ"); thêm `shipping_fee_known`.
+- [x] Alert không bắn khi trang báo rõ hết hàng (`shouldEvaluateAlerts`, có test).
+- [x] `ParseVNDPrice` đọc đúng `6.290.000,00` / `6,290,000.00` (trước ra gấp 100 lần); xoá `ExtractSlugTitle` (code chết sinh tiêu đề từ URL).
+- [x] Zalo trả 200 nhưng không có `msg_id` ⇒ ghi `failed` (không xác nhận được), không còn đánh dấu `sent`.
+- [x] `POST /tracked-products` trả `polling_interval_seconds` (web hiển thị chu kỳ quét thật thay vì chữ cứng "30 phút").
+- [x] Web: bỏ giá mục tiêu điền sẵn 95%/90%, sàn giả 10% của thanh tiến độ, "khoảng cách 0 ₫" khi chưa có mục tiêu, thống kê 90 ngày bịa từ giá hiện tại; chỉ một rule `target_price` hoạt động (rule cũ bị xoá khi lưu mục tiêu mới); lỗi API hiện là lỗi (trang chủ, thông báo, cài đặt, voucher, gợi ý ghép, auto-match) thay vì trạng thái trống; "đánh dấu tất cả đã đọc" báo lỗi khi có request thất bại; logout thành công không báo lỗi khi tạo guest thất bại; khoá chéo tab qua `localStorage` khi không có Web Locks; giá/ship/tồn kho `null` hiển thị "Chưa có dữ liệu" / "Chưa rõ".
 
 **Chuyển sang bước sau (từ Bước 1)**: `GET /products/{id}/comparison` và `/match-suggestions` chưa yêu cầu token (→ Bước 2, SEC-07/08); `POST /tracked-products/{id}/vouchers` vẫn cho mọi người dùng tạo voucher (→ Bước 2, SEC-09); chưa có rate limit cho `POST /auth/guest` (→ Bước 2); chưa kiểm thử với Google Client ID thật trên trình duyệt.
 
@@ -176,7 +206,7 @@
 
 | ID | Vấn đề | Vị trí | Giải pháp |
 |---|---|---|---|
-| **DATA-01** [DONE] | Scraper bị chặn → 3 adapter trả **giá lần trước** như lần đo mới với `InStock=true`, `CapturedAt=now` | `marketplace/shopee/adapter.go:234-250`, `lazada/adapter.go:135-151`, `tiktok/adapter.go:134-150` | Bỏ fallback; trả `MarketplaceError` retryable (403/429/timeout) để REL-02 xử lý; metrics ghi nhận thất bại |
+| **DATA-01** [DONE — trừ phân loại lỗi retryable, làm cùng REL-02] | Scraper bị chặn → 3 adapter trả **giá lần trước** như lần đo mới với `InStock=true`, `CapturedAt=now` | `marketplace/shopee/adapter.go:234-250`, `lazada/adapter.go:135-151`, `tiktok/adapter.go:134-150` | Bỏ fallback; trả `MarketplaceError` retryable (403/429/timeout) để REL-02 xử lý; metrics ghi nhận thất bại |
 | **DATA-02** [DONE] | `ResolveProduct` khi bị chặn vẫn thành công với tiêu đề placeholder ("San pham Shopee") và giá 0 | `shopee/adapter.go:151-167` | Trả lỗi rõ ràng cho người dùng ("không lấy được thông tin, thử lại sau") hoặc tạo tracking ở trạng thái `pending_resolve` |
 | **DATA-03** [DONE] | Voucher bịa: GET tự sinh voucher giả (`SHOP15K`, `PLAT24K`) và lưu DB; lỗi lưu bị bỏ qua; GET đồng thời sinh trùng | `internal/http/voucher_handler.go:80-81,125-211`; `internal/voucher/repository_pg.go:36` | Xoá hoàn toàn logic sinh voucher giả; GET chỉ đọc; unique key voucher theo `(product_source_id, voucher_type, voucher_code)`; migration dọn voucher giả đã lưu |
 | **DATA-04** [DONE] | Affiliate bật mặc định với template placeholder `s.lazada.vn/s.xxxx`, `vt.tiktok.com/xxxx`; `Transform` không kiểm tra ID rỗng | `pkg/config/config.go:116-122`; `pkg/affiliate/affiliate.go:81-94` | Mặc định `AFFILIATE_ENABLED=false`, template rỗng; thiếu ID hoặc template → giữ link gốc (fail-safe theo spec) |
@@ -197,9 +227,9 @@
 - Webhook bỏ qua lỗi `UpdateDeliveryStatus` và vẫn trả 200 — `zalo_webhook.go:114`.
 - Cập nhật `read` không guard trạng thái, có thể ghi đè `failed` — `notification/repository_pg.go:151-157`.
 - `msg_id` rỗng/không parse được → log `sent` không có msg_id — `zalo/client.go:108-117`.
-- Thuật toán ký webhook sai so với Zalo (Zalo dùng `sha256(appId + body + timestamp + OASecretKey)`, không phải HMAC body) — `zalo_webhook.go:163-171`. Phải sửa cùng SEC-10.
-- `MockZaloClient` được dùng âm thầm khi `ZALO_ENABLED=true` mà thiếu token, đánh dấu `sent` — `cmd/notifier/main.go:73-81`.
-- TokenManager ghi `mock_zalo_access_token_active` đè lên token tĩnh hợp lệ trong Redis; `SendMessage` ưu tiên token này → mọi tin gửi thất bại — `token_manager.go:87-93`, `client.go:47-51`.
+- [DONE] Thuật toán ký webhook sai so với Zalo (Zalo dùng `sha256(appId + body + timestamp + OASecretKey)`, không phải HMAC body) — `zalo_webhook.go:163-171`. Đã sửa cùng SEC-10 (Bước 1).
+- [DONE] `MockZaloClient` được dùng âm thầm khi `ZALO_ENABLED=true` mà thiếu token, đánh dấu `sent` — `cmd/notifier/main.go:73-81`. Đã sửa ở NOMOCK-02.
+- [DONE] TokenManager ghi `mock_zalo_access_token_active` đè lên token tĩnh hợp lệ trong Redis; `SendMessage` ưu tiên token này → mọi tin gửi thất bại — `token_manager.go:87-93`, `client.go:47-51`. Đã sửa ở NOMOCK-03.
 - Huỷ liên kết source không invalidate cache `dh:cmp:` của sản phẩm cũ; sản phẩm cũ còn < 2 nguồn giữ `comparison_snapshots` (có thể `is_best_deal=TRUE`) mãi — `handler.go:913`, `matching/service.go:113,194`, `comparison/repository_pg.go:203-209`.
 - Ghi nhiều bước không có transaction: reset `is_best_deal` + upsert (lỗi reset bị bỏ qua) — `comparison/repository_pg.go:117-138`; `TrackURL` tạo product/source/tracking riêng lẻ → product mồ côi khi 2 user thêm cùng URL — `tracking/service.go:54-89,198-240`; link + `SaveSuggestion` — `matching/service.go:108-126`.
 - Worker không cập nhật `tracked_products.next_fetch_at` trong transaction thành công (spec Phase 1 §14) — `worker.go:189-226`.
@@ -315,14 +345,14 @@ Theo yêu cầu "dữ liệu thật, việc thật". Phần auth (demo login, to
 
 | Bước | Nội dung | Hạng mục |
 |---|---|---|
-| **1** | Bảo mật xác thực [DONE] | SEC-01 → SEC-06, SEC-10, OPS-01, OPS-07, GAP-02a/c |
-| **1.5** | Loại bỏ toàn bộ mock | NOMOCK-01 → NOMOCK-14 (gồm DATA-01/02/03/04/12) |
+| **1** | Bảo mật xác thực [DONE] | SEC-01 → SEC-06, SEC-10, OPS-01, OPS-02, OPS-07, GAP-02a/c |
+| **1.5** | Loại bỏ toàn bộ mock [DONE] | NOMOCK-01 → NOMOCK-18 (gồm DATA-01/02/03/04/12, một phần DATA-11) |
 | **2** | Phân quyền & validate input | SEC-07 → SEC-09, SEC-11, SEC-12 |
 | **3** | Độ tin cậy queue & worker | REL-01 → REL-07, REL-10 |
 | **4** | Notifier & Zalo | REL-08, REL-09, REL-11, REL-12, DATA-13, các lỗi webhook Zalo |
-| **5** | Dữ liệu thật | DATA-01 → DATA-09 |
-| **6** | Matching | DATA-10 → DATA-12, GAP-03a/b |
-| **7** | Production packaging | OPS-02 → OPS-06, OPS-08, OPS-09, chạy `make prod-up` toàn stack |
+| **5** | Dữ liệu thật | DATA-05 → DATA-09 (+ phần retryable của DATA-01, mục còn mở của đợt rà soát lại) |
+| **6** | Matching | DATA-10, phần còn lại DATA-11, GAP-03a/b |
+| **7** | Production packaging | OPS-03 → OPS-06, OPS-08, OPS-09, chạy `make prod-up` toàn stack |
 | **8** | Tối ưu | PERF-01 → PERF-08 |
 | **9** | Tài liệu | DOC-01 → DOC-05 |
 

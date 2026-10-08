@@ -205,7 +205,7 @@ func (w *Worker) processJob(ctx context.Context, msg queue.Message) {
 
 	now := time.Now()
 	source.LastPrice = &snapshot.Price
-	source.LastShippingFee = &snapshot.ShippingFee
+	source.LastShippingFee = snapshot.ShippingFee
 	source.LastEffectivePrice = &snapshot.EffectivePrice
 	source.LastInStock = snapshot.InStock
 	source.LastFetchedAt = &now
@@ -228,7 +228,7 @@ func (w *Worker) processJob(ctx context.Context, msg queue.Message) {
 	metrics.PriceSnapshotsTotal.Inc()
 
 	// Phase 2: Check price change and evaluate alert rules
-	if oldPrice > 0 && oldPrice != snapshot.Price && w.ruleEngine != nil {
+	if shouldEvaluateAlerts(oldPrice, snapshot) && w.ruleEngine != nil {
 		w.evaluateAlerts(ctx, source, oldPrice, snapshot.Price, snapshot.CapturedAt)
 	}
 
@@ -327,4 +327,11 @@ func (w *Worker) evaluateAlerts(ctx context.Context, source *product.ProductSour
 			}
 		}
 	}
+}
+
+// shouldEvaluateAlerts reports whether a new snapshot is a price change worth alerting on. A price shown
+// for an item the page states is out of stock cannot be bought, so it never alerts (unknown stock does).
+func shouldEvaluateAlerts(oldPrice int64, snapshot *pricing.PriceSnapshot) bool {
+	outOfStock := snapshot.InStock != nil && !*snapshot.InStock
+	return oldPrice > 0 && oldPrice != snapshot.Price && !outOfStock
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -16,7 +15,7 @@ type ExtractedProduct struct {
 	Title       string
 	Price       int64
 	ListedPrice int64
-	ShippingFee int64
+	ShippingFee *int64 // nil when the page does not state a shipping fee
 	Currency    string
 	InStock     *bool // nil when the page does not state availability
 	ImageURL    string
@@ -327,70 +326,19 @@ func ParseVNDPrice(priceStr string) (int64, error) {
 	clean = strings.ReplaceAll(clean, "đ", "")
 	clean = strings.ReplaceAll(clean, " ", "")
 
-	// Check if decimal point format e.g. 6290000.00
-	if strings.Contains(clean, ".") && !strings.Contains(clean, ",") {
-		parts := strings.Split(clean, ".")
-		if len(parts) == 2 && len(parts[1]) <= 2 {
-			// standard decimal
-			clean = parts[0]
-		} else {
-			// thousand separators e.g. 6.290.000
-			clean = strings.ReplaceAll(clean, ".", "")
+	// The last ',' or '.' is a decimal separator only when 1-2 digits follow it (6290000.00,
+	// 6.290.000,00, 6,290,000.5); every other separator groups thousands (6.290.000, 6,290,000).
+	if i := strings.LastIndexAny(clean, ".,"); i >= 0 {
+		if frac := len(clean) - i - 1; frac >= 1 && frac <= 2 {
+			clean = clean[:i]
 		}
-	} else {
-		clean = strings.ReplaceAll(clean, ".", "")
-		clean = strings.ReplaceAll(clean, ",", "")
 	}
+	clean = strings.ReplaceAll(clean, ".", "")
+	clean = strings.ReplaceAll(clean, ",", "")
 
 	val, err := strconv.ParseInt(clean, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid price string '%s': %w", priceStr, err)
 	}
 	return val, nil
-}
-
-var urlShopeeSlugPattern = regexp.MustCompile(`^/(.+)-i\.\d+\.\d+`)
-var urlLazadaSlugPattern = regexp.MustCompile(`^/products/(.+)-i\d+`)
-
-func ExtractSlugTitle(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "San pham"
-	}
-
-	path := parsed.Path
-	var slug string
-
-	if matches := urlShopeeSlugPattern.FindStringSubmatch(path); len(matches) == 2 {
-		slug = matches[1]
-	} else if matches := urlLazadaSlugPattern.FindStringSubmatch(path); len(matches) == 2 {
-		slug = matches[1]
-	} else {
-		parts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(parts) > 0 {
-			last := parts[len(parts)-1]
-			last = strings.TrimSuffix(last, ".html")
-			slug = strings.Split(last, "?")[0]
-		}
-	}
-
-	slug = strings.ReplaceAll(slug, "-", " ")
-	slug = strings.ReplaceAll(slug, "_", " ")
-	slug = strings.TrimSpace(slug)
-
-	if slug == "" {
-		return "San pham"
-	}
-
-	// Capitalize words
-	words := strings.Fields(slug)
-	for i, w := range words {
-		if len(w) > 0 {
-			runes := []rune(w)
-			runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
-			words[i] = string(runes)
-		}
-	}
-
-	return strings.Join(words, " ")
 }

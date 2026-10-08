@@ -127,7 +127,7 @@ func TestShopeeAdapter_ItemAPI(t *testing.T) {
 	if apiCalls != 1 {
 		t.Fatalf("expected 1 item API call to the test server, got %d", apiCalls)
 	}
-	if data.RawTitle != "Tai nghe Sony WH-1000XM5" || data.Price.SalePrice != 6290000 || data.Price.ListedPrice != 7990000 || !data.InStock {
+	if data.RawTitle != "Tai nghe Sony WH-1000XM5" || data.Price.SalePrice != 6290000 || data.Price.ListedPrice != 7990000 {
 		t.Errorf("unexpected product data: %+v", data)
 	}
 	if data.ExternalProductID != "shopee-111-222" {

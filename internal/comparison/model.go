@@ -8,16 +8,17 @@ import (
 
 // SourcePrice describes the current price snapshot of a single product source on a marketplace platform.
 type SourcePrice struct {
-	SourceID       uuid.UUID  `json:"source_id"`
-	ProductID      uuid.UUID  `json:"product_id"`
-	Platform       string     `json:"platform"`
-	SellerName     string     `json:"seller_name"`
-	CanonicalURL   string     `json:"canonical_url"`
-	AffiliateURL   string     `json:"affiliate_url,omitempty"`
-	ListedPrice    int64      `json:"listed_price"`
-	ShippingFee    int64      `json:"shipping_fee"`
-	EffectivePrice int64      `json:"effective_price"`
-	InStock        bool       `json:"in_stock"`
+	SourceID     uuid.UUID `json:"source_id"`
+	ProductID    uuid.UUID `json:"product_id"`
+	Platform     string    `json:"platform"`
+	SellerName   string    `json:"seller_name"`
+	CanonicalURL string    `json:"canonical_url"`
+	AffiliateURL string    `json:"affiliate_url,omitempty"`
+	// Unknown values (not fetched yet / not stated by the marketplace) are null, never 0 or false.
+	ListedPrice    *int64     `json:"listed_price"`
+	ShippingFee    *int64     `json:"shipping_fee"`
+	EffectivePrice *int64     `json:"effective_price"`
+	InStock        *bool      `json:"in_stock"`
 	IsBestDeal     bool       `json:"is_best_deal"`
 	CapturedAt     *time.Time `json:"captured_at"`
 }
@@ -50,7 +51,7 @@ type ProductGroupSummary struct {
 }
 
 // IdentifyBestDeal evaluates sources and determines the source with the lowest effective price.
-// Only sources that are InStock and have EffectivePrice > 0 are eligible.
+// Only sources with a known EffectivePrice > 0 that are not known to be out of stock are eligible.
 // It sets IsBestDeal = true on the winning source in-place and returns a BestDealSummary.
 func IdentifyBestDeal(sources []SourcePrice) *BestDealSummary {
 	var (
@@ -60,15 +61,16 @@ func IdentifyBestDeal(sources []SourcePrice) *BestDealSummary {
 	)
 
 	for i, s := range sources {
-		if !s.InStock || s.EffectivePrice <= 0 {
+		if s.EffectivePrice == nil || *s.EffectivePrice <= 0 || (s.InStock != nil && !*s.InStock) {
 			continue
 		}
-		if bestIdx == -1 || s.EffectivePrice < bestPrice {
+		price := *s.EffectivePrice
+		if bestIdx == -1 || price < bestPrice {
 			bestIdx = i
-			bestPrice = s.EffectivePrice
+			bestPrice = price
 		}
-		if s.EffectivePrice > maxPrice {
-			maxPrice = s.EffectivePrice
+		if price > maxPrice {
+			maxPrice = price
 		}
 	}
 

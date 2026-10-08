@@ -115,7 +115,6 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 						ListedPrice: listedPrice,
 						SalePrice:   price,
 					},
-					InStock: apiResp.Data.Stock > 0,
 				}, nil
 			}
 		}
@@ -142,9 +141,7 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 				Price: pricing.Price{
 					ListedPrice: listedPrice,
 					SalePrice:   price,
-					ShippingFee: extracted.ShippingFee,
 				},
-				InStock: extracted.InStock != nil && *extracted.InStock,
 			}, nil
 		}
 	}
@@ -177,16 +174,11 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 				}
 				if price > 0 {
 					inStock := apiResp.Data.Stock > 0
-					// The item API has no shipping fee; reuse the last one actually extracted, else 0
-					shipping := int64(0)
-					if source.LastShippingFee != nil && *source.LastShippingFee >= 0 {
-						shipping = *source.LastShippingFee
-					}
+					// The item API has no shipping fee, so it is recorded as unknown
 					return &pricing.PriceSnapshot{
 						ProductSourceID: source.ID,
 						Price:           price,
-						ShippingFee:     shipping,
-						EffectivePrice:  price + shipping,
+						EffectivePrice:  price,
 						Currency:        "VND",
 						InStock:         &inStock,
 						CapturedAt:      time.Now(),
@@ -201,15 +193,11 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, targetURL)
 		if extractErr == nil && extracted.Price > 0 {
-			shipping := extracted.ShippingFee
-			if shipping <= 0 && source.LastShippingFee != nil {
-				shipping = *source.LastShippingFee
-			}
 			return &pricing.PriceSnapshot{
 				ProductSourceID: source.ID,
 				Price:           extracted.Price,
-				ShippingFee:     shipping,
-				EffectivePrice:  extracted.Price + shipping,
+				ShippingFee:     extracted.ShippingFee,
+				EffectivePrice:  pricing.EffectivePriceOf(extracted.Price, extracted.ShippingFee),
 				Currency:        extracted.Currency,
 				InStock:         extracted.InStock,
 				CapturedAt:      time.Now(),

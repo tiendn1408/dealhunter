@@ -127,15 +127,15 @@ func TestComparisonService_CacheMiss_BuildsAndCaches(t *testing.T) {
 			{
 				SourceID:       uuid.New(),
 				Platform:       "shopee",
-				EffectivePrice: 6290000,
-				InStock:        true,
+				EffectivePrice: i64(6290000),
+				InStock:        boolp(true),
 				CapturedAt:     &now,
 			},
 			{
 				SourceID:       uuid.New(),
 				Platform:       "tiktok",
-				EffectivePrice: 6190000,
-				InStock:        true,
+				EffectivePrice: i64(6190000),
+				InStock:        boolp(true),
 				CapturedAt:     &now,
 			},
 		},
@@ -182,8 +182,8 @@ func TestComparisonService_SingleSource(t *testing.T) {
 			{
 				SourceID:       uuid.New(),
 				Platform:       "shopee",
-				EffectivePrice: 1000000,
-				InStock:        true,
+				EffectivePrice: i64(1000000),
+				InStock:        boolp(true),
 			},
 		},
 	}

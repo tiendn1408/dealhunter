@@ -250,9 +250,10 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":                tracked.ID,
-		"product_source_id": tracked.ProductSourceID,
-		"next_fetch_at":     tracked.NextFetchAt,
+		"id":                       tracked.ID,
+		"product_source_id":        tracked.ProductSourceID,
+		"next_fetch_at":            tracked.NextFetchAt,
+		"polling_interval_seconds": tracked.PollingIntervalSeconds,
 	})
 }
 

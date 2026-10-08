@@ -45,10 +45,11 @@ func (r *PostgresRepository) GetSourcesByProductID(ctx context.Context, productI
 			ps.platform,
 			COALESCE(ps.seller_name, ''),
 			ps.canonical_url,
-			COALESCE(snap.price,           ps.last_price, 0),
-			COALESCE(snap.shipping_fee,    ps.last_shipping_fee, 0),
-			COALESCE(snap.effective_price, ps.last_effective_price, 0),
-			COALESCE(snap.in_stock,        ps.last_in_stock, FALSE),
+			-- Values of the latest snapshot as a whole (a NULL there means "not stated"), else the source's last values
+			CASE WHEN snap.captured_at IS NOT NULL THEN snap.price           ELSE ps.last_price           END,
+			CASE WHEN snap.captured_at IS NOT NULL THEN snap.shipping_fee    ELSE ps.last_shipping_fee    END,
+			CASE WHEN snap.captured_at IS NOT NULL THEN snap.effective_price ELSE ps.last_effective_price END,
+			CASE WHEN snap.captured_at IS NOT NULL THEN snap.in_stock        ELSE ps.last_in_stock        END,
 			COALESCE(snap.captured_at,     ps.last_fetched_at)
 		FROM product_sources ps
 		LEFT JOIN LATERAL (

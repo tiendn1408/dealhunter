@@ -604,15 +604,15 @@ func TestGetProductComparison_Handler(t *testing.T) {
 				SourceID:       uuid.New(),
 				ProductID:      productID,
 				Platform:       "shopee",
-				EffectivePrice: 6290000,
-				InStock:        true,
+				EffectivePrice: i64(6290000),
+				InStock:        boolp(true),
 			},
 			{
 				SourceID:       uuid.New(),
 				ProductID:      productID,
 				Platform:       "tiktok",
-				EffectivePrice: 6190000,
-				InStock:        true,
+				EffectivePrice: i64(6190000),
+				InStock:        boolp(true),
 			},
 		},
 	}
@@ -727,3 +727,6 @@ func TestUnauthenticatedRequestsAreRejected(t *testing.T) {
 		})
 	}
 }
+
+func i64(v int64) *int64 { return &v }
+func boolp(v bool) *bool { return &v }

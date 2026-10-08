@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -77,7 +78,8 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 			Platform:          adapter.Name(),
 			ExternalProductID: &data.ExternalProductID,
 			CanonicalURL:      data.CanonicalURL,
-			SellerName:        &data.SellerName,
+			SellerName:        optionalString(data.SellerName),
+			RawTitle:          &data.RawTitle,
 			Currency:          "VND",
 			Active:            true,
 			CreatedAt:         time.Now(),
@@ -275,7 +277,7 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 			Platform:          adapter.Name(),
 			ExternalProductID: extID,
 			CanonicalURL:      data.CanonicalURL,
-			SellerName:        &data.SellerName,
+			SellerName:        optionalString(data.SellerName),
 			RawTitle:          &data.RawTitle,
 			Currency:          "VND",
 			Active:            true,
@@ -319,4 +321,12 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 	}
 
 	return source, nil
+}
+
+// optionalString maps a value the marketplace did not state ("") to NULL.
+func optionalString(v string) *string {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	return &v
 }

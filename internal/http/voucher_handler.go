@@ -37,8 +37,8 @@ func (h *Handler) GetTrackedProductVouchers(w http.ResponseWriter, r *http.Reque
 	var platform string
 	var canonicalURL string
 	var affiliateURL string
-	var listedPrice int64
-	var shippingFee int64
+	var listedPrice *int64
+	var shippingFee *int64
 
 	// 1. Resolve a tracked_product ID or an accessible product_source ID to the source
 	if h.trackingService != nil {
@@ -51,12 +51,8 @@ func (h *Handler) GetTrackedProductVouchers(w http.ResponseWriter, r *http.Reque
 		productID = source.ProductID
 		platform = source.Platform
 		canonicalURL = source.CanonicalURL
-		if source.LastPrice != nil {
-			listedPrice = *source.LastPrice
-		}
-		if source.LastShippingFee != nil {
-			shippingFee = *source.LastShippingFee
-		}
+		listedPrice = source.LastPrice
+		shippingFee = source.LastShippingFee
 	}
 
 	subID := affiliate.FormatSubID(userID, productID)
@@ -86,18 +82,30 @@ func (h *Handler) GetTrackedProductVouchers(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// 4. Calculate effective price with 2-step combo savings
-	calc := voucher.CalculateEffectivePrice(listedPrice, shippingFee, vouchers)
+	// 4. Calculate effective price with 2-step combo savings. Without a fetched price there is nothing
+	// to calculate (calculation is null); an unknown shipping fee is left out and reported as unknown.
+	var calc *voucher.VoucherCalculation
+	available := vouchers
+	if listedPrice != nil && *listedPrice > 0 {
+		var shipping int64
+		if shippingFee != nil {
+			shipping = *shippingFee
+		}
+		result := voucher.CalculateEffectivePrice(*listedPrice, shipping, vouchers)
+		calc = &result
+		available = result.AvailableVouchers
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"product_source_id": sourceID,
-		"product_id":        productID,
-		"platform":          platform,
-		"canonical_url":     canonicalURL,
-		"affiliate_url":     affiliateURL,
-		"calculation":       calc,
-		"vouchers":          calc.AvailableVouchers,
+		"product_source_id":  sourceID,
+		"product_id":         productID,
+		"platform":           platform,
+		"canonical_url":      canonicalURL,
+		"affiliate_url":      affiliateURL,
+		"calculation":        calc,
+		"shipping_fee_known": shippingFee != nil,
+		"vouchers":           available,
 	})
 }
 

@@ -18,7 +18,6 @@ type ProductData struct {
 	RawTitle          string
 	SellerName        string
 	Price             pricing.Price
-	InStock           bool
 }
 
 type Marketplace interface {

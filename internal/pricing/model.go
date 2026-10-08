@@ -26,10 +26,18 @@ type PriceSnapshot struct {
 	ID              int64
 	ProductSourceID uuid.UUID
 	Price           int64
-	ShippingFee     int64
-	EffectivePrice  int64
+	ShippingFee     *int64 // nil when the marketplace did not state a shipping fee
+	EffectivePrice  int64  // Price plus ShippingFee when known, else Price alone
 	Currency        string
 	InStock         *bool
 	CapturedAt      time.Time
 	CreatedAt       time.Time
+}
+
+// EffectivePriceOf adds the shipping fee to the price when the fee is known.
+func EffectivePriceOf(price int64, shippingFee *int64) int64 {
+	if shippingFee == nil {
+		return price
+	}
+	return price + *shippingFee
 }
