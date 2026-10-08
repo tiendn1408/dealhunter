@@ -12,6 +12,14 @@ import (
 	"github.com/tiendang/deal-hunter/internal/product"
 )
 
+// newTestAdapter sends every request, item API included, to the local test server: unit tests never
+// reach shopee.vn.
+func newTestAdapter(server *httptest.Server) *ShopeeAdapter {
+	a := NewShopeeAdapter()
+	a.apiBase = server.URL
+	return a
+}
+
 func TestShopeeAdapter_Name(t *testing.T) {
 	adapter := NewShopeeAdapter()
 	if adapter.Name() != "shopee" {
@@ -28,7 +36,7 @@ func TestShopeeAdapter_BlockedPageFails(t *testing.T) {
 	}))
 	defer server.Close()
 
-	adapter := NewShopeeAdapter()
+	adapter := newTestAdapter(server)
 	ctx := context.Background()
 	testURL := server.URL + "/product-shopee.vn-i.111.222"
 
@@ -60,7 +68,7 @@ func TestShopeeAdapter_ResolveProduct_LiveMockServer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	adapter := NewShopeeAdapter()
+	adapter := newTestAdapter(server)
 	ctx := context.Background()
 
 	// Append shopee.vn to host so adapter validates platform
@@ -89,8 +97,40 @@ func TestShopeeAdapter_TitleOnlyPageIsNotAProduct(t *testing.T) {
 	}))
 	defer server.Close()
 
-	data, err := NewShopeeAdapter().ResolveProduct(context.Background(), server.URL+"/product-shopee.vn-i.111.222")
+	data, err := newTestAdapter(server).ResolveProduct(context.Background(), server.URL+"/product-shopee.vn-i.111.222")
 	if !errors.Is(err, marketplace.ErrProductUnavailable) {
 		t.Fatalf("expected ErrProductUnavailable, got data=%+v err=%v", data, err)
+	}
+}
+
+// The item API path is parsed offline: prices come in Shopee's x100000 unit.
+func TestShopeeAdapter_ItemAPI(t *testing.T) {
+	apiCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v4/item/get" {
+			http.NotFound(w, r)
+			return
+		}
+		apiCalls++
+		if r.URL.Query().Get("shopid") != "111" || r.URL.Query().Get("itemid") != "222" {
+			t.Errorf("unexpected item API query: %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"error":0,"data":{"name":"Tai nghe Sony WH-1000XM5","price":629000000000,"price_before_discount":799000000000,"stock":3}}`))
+	}))
+	defer server.Close()
+
+	data, err := newTestAdapter(server).ResolveProduct(context.Background(), server.URL+"/product-shopee.vn-i.111.222")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if apiCalls != 1 {
+		t.Fatalf("expected 1 item API call to the test server, got %d", apiCalls)
+	}
+	if data.RawTitle != "Tai nghe Sony WH-1000XM5" || data.Price.SalePrice != 6290000 || data.Price.ListedPrice != 7990000 || !data.InStock {
+		t.Errorf("unexpected product data: %+v", data)
+	}
+	if data.ExternalProductID != "shopee-111-222" {
+		t.Errorf("unexpected external id %q", data.ExternalProductID)
 	}
 }

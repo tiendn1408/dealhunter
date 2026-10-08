@@ -33,15 +33,15 @@
 - [ ] Bước 7 — Production: OPS-03 (bind 127.0.0.1, `/metrics` nội bộ), OPS-04 (TARGETARCH), OPS-05 (mật khẩu Postgres/Redis), OPS-06 (healthcheck), OPS-08/09; chạy `make prod-up` toàn stack.
 - [ ] Bước 8 — PERF-01 → 08. Bước 9 — DOC-01, 02, 04, 05.
 
-**Cần kiểm chứng với hệ thống thật (chưa làm được)**
+**Cần kiểm chứng với hệ thống thật** — hướng dẫn thiết lập: [`real-integration-setup.md`](real-integration-setup.md) (chờ bạn tạo Google Client ID / thông tin Zalo OA)
 - [ ] Đăng nhập Google thật trên trình duyệt: tạo OAuth Client ID (Web), thêm origin `http://localhost:3000`, đặt `GOOGLE_CLIENT_ID` (backend) và `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (web).
 - [ ] Chữ ký webhook Zalo `sha256(appId + body + timestamp + OASecretKey)` với một callback thật.
 
 **Ghi chú môi trường / nợ kỹ thuật nhỏ phát hiện trong ngày**
 - DB local đã sạch dữ liệu giả sau migration `000010` (không còn sản phẩm nào) — cần sản phẩm thật sau khi có tầng scraper A.
 - Cổng 3000 trên máy đang bị một container Docker khác chiếm; khi chạy thử web local dùng `npx next dev -p 3100` và đặt `CORS_ALLOWED_ORIGINS=http://localhost:3100` cho API.
-- `internal/notification/zalo/token_manager_test.go` gọi `FlushDB` trên Redis test (cổng 6380, dùng chung với dev) — nên đổi sang DB/namespace riêng.
-- `internal/marketplace/shopee/adapter_test.go` vẫn gọi API Shopee thật (URL `i.111.222`) — nên chặn mạng trong unit test.
+- [x] `internal/notification/zalo/token_manager_test.go` không còn `FlushDB`; chỉ xoá key của chính nó (2026-10-08).
+- [x] `internal/marketplace/shopee/adapter_test.go` không còn gọi Shopee thật (item API trỏ vào server test); test adapter/crawler/matching đạt trong sandbox chặn mạng (2026-10-08).
 - Script E2E trình duyệt (Chrome headless + puppeteer-core) đã lưu tại `dealhunter-web/e2e/` (`session.mjs`, `member.mjs`, `nomock.mjs`, hướng dẫn trong `README.md`) — chạy lại sau mỗi bước.
 
 ---

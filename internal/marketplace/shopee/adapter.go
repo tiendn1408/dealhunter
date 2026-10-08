@@ -34,15 +34,19 @@ type shopeeApiResponse struct {
 
 // ShopeeAdapter handles real product ingestion and price scraping for Shopee Vietnam.
 type ShopeeAdapter struct {
-	client *crawler.Client
+	client  *crawler.Client
+	apiBase string // item API origin; tests point it at a local server so they never reach shopee.vn
 }
+
+const defaultShopeeAPIBase = "https://shopee.vn"
 
 func NewShopeeAdapter() *ShopeeAdapter {
 	c, _ := crawler.NewClient(crawler.ClientOptions{
 		Timeout: 10 * time.Second,
 	})
 	return &ShopeeAdapter{
-		client: c,
+		client:  c,
+		apiBase: defaultShopeeAPIBase,
 	}
 }
 
@@ -85,7 +89,7 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 
 	// 1. Try Direct Shopee API
 	if shopID != "" && itemID != "" {
-		apiURL := fmt.Sprintf("https://shopee.vn/api/v4/item/get?itemid=%s&shopid=%s", itemID, shopID)
+		apiURL := fmt.Sprintf("%s/api/v4/item/get?itemid=%s&shopid=%s", a.apiBase, itemID, shopID)
 		resp, err := a.client.Fetch(ctx, apiURL, map[string]string{
 			"Referer": rawURL,
 		})
@@ -160,7 +164,7 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 	if len(matches) == 3 {
 		shopID := matches[1]
 		itemID := matches[2]
-		apiURL := fmt.Sprintf("https://shopee.vn/api/v4/item/get?itemid=%s&shopid=%s", itemID, shopID)
+		apiURL := fmt.Sprintf("%s/api/v4/item/get?itemid=%s&shopid=%s", a.apiBase, itemID, shopID)
 		resp, err := a.client.Fetch(ctx, apiURL, map[string]string{
 			"Referer": targetURL,
 		})

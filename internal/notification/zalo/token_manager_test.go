@@ -12,11 +12,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// getTestRedis returns Redis DB 15 of the local test instance (shared with dev on port 6380).
+// Only the token manager's own keys are cleared, before and after each test; the database is never flushed.
 func getTestRedis(t *testing.T) *redis.Client {
 	redisAddr := "localhost:6380"
 	rdb := redis.NewClient(&redis.Options{
 		Addr: redisAddr,
-		DB:   15, // Isolated test DB
+		DB:   15,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -24,7 +26,9 @@ func getTestRedis(t *testing.T) *redis.Client {
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		t.Skipf("Skipping test: Redis not reachable at %s: %v", redisAddr, err)
 	}
-	_ = rdb.FlushDB(ctx).Err()
+	clear := func() { _ = rdb.Del(context.Background(), KeyZaloAccessToken, KeyZaloRefreshToken).Err() }
+	clear()
+	t.Cleanup(clear)
 	return rdb
 }
 

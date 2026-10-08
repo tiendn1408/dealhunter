@@ -59,15 +59,20 @@ func (h *Handler) HandleZaloWebhook(w http.ResponseWriter, r *http.Request) {
 
 	var envelope struct {
 		Timestamp json.RawMessage `json:"timestamp"`
+		EventName string          `json:"event_name"`
 	}
 	if err := json.Unmarshal(bodyBytes, &envelope); err != nil {
+		h.log().Warn("zalo webhook rejected", "reason", "invalid json", "body_bytes", len(bodyBytes))
 		http.Error(w, "invalid json payload", http.StatusBadRequest)
 		return
 	}
 	timestamp := strings.Trim(string(envelope.Timestamp), `"`)
 
+	// Rejections are logged with the reason (never the secret or the body) so a real callback can be diagnosed.
 	sigHeader := r.Header.Get("X-ZEvent-Signature")
 	if sigHeader == "" || !verifyZaloSignature(sigHeader, h.zaloAppID, bodyBytes, timestamp, h.zaloWebhookSecret) {
+		h.log().Warn("zalo webhook rejected", "reason", "invalid signature",
+			"event_name", envelope.EventName, "has_signature", sigHeader != "", "timestamp", timestamp)
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
@@ -75,9 +80,11 @@ func (h *Handler) HandleZaloWebhook(w http.ResponseWriter, r *http.Request) {
 	// Reject stale or replayed callbacks
 	eventAt := parseEpoch(timestamp)
 	if eventAt == nil || absDuration(time.Since(*eventAt)) > zaloWebhookMaxSkew {
+		h.log().Warn("zalo webhook rejected", "reason", "stale timestamp", "event_name", envelope.EventName, "timestamp", timestamp)
 		http.Error(w, "stale webhook timestamp", http.StatusUnauthorized)
 		return
 	}
+	h.log().Info("zalo webhook accepted", "event_name", envelope.EventName)
 
 	var payload ZaloWebhookPayload
 	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
