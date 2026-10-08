@@ -15,11 +15,11 @@
 
 ## Việc Cần Làm Tiếp (bàn giao 2026-10-08)
 
-**Trạng thái**: Bước 1 + 1.5 + 2 **hoàn tất** sau đợt rà soát lại 2026-10-08 (mục "Rà soát lại Bước 1 + 1.5" và "Rà soát lại Bước 2"); các sửa của Bước 2 **chưa commit**.
+**Trạng thái**: Bước 1 + 1.5 + 2 **hoàn tất** sau 2 đợt rà soát độc lập ngày 2026-10-08 (mục "Rà soát lại …" và "Rà soát lần 3"). Phần lớn đã commit (`088e155`, `e08cf30` và các commit sau); các sửa cuối của đợt rà soát lần 3 có thể còn chưa commit — kiểm tra `git status`.
 
 **Việc đầu tiên khi làm tiếp**
-1. Commit các sửa của Bước 2 (backend + web).
-2. Chạy migration mới (`make migrate-up`: `000014`, `000015`), rồi sang Bước 3 (queue/worker).
+1. Chạy migration mới (`make migrate-up`: tới `000017`).
+2. Sang Bước 3 (queue/worker).
 3. Kiểm chứng (E2E trình duyệt, Google/Zalo thật) làm sau khi hoàn thành toàn bộ kế hoạch này.
 
 **Bước 2 — Phân quyền & validate input** [DONE] 2026-10-08
@@ -124,9 +124,9 @@
 - Quyết định thiết kế (giữ nguyên): refresh token xoay vòng nghiêm ngặt, không có thời gian ân hạn — nếu response của `/auth/refresh` bị mất trên mạng và trình duyệt gửi lại cùng cookie, mọi phiên bị thu hồi (người dùng đăng nhập lại). Thêm ân hạn sẽ làm yếu khả năng phát hiện token bị đánh cắp.
 
 **Rà soát lại Bước 2 (2026-10-08)** — các khẳng định ở "Kết quả Bước 2" đúng với code, không còn IDOR theo ID (alert/notification/tracking đều lọc theo user). Đã sửa các lỗ hổng phát hiện thêm:
-- [x] **Nhóm so sánh dùng chung** (SEC-07): track cùng URL công khai ⇒ dùng chung source ⇒ "theo dõi" nhóm của người khác, trước đây ghi được nguồn (kể cả sản phẩm giả rẻ) vào nhóm so sánh của họ. **Quyết định**: chỉ người theo dõi duy nhất mới thay đổi nhóm bằng tay (`link-source`, accept, dismiss ⇒ `409` + thông báo nếu nhóm có người khác theo dõi); auto-match của hệ thống (có giá thật, điểm ≥ 0.85) vẫn tự ghép vào nhóm dùng chung. Không bao giờ lấy nguồn ra khỏi nhóm có người khác theo dõi.
+- [x] **Nhóm so sánh dùng chung** (SEC-07): track cùng URL công khai ⇒ dùng chung source ⇒ "theo dõi" nhóm của người khác, trước đây ghi được nguồn (kể cả sản phẩm giả rẻ) vào nhóm so sánh của họ. **Quyết định**: chỉ người theo dõi duy nhất mới thay đổi nhóm bằng tay (`link-source`, accept, dismiss ⇒ `409` + thông báo nếu nhóm có người khác theo dõi); auto-match do người dùng bấm chỉ tạo gợi ý trên nhóm dùng chung (sửa ở "Rà soát lần 3"). Không bao giờ lấy nguồn ra khỏi nhóm có người khác theo dõi.
 - [x] **TOCTOU link-source**: kiểm tra và thay đổi chạy trong một transaction giữ `FOR UPDATE` trên cả hai nhóm (thứ tự cố định); tracking mới khoá nhóm `FOR SHARE` qua trigger (migration `000015`) ⇒ không chen được vào giữa. `AssignProductSource` chỉ chuyển nếu nguồn còn ở nhóm đã kiểm tra.
-- [x] **Liên kết Zalo xác minh chủ số bằng OTP qua ZNS** (**quyết định**): `POST /users/me/zalo/otp` gửi mã 6 số (hết hạn 5 phút, chỉ lưu hash, dùng 1 lần, sai 5 lần ⇒ huỷ mã, gửi lại sau 60s, tối đa 5 mã/giờ/thành viên và /số); `POST /users/me/zalo` nhận `{phone, code}`. Không còn nhận `zalo_id` từ người dùng; người chứng minh sở hữu số tiếp quản số đó (không còn `409` để dò số). Migration `000014` xoá mọi liên kết Zalo cũ chưa xác minh. Cần mẫu ZNS OTP (`ZALO_OTP_TEMPLATE_ID`, biến `otp`); chưa cấu hình ⇒ `503`.
+- [x] **Liên kết Zalo xác minh chủ số bằng OTP qua ZNS** (**quyết định**): `POST /users/me/zalo/otp` gửi mã 6 số (hết hạn 5 phút, chỉ lưu hash, dùng 1 lần, sai 5 lần ⇒ huỷ mã, gửi lại sau 60s; quota xem "Rà soát lần 3"); `POST /users/me/zalo` nhận `{phone, code}`. Không còn nhận `zalo_id` từ người dùng; người chứng minh sở hữu số tiếp quản số đó (không còn `409` để dò số). Migration `000014` xoá mọi liên kết Zalo cũ chưa xác minh. Cần mẫu ZNS OTP (`ZALO_OTP_TEMPLATE_ID`, biến `otp`); chưa cấu hình ⇒ `503`.
 - [x] **Chuẩn hoá số điện thoại** (`pkg/phone`): chỉ số di động VN, một dạng duy nhất `84xxxxxxxxx` (ZNS cần dạng này); Zalo client nhận diện số theo chuẩn này (trước: `+84…` bị gửi như Zalo ID).
 - [x] **Rate limit endpoint gọi ra sàn**: `POST /tracked-products`, `link-source`, `auto-match` (2 route), accept ⇒ 30 lần / 10 phút / người dùng, `429` + `Retry-After`. Rate limiter chuyển sang **cửa sổ trượt** (Lua trên Redis, trước: cửa sổ cố định cho qua ~2× ở ranh giới), trả đúng thời gian chờ.
 - [x] **Auth middleware** (DoD Nhóm 1): mọi route ngoài danh sách công khai đi qua `requireAccessToken` ở router trước handler; test duyệt toàn bộ route (`chi.Walk`) ⇒ route mới tự được kiểm tra.
@@ -134,6 +134,23 @@
 - [x] **SEC-11**: body khai báo > 64KB ⇒ `413` trước handler (mọi `/api/v1`, kể cả webhook); body không khai báo độ dài vẫn bị cắt ở 64KB.
 - [x] **Test tái hiện còn thiếu**: SEC-07 nhóm dùng chung (link/accept/dismiss ⇒ 409, gợi ý giữ pending, auto-link hệ thống vẫn chạy), SEC-09 (`ADMIN_EMAILS` rỗng, thành viên không có trong danh sách, guest; bảng validate voucher gồm title > 200, code > 64 ký tự), SEC-11 (413 API + webhook, body chunked), SEC-12 (body 500 chung chung, chi tiết chỉ ở log), OTP (mã chưa gửi, gửi lại quá sớm, dùng lại mã, đoán mã 5 lần, số giữ nguyên khi chiếm thất bại), rate limit (cửa sổ trượt, 429 + Retry-After).
 - [ ] Còn lại: `middleware.RealIP` tin `X-Forwarded-For` ⇒ OPS-03 (Bước 7). `/prices` không giới hạn khoảng thời gian ⇒ PERF-02 (Bước 8). OTP thật cần mẫu ZNS được Zalo duyệt (kiểm chứng sau).
+
+**Rà soát lần 3 (2026-10-08)** — 3 agent rà độc lập Bước 1 + 1.5 + 2 trên code đã commit; các lỗi đã sửa:
+- [x] **OTP đoán quá 5 lần khi gửi đồng thời** (tái hiện: 353/400 lần đoán được so sánh): kiểm tra + đếm + so sánh + xoá là một script Lua; lần đoán sau khi mã bị huỷ không tạo lại key. Lưu mã và TTL trong một transaction. Quota (cooldown, theo thành viên, theo thành viên+số, theo số) kiểm tra rồi mới trừ trong một script; ZNS gửi lỗi ⇒ hoàn quota. Theo số: 3 mã/giờ cho mỗi (thành viên, số), 10 mã/giờ cho mỗi số ⇒ một tài khoản không đốt hết quota của chủ số. Liên kết cùng số đồng thời được khoá theo số (không còn 500). Test đồng thời: 200 lần đoán song song ⇒ đúng 1 "quá số lần", mã thật bị từ chối; 20 yêu cầu song song ⇒ 1 mã.
+- [x] **Auto-match do người dùng bấm tự ghép vào nhóm dùng chung** (kẻ xấu đưa listing giả "Official" vào so sánh của người khác): nay chỉ tự ghép khi không ai khác theo dõi nhóm (kiểm tra lại dưới khoá); nhóm dùng chung chỉ nhận gợi ý. Tự ghép nhóm dùng chung dành cho matching của hệ thống (Bước 6).
+- [x] **Deadlock refresh guest ↔ di trú guest** (tái hiện `40P01`): khoá phiên theo user (advisory) — rotation/logout lấy dạng shared trước mọi khoá dòng, di trú và "thu hồi mọi phiên khi token bị dùng lại" lấy dạng exclusive ⇒ không deadlock, và thu hồi thấy cả token vừa xoay vòng ở họ khác. Test 20 vòng song song; bỏ khoá ⇒ fail 3/3.
+- [x] **Trigger 000015 khoá nhầm nhóm cũ**: `000016` khoá dòng nguồn trước (chờ lần chuyển nhóm đang chạy, đọc nhóm hiện tại) rồi mới khoá nhóm; `WithGroupLock` dùng `FOR NO KEY UPDATE`. Test bằng transaction thủ công (bản `FOR SHARE OF ps, p` dạng JOIN vẫn sai — EvalPlanQual không tìm lại nhóm mới).
+- [x] CORS gửi `Access-Control-Expose-Headers: Retry-After` (web khác origin đọc được thời gian chờ).
+- [x] Crawler: lỗi chờ rate limiter và lỗi đọc body là lỗi tạm thời (trước bị đánh `dead`).
+- [x] SEC-12 còn sót: lỗi DB khi kiểm tra guest ⇒ 500 (không phải 401); auto-match lỗi comparison ⇒ 500; tạo voucher / gắn nguồn không nuốt lỗi; tìm kiếm Shopee bị chặn ⇒ auto-match `502` thay vì "không tìm thấy".
+- [x] Lỗi sau khi đã xoay vòng token (kể cả lúc ký JWT) vẫn gửi cookie mới (`RotatedError`).
+- [x] Best deal không trộn giá có ship với giá chưa rõ ship: có nguồn chưa rõ ship ⇒ mọi nguồn so trên giá hàng, `shipping_included: false`. Voucher: phí ship chưa rõ ⇒ không có `best_freeship_voucher`.
+- [x] Migration `000017` dọn dữ liệu bịa còn sót trên DB chưa reset: người bán = tên sàn (`og:site_name`) ⇒ NULL; mọi phí ship đã lưu ⇒ NULL (chưa có đường nào đo được phí ship), giá hiệu dụng = giá hàng.
+- [x] Nhỏ: `ParseVNDPrice("6290000.000")`; guard DB test chặn `?dbname=`; comparison lưu người bán rỗng là NULL.
+- [x] Web: đăng nhập sau khi phiên đầu thất bại vẫn cập nhật UI; thành viên hết phiên mà tạo guest lỗi vẫn hiện banner; khoá localStorage chỉ gia hạn/nhả khi còn là chủ; đăng xuất/đổi tài khoản lan sang tab khác (BroadcastChannel, fallback storage event); OTP bị huỷ (429) ⇒ quay về bước xin mã mới; thống kê "90 ngày" tính đúng 90 ngày, bộ lọc 7/30 ngày không còn hiện toàn bộ lịch sử, đạt mục tiêu ⇒ 100%; bỏ hiển thị `zalo_id`.
+- [x] Extension: URL API/web production do web gửi sang (kiểm tra host: localhost hoặc dealhunter.vn), mặc định localhost cho dev; "rẻ hơn X%" tính so với giá Shopee đang xem.
+- [x] Tài liệu API: payload thật của comparison, gợi ý ghép, voucher.
+- Ghi chú: phí ship hiện **luôn** NULL (chưa có đường nào đọc được phí ship); tin Zalo và web cùng tính giá chưa gồm ship nên khớp nhau. Logout không cần "storm" refresh: tab nhận broadcast chỉ refresh một lần dưới khoá.
 
 **Chỉ dùng dữ liệu thật (2026-10-08)** — dự án đang phát triển, toàn bộ dữ liệu local là dữ liệu test/mock:
 - [x] **Nguyên nhân dữ liệu mock quay lại**: integration test ghi thẳng vào DB dev (`DATABASE_URL`, mặc định `dealdb`) và Redis DB 0 — sau migration `000010` DB dev vẫn có 645 user test (`*@dealhunter.vn`) và 132 sản phẩm, phần lớn `mock.dealhunter.vn`. Nay test dùng `TEST_DATABASE_URL` / `TEST_REDIS_URL` (mặc định `dealdb_test`, Redis DB 15) và **từ chối chạy** nếu tên DB không kết thúc bằng `_test` hoặc Redis là DB 0. `make test-integration` tự tạo + migrate `dealdb_test`.

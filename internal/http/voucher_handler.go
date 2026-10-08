@@ -94,6 +94,10 @@ func (h *Handler) GetTrackedProductVouchers(w http.ResponseWriter, r *http.Reque
 			shipping = *shippingFee
 		}
 		result := voucher.CalculateEffectivePrice(*listedPrice, shipping, vouchers)
+		if shippingFee == nil {
+			// Nothing is known to be saved on an unknown shipping fee; freeship vouchers stay in the list
+			result.BestFreeshipVoucher = nil
+		}
 		calc = &result
 		available = result.AvailableVouchers
 	}

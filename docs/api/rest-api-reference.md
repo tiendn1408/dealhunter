@@ -126,7 +126,7 @@ He thong **khong** co `demo-login` hay token gia lap (`mock-google-*`); Google l
 ### 3.5. Lien Ket Zalo (Xac Minh So Dien Thoai Bang OTP)
 Chi thanh vien (`403` voi guest). So dien thoai duoc chuan hoa ve dang `84xxxxxxxxx` (nhan `0912345678`, `84912345678`, `+84 912-345-678`); chi nhan so di dong Viet Nam.
 - **Gui ma**: `POST /api/v1/users/me/zalo/otp` — body `{"phone": "0912345678"}` ⇒ `202 {"phone":"84912345678","expires_in":300,"resend_after":60}`.
-  Ma 6 so gui qua ZNS (mau `ZALO_OTP_TEMPLATE_ID`, bien `otp`), het han 5 phut, chi luu hash. Gui lai sau 60 giay; toi da 5 ma / gio / thanh vien va 5 ma / gio / so dien thoai ⇒ `429` + `Retry-After`. `400` so khong hop le; `503` chua cau hinh Zalo OA / mau OTP; `502` Zalo gui that bai.
+  Ma 6 so gui qua ZNS (mau `ZALO_OTP_TEMPLATE_ID`, bien `otp`), het han 5 phut, chi luu hash. Gui lai sau 60 giay; toi da 5 ma / gio / thanh vien, 3 ma / gio / (thanh vien, so) va 10 ma / gio / so ⇒ `429` + `Retry-After` (moi kiem tra la mot script Redis nguyen tu; gui ZNS loi thi hoan lai quota). `400` so khong hop le; `503` chua cau hinh Zalo OA / mau OTP; `502` Zalo gui that bai.
   Khong tra `409` khi so da lien ket voi tai khoan khac (khong lo so nao da co tai khoan).
 - **Xac minh & lien ket**: `POST /api/v1/users/me/zalo` (alias `POST /user/zalo/connect`) — body `{"phone": "...", "code": "123456"}` ⇒ `200 {"status":"connected","phone":"84912345678"}`.
   `400` ma sai / het han (ma chi dung mot lan); sai 5 lan ⇒ ma bi huy, `429`, phai xin ma moi. Nguoi chung minh so huu so se tiep quan so do neu no dang gan voi tai khoan khac. Khong con nhan `zalo_id` tu nguoi dung.
@@ -236,37 +236,40 @@ Chi thanh vien (`403` voi guest). So dien thoai duoc chuan hoa ve dang `84xxxxxx
 ### 6.1. Lay Bang So Sanh Gia & Best Deal
 - **Endpoint**: `GET /api/v1/tracked-products/{id}/comparison`
 - **Endpoint**: `GET /api/v1/products/{product_id}/comparison`
-- **Response `200 OK`**:
+- **Response `200 OK`** (gia tri khong ro la `null`, khong bao gio `0`/`false`):
   ```json
   {
     "product_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+    "product_title": "Tai nghe Sony WH-1000XM5",
+    "comparison_available": true,
     "best_deal": {
-      "product_source_id": "f5e4d3c2-b1a0-49e8-8d7c-6b5a4f3e2d1c",
       "platform": "tiktok",
       "effective_price": 94000,
-      "savings_amount": 26000,
-      "savings_percent": 21.6
+      "saving_vs_most_expensive": 26000,
+      "saving_percent": 21.6,
+      "shipping_included": false
     },
     "sources": [
       {
-        "id": "f5e4d3c2-b1a0-49e8-8d7c-6b5a4f3e2d1c",
+        "source_id": "f5e4d3c2-b1a0-49e8-8d7c-6b5a4f3e2d1c",
+        "product_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
         "platform": "tiktok",
-        "listed_price": 99000,
+        "seller_name": "",
+        "canonical_url": "https://shop.tiktok.com/view/product/1729482910294819284",
+        "affiliate_url": "https://...",
+        "listed_price": 94000,
+        "shipping_fee": null,
         "effective_price": 94000,
-        "affiliate_url": "https://shop.tiktok.com/view/product/1729482910294819284",
-        "is_best_deal": true
-      },
-      {
-        "id": "d1e2f3a4-b5c6-7a8b-9c0d-1e2f3a4b5c6d",
-        "platform": "shopee",
-        "listed_price": 120000,
-        "effective_price": 120000,
-        "affiliate_url": "https://s.shopee.vn/universal-link?...",
-        "is_best_deal": false
+        "in_stock": null,
+        "is_best_deal": true,
+        "captured_at": "2026-10-08T09:00:00Z"
       }
-    ]
+    ],
+    "computed_at": "2026-10-08T09:00:05Z"
   }
   ```
+- `listed_price` la gia ban ghi nhan o lan do gan nhat (chua gom phi ship). `shipping_fee: null` = san khong neu phi ship; khi do `effective_price` = gia hang.
+- `best_deal`: chi xet nguon co gia > 0 va khong bi bao ro la het hang (`in_stock: null` van duoc xet). Neu co nguon chua ro phi ship, moi nguon duoc so tren **gia hang** (`shipping_included: false`); `saving_*` tinh so voi nguon dat nhat. `null` khi khong co nguon nao du dieu kien.
 
 ### 6.2. Thu Cong Lien Ket Nguon San Moi Vao Nhom San Pham
 - **Endpoint**: `POST /api/v1/products/{product_id}/link-source`
@@ -277,7 +280,7 @@ Chi thanh vien (`403` voi guest). So dien thoai duoc chuan hoa ve dang `84xxxxxx
   }
   ```
 - **Response**: `201 Created`.
-- **`409 Conflict`**: nguon da nam trong nhom; nguon thuoc nhom khac co nguoi khac theo doi; hoac **nhom dich co nguoi khac cung theo doi** — nhom dung chung chi duoc he thong tu ghep (auto-match), nguoi dung khong thay doi thu cong (SEC-07). Kiem tra va thay doi chay trong mot transaction khoa ca hai nhom.
+- **`409 Conflict`**: nguon da nam trong nhom; nguon thuoc nhom khac co nguoi khac theo doi; hoac **nhom dich co nguoi khac cung theo doi** — nhom dung chung khong duoc thay doi thu cong; auto-match do nguoi dung bam chi tao goi y (SEC-07). Kiem tra va thay doi chay trong mot transaction khoa ca hai nhom.
 - `429` khi vuot gioi han tan suat.
 
 ### 6.3. Danh Sach Nhom San Pham Da San
@@ -294,23 +297,32 @@ Chi thanh vien (`403` voi guest). So dien thoai duoc chuan hoa ve dang `84xxxxxx
 - **Endpoint**: `POST /api/v1/tracked-products/{id}/auto-match`
 - **Response `200 OK`**: Kich hoat job tim kiem ung vien da san ngam.
 - **`409 Conflict`**: San pham chua co gia (chua fetch duoc lan nao); auto-match chi chay khi da co gia that (DATA-11). Ung vien khong co gia chi duoc goi y, khong tu lien ket.
+- Auto-match do nguoi dung kich hoat chi **tu lien ket** khi nhom khong co nguoi khac theo doi; voi nhom dung chung, ung vien diem cao chi thanh **goi y** (tu ghep nhom dung chung danh cho matching cua he thong, Buoc 6).
+- **`502`**: khong tim kiem duoc tren san (bi chan / gioi han) va khong co ung vien nao — khong tra ve "khong tim thay" gia.
 
 ### 7.2. Lay Danh Sach Goi Y So Khop (Suggestions)
 - **Endpoint**: `GET /api/v1/products/{product_id}/match-suggestions`
 - **Endpoint**: `GET /api/v1/tracked-products/{id}/match-suggestions`
 - **Response `200 OK`**:
   ```json
-  [
-    {
-      "id": "sug-uuid-1",
-      "platform": "lazada",
-      "title": "Tai nghe Sony WH-1000XM5 Flagship Store",
-      "price": 5490000,
-      "confidence_score": 0.88,
-      "canonical_url": "https://lazada.vn/products/...",
-      "status": "pending"
-    }
-  ]
+  {
+    "product_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+    "suggestions": [
+      {
+        "id": "7c1e...",
+        "product_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+        "candidate_platform": "lazada",
+        "candidate_url": "https://www.lazada.vn/products/...",
+        "candidate_title": "Tai nghe Sony WH-1000XM5 Flagship Store",
+        "candidate_seller": "",
+        "candidate_price": 5490000,
+        "match_score": 0.81,
+        "status": "pending",
+        "created_at": "2026-10-08T09:00:00Z",
+        "updated_at": "2026-10-08T09:00:00Z"
+      }
+    ]
+  }
   ```
 
 ### 7.3. Chap Nhan Hoac Bo Qua Goi Y So Khop
@@ -326,22 +338,29 @@ Chi thanh vien (`403` voi guest). So dien thoai duoc chuan hoa ve dang `84xxxxxx
 
 ### 8.1. Lay Danh Sach Voucher Kha Dung Cho San Pham
 - **Endpoint**: `GET /api/v1/tracked-products/{id}/vouchers`
-- **Response `200 OK`**:
+- **Response `200 OK`** (chi voucher that, con han; danh sach rong la cau tra loi hop le):
   ```json
-  [
-    {
-      "id": "voucher-uuid-1",
-      "voucher_type": "shop_voucher",
-      "voucher_code": "SONY10OFF",
-      "title": "Giam 10% toi da 300k don tu 3tr",
-      "discount_amount": 300000,
-      "discount_percent": 10,
-      "min_order_value": 3000000,
-      "collect_url": "https://s.shopee.vn/universal-link?...",
-      "expires_at": "2026-10-31T23:59:59Z"
-    }
-  ]
+  {
+    "product_source_id": "f5e4d3c2-b1a0-49e8-8d7c-6b5a4f3e2d1c",
+    "product_id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+    "platform": "shopee",
+    "canonical_url": "https://shopee.vn/product/1/2",
+    "affiliate_url": "https://shopee.vn/product/1/2",
+    "shipping_fee_known": false,
+    "calculation": {
+      "listed_price": 3290000,
+      "shop_discount": 300000,
+      "platform_coupon": 0,
+      "shipping_fee": 0,
+      "effective_price": 2990000,
+      "total_savings": 300000,
+      "best_shop_voucher": { "id": "...", "voucher_type": "shop_voucher", "title": "Giam 10% toi da 300k", "discount_amount": 300000, "discount_percent": 10, "min_order_value": 3000000, "expires_at": "2026-10-31T23:59:59Z" },
+      "available_vouchers": [ ]
+    },
+    "vouchers": [ ]
+  }
   ```
+- `calculation` la `null` khi san pham chua co gia. `shipping_fee_known: false` ⇒ phi ship chua ro, khong tinh vao gia (`calculation.shipping_fee` la 0 theo quy uoc, khong phai phi ship that) va khong co `best_freeship_voucher`.
 
 ### 8.2. Them Voucher Moi
 - **Endpoint**: `POST /api/v1/tracked-products/{id}/vouchers`

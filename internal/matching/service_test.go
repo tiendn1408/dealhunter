@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/internal/comparison"
+	"github.com/tiendang/deal-hunter/internal/tracking"
 )
 
 type mockMatchingRepo struct {
