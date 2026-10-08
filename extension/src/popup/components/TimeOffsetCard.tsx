@@ -39,14 +39,14 @@ export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({ lang = "en" }) =
       : t.syncedMinAgo(ageMin);
 
   return (
-    <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+    <section className="rounded-2xl bg-white/[0.03] p-3.5 ring-1 ring-white/10">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20">
             <Clock className="h-3.5 w-3.5" />
           </div>
           <div className="leading-tight">
-            <h2 className="text-[13px] font-semibold text-slate-900">{t.clockSyncTitle}</h2>
+            <h2 className="text-[13px] font-semibold text-slate-100">{t.clockSyncTitle}</h2>
             <p className="text-[10px] text-slate-400">{syncAgeText}</p>
           </div>
         </div>
@@ -54,7 +54,7 @@ export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({ lang = "en" }) =
           type="button"
           onClick={handleRefresh}
           disabled={loading}
-          className="flex items-center gap-1 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+          className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-slate-200 ring-1 ring-white/15 transition hover:bg-white/15 disabled:opacity-60"
         >
           <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
           {loading ? t.syncing : t.resync}
@@ -62,21 +62,21 @@ export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({ lang = "en" }) =
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
+        <div className="rounded-xl bg-black/40 px-3 py-2 ring-1 ring-white/5">
           <span className="block text-[10px] font-medium text-slate-400">{t.offsetVsShopee}</span>
           {synced ? (
-            <span className="font-mono text-sm font-bold tabular-nums text-slate-900">
+            <span className="font-mono text-sm font-bold tabular-nums text-emerald-400">
               {offset >= 0 ? "+" : ""}
               {offset} ms
               <span className="ml-1 text-[10px] font-semibold text-slate-400">±{calibration!.errorMs}</span>
             </span>
           ) : (
-            <span className="text-[12px] font-semibold text-rose-600">{t.notSynced}</span>
+            <span className="text-[12px] font-semibold text-rose-400">{t.notSynced}</span>
           )}
         </div>
-        <div className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-100">
+        <div className="rounded-xl bg-black/40 px-3 py-2 ring-1 ring-white/5">
           <span className="block text-[10px] font-medium text-slate-400">{t.roundTrip}</span>
-          <span className="font-mono text-sm font-bold tabular-nums text-slate-900">
+          <span className="font-mono text-sm font-bold tabular-nums text-slate-200">
             {calibration ? `${calibration.rttMs} ms` : "—"}
           </span>
         </div>

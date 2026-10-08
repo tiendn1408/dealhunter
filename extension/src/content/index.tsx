@@ -15,7 +15,7 @@ console.log("[DealHunter Assistant] Content script injected on", window.location
 timeSyncClient.init();
 
 // 2. Inject Floating HUD on voucher/campaign/cart pages
-function injectFloatingHUD() {
+function injectFloatingHUD(force = false) {
   const isVoucherPage =
     window.location.href.includes("/m/ma-giam-gia") ||
     window.location.href.includes("/m/10-10") ||
@@ -23,7 +23,7 @@ function injectFloatingHUD() {
     window.location.href.includes("/m/") ||
     window.location.href.includes("/cart");
 
-  if (!isVoucherPage) return;
+  if (!force && !isVoucherPage) return;
   if (document.getElementById("dealhunter-hud-root")) return;
 
   const container = document.createElement("div");
@@ -69,8 +69,14 @@ function shopeeBlockReason(): string | null {
   return null;
 }
 
-// 4. Handle Full-Auto Hunt message from background service worker
+// 4. Handle messages from background or popup
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.action === MESSAGE_ACTIONS.ACTIVATE_HUD) {
+    injectFloatingHUD(true);
+    sendResponse({ success: true });
+    return false;
+  }
+
   if (message.action !== MESSAGE_ACTIONS.TRIGGER_FULL_AUTO) return false;
 
   const task: ScheduledTask = message.task;

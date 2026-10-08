@@ -14,6 +14,21 @@ export const I18N = {
     signInSuffix: "to view price tracking directly on Shopee.",
     footerSafety: "Runs in your browser with your own Shopee account.",
 
+    // Tabs & Navigation
+    tabLiveSniper: "Live Sniper",
+    tabSchedule: "Schedule",
+    tabTasks: (count: number) => `My Hunts (${count})`,
+
+    // Live Sniper Tab
+    liveSniperBadge: "REAL-TIME READY",
+    startOnActiveTab: "START SNIPER ON THIS PAGE",
+    openShopeeAndStart: "OPEN SHOPEE & START SNIPER",
+    shopeeTabActive: "Shopee page active",
+    notOnShopeeTab: "Shopee not open",
+    launchHint: "Opens the in-page Sniper HUD with live millisecond clock & target button picker.",
+    nextDropLabel: "Next drop in",
+    clockLatency: "Shopee NTP sync",
+
     // Time Offset Card
     clockSyncTitle: "Clock sync",
     neverSynced: "Never synced",
@@ -120,6 +135,21 @@ export const I18N = {
     signInLink: "Đăng nhập",
     signInSuffix: "để xem giá theo dõi ngay trên Shopee.",
     footerSafety: "Chạy trực tiếp trên trình duyệt bằng chính tài khoản Shopee của bạn.",
+
+    // Tabs & Navigation
+    tabLiveSniper: "Săn trực tiếp",
+    tabSchedule: "Đặt lịch",
+    tabTasks: (count: number) => `Lịch hẹn (${count})`,
+
+    // Live Sniper Tab
+    liveSniperBadge: "TRỰC CHIẾN",
+    startOnActiveTab: "BẮT ĐẦU SĂN TRÊN TRANG NÀY",
+    openShopeeAndStart: "MỞ SHOPEE & BẮT ĐẦU SĂN",
+    shopeeTabActive: "Đang mở trang Shopee",
+    notOnShopeeTab: "Chưa mở trang Shopee",
+    launchHint: "Mở bảng Sniper HUD trên Shopee với đồng hồ mili-giây và con trỏ chọn nút.",
+    nextDropLabel: "Đếm ngược giờ G",
+    clockLatency: "Đồng bộ giờ Shopee",
 
     // Time Offset Card
     clockSyncTitle: "Đồng bộ đồng hồ",

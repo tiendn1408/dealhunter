@@ -38,6 +38,7 @@ export const MESSAGE_ACTIONS = {
   TRIGGER_FULL_AUTO: "TRIGGER_FULL_AUTO",
   GET_PRICE_CONTEXT: "GET_PRICE_CONTEXT",
   GET_WEB_SESSION: "GET_WEB_SESSION",
+  ACTIVATE_HUD: "ACTIVATE_HUD",
 } as const;
 
 /** Message the DealHunter web app sends (chrome.runtime.sendMessage from the page) on sign-in, token refresh and sign-out. */

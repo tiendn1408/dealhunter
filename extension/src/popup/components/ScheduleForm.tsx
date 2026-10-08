@@ -59,18 +59,18 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3.5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/80">
+    <form onSubmit={handleSubmit} className="space-y-3.5 rounded-2xl bg-white/[0.03] p-4 ring-1 ring-white/10">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20">
             <CalendarClock className="h-3.5 w-3.5" />
           </div>
           <div className="leading-tight">
-            <h2 className="text-[13px] font-semibold text-slate-900">{t.scheduleTitle}</h2>
+            <h2 className="text-[13px] font-semibold text-slate-100">{t.scheduleTitle}</h2>
             <p className="text-[10px] text-slate-400">{t.scheduleSubtitle}</p>
           </div>
         </div>
-        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-100">
+        <span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-500/30">
           {t.fullyAutomatic}
         </span>
       </div>
@@ -78,8 +78,8 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
       {/* Drop time */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <label className="text-[11px] font-semibold text-slate-600">{t.dropTimeLabel}</label>
-          <span className="text-[10px] font-medium text-slate-400">{runsAt}</span>
+          <label className="text-[11px] font-semibold text-slate-300">{t.dropTimeLabel}</label>
+          <span className="text-[10px] font-mono font-medium text-emerald-400">{runsAt}</span>
         </div>
         <div className="grid grid-cols-6 gap-1.5">
           {SHOPEE_FLASH_HOURS.map((hour) => (
@@ -89,8 +89,8 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
               onClick={() => setTargetHour(hour)}
               className={`rounded-xl py-2 text-xs font-bold tabular-nums transition ${
                 targetHour === hour
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+                  ? "bg-emerald-400 text-slate-950 shadow-md shadow-emerald-950/50 ring-1 ring-emerald-300"
+                  : "bg-white/[0.04] text-slate-300 ring-1 ring-white/10 hover:bg-white/[0.08]"
               }`}
             >
               {pad(hour)}
@@ -101,7 +101,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
 
       {/* Target page */}
       <div className="space-y-1.5">
-        <label className="text-[11px] font-semibold text-slate-600">{t.targetPageLabel}</label>
+        <label className="text-[11px] font-semibold text-slate-300">{t.targetPageLabel}</label>
         <div className="grid grid-cols-3 gap-1.5">
           {targetPages.map((p) => (
             <button
@@ -111,8 +111,8 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
               title={p.hint}
               className={`rounded-xl px-2 py-2 text-[11px] font-semibold transition ${
                 targetUrl === p.url
-                  ? "bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500"
-                  : "bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+                  ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/60 shadow-sm"
+                  : "bg-white/[0.04] text-slate-400 ring-1 ring-white/10 hover:bg-white/[0.08] hover:text-slate-200"
               }`}
             >
               {p.label}
@@ -123,18 +123,18 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
 
       {/* Keyword */}
       <div className="space-y-1.5">
-        <label className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+        <label className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
           {t.keywordLabel}
-          <span className="font-normal text-slate-400">{t.recommended}</span>
+          <span className="font-normal text-slate-500">{t.recommended}</span>
         </label>
         <input
           type="text"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           placeholder={t.keywordPlaceholder}
-          className="w-full rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-800 ring-1 ring-slate-200 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="w-full rounded-xl bg-black/40 px-3 py-2 text-xs text-slate-100 ring-1 ring-white/10 placeholder:text-slate-500 focus:bg-black/60 focus:outline-none focus:ring-2 focus:ring-emerald-400"
         />
-        <p className="text-[10px] leading-snug text-slate-400">
+        <p className="text-[10px] leading-snug text-slate-500">
           {t.keywordHint}
         </p>
       </div>
@@ -142,7 +142,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
       <button
         type="submit"
         disabled={submitting}
-        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-2.5 text-[13px] font-bold text-white shadow-md shadow-emerald-600/20 transition hover:from-emerald-400 hover:to-teal-400 disabled:opacity-60"
+        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-2.5 text-[13px] font-bold text-slate-950 shadow-lg shadow-emerald-950/50 transition hover:from-emerald-400 hover:to-teal-400 disabled:opacity-60"
       >
         <Plus className="h-4 w-4" />
         {t.scheduleButton(pad(targetHour))}
