@@ -159,6 +159,8 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
+				// Lets a cross-origin web app read how long to wait after a 429
+				w.Header().Set("Access-Control-Expose-Headers", "Retry-After")
 				w.Header().Set("Access-Control-Max-Age", "600")
 			}
 			w.Header().Add("Vary", "Origin")

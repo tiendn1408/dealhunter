@@ -393,6 +393,10 @@ func (r *PostgresRepository) LinkVerifiedPhone(ctx context.Context, userID uuid.
 	}
 	defer tx.Rollback(ctx)
 
+	// Two members verifying the same number at once are serialized instead of colliding on the unique index
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('phone:' || $1, 0))`, phone); err != nil {
+		return fmt.Errorf("lock phone: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `UPDATE users SET phone = NULL, updated_at = NOW() WHERE phone = $1 AND id <> $2`, phone, userID); err != nil {
 		return fmt.Errorf("release phone from previous account: %w", err)
 	}

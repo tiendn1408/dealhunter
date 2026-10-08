@@ -114,7 +114,8 @@ func (c *Client) Fetch(ctx context.Context, targetURL string, customHeaders map[
 
 	if c.rateLimiter != nil {
 		if err := c.rateLimiter.Wait(ctx, parsed.Host); err != nil {
-			return nil, fmt.Errorf("rate limiter wait: %w", err)
+			// Our own queue towards the host did not free up in time: temporary by nature
+			return nil, retry.Network(fmt.Errorf("rate limiter wait: %w", err))
 		}
 	}
 

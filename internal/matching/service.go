@@ -13,8 +13,8 @@ import (
 
 // SourceLinker links a discovered product source to a canonical product group.
 type SourceLinker interface {
-	// LinkSource adds url to productID's group. byUser marks a manual change, which is refused on a group
-	// other users also track; the system's auto-link (byUser=false) may extend a shared group.
+	// LinkSource adds url to productID's group. byUser marks a change started by a user, which is refused
+	// on a group other users also track; only system-driven matching (byUser=false) may extend a shared group.
 	LinkSource(ctx context.Context, userID, productID uuid.UUID, url string, byUser bool) error
 	// CanEditGroup returns tracking.ErrGroupShared when someone else also tracks productID's group.
 	CanEditGroup(ctx context.Context, userID, productID uuid.UUID) error
@@ -85,6 +85,11 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 		}
 	}
 
+	// Matching is started by a user (auto-match button, or right after tracking). On a group someone else
+	// also tracks, a user could get a look-alike listing of their own auto-linked into the others'
+	// comparison, so there it only makes suggestions; auto-linking a shared group is left to the system.
+	canAutoLink := s.linker != nil && s.linker.CanEditGroup(ctx, userID, productID) == nil
+
 	for _, targetPlatform := range targetPlatforms {
 		candidates, err := s.searcher.Search(ctx, targetPlatform, norm.SearchQuery)
 		if err != nil {
@@ -116,9 +121,10 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 			score := ScoreMatch(norm, refPrice, cand.Title, cand.Price, cand.SellerName, cand.IsMall)
 
 			// A candidate without a price was never price-checked, so it can only be suggested.
-			if score >= ThresholdAutoLink && cand.Price > 0 && s.linker != nil {
-				// High confidence: Auto-link directly
-				err := s.linker.LinkSource(ctx, userID, productID, cand.URL, false)
+			if score >= ThresholdAutoLink && cand.Price > 0 && canAutoLink {
+				// High confidence: Auto-link directly. Re-checked under the group locks (byUser): if the
+				// group became shared meanwhile, it falls back to a suggestion below.
+				err := s.linker.LinkSource(ctx, userID, productID, cand.URL, true)
 				if err == nil {
 					result.AutoLinkedSources = append(result.AutoLinkedSources, cand.URL)
 					existingURLs[cand.URL] = true

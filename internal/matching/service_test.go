@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/internal/comparison"
 )
 
@@ -210,5 +211,27 @@ func TestMatchingService_DiscoverAndMatch_RequiresPrices(t *testing.T) {
 	}
 	if len(result.AutoLinkedSources) != 0 || len(linker.linkedURLs) != 0 {
 		t.Fatalf("candidate without price was auto-linked: %v", result.AutoLinkedSources)
+	}
+}
+
+// A user-started match on a group someone else also tracks only suggests: a look-alike listing must not
+// be auto-linked into other people's comparison.
+func TestMatchingService_SharedGroupOnlySuggests(t *testing.T) {
+	linker := &mockLinker{groupErr: tracking.ErrGroupShared}
+	searcher := &mockSearcher{candidates: []*MatchCandidate{{
+		Platform: "lazada", URL: "https://lazada.vn/products/tai-nghe-sony-wh-1000xm5-i9.html",
+		Title: "Tai nghe Sony WH-1000XM5", SellerName: "Sony Official Store", Price: 6000000, IsMall: true,
+	}}}
+	svc := NewMatchingService(newMockMatchingRepo(), searcher, linker, &mockComparisonProvider{})
+
+	result, err := svc.DiscoverAndMatch(context.Background(), uuid.New(), uuid.New(), "shopee", "Tai nghe Sony WH-1000XM5", 6290000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(linker.linkedURLs) != 0 || len(result.AutoLinkedSources) != 0 {
+		t.Fatalf("shared group must not be auto-linked, linked %v", linker.linkedURLs)
+	}
+	if len(result.NewSuggestions) != 1 {
+		t.Fatalf("the high-confidence candidate must become a suggestion, got %d", len(result.NewSuggestions))
 	}
 }
