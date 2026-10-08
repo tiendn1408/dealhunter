@@ -1,25 +1,30 @@
 import React, { useState, useEffect } from "react";
 import { shopeeAdapter } from "../adapters/shopee_adapter";
-import { apiClient } from "../../lib/api_client";
-import { ProductPriceContext } from "../../lib/types";
-import { TrendingDown, ShieldCheck, ExternalLink, X, ShoppingBag } from "lucide-react";
+import { MESSAGE_ACTIONS } from "../../lib/constants";
+import { PriceContextResponse } from "../../lib/types";
+import { ShieldCheck, ExternalLink, X } from "lucide-react";
 
+/**
+ * Shown only to a member signed in to DealHunter web (session handed over by the web app).
+ * Signed out, the extension offers just its deal-hunting tools and this badge stays hidden.
+ */
 export const PriceHistoryBadge: React.FC = () => {
   const [visible, setVisible] = useState(true);
-  const [priceContext, setPriceContext] = useState<ProductPriceContext | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [response, setResponse] = useState<PriceContextResponse | null>(null);
 
   useEffect(() => {
     const fetchContext = async () => {
       const prod = shopeeAdapter.extractProductInfo();
-      if (!prod || !prod.itemId) {
-        setLoading(false);
-        return;
+      if (!prod || !prod.itemId) return;
+      try {
+        const res: PriceContextResponse = await chrome.runtime.sendMessage({
+          action: MESSAGE_ACTIONS.GET_PRICE_CONTEXT,
+          url: window.location.href,
+        });
+        setResponse(res);
+      } catch {
+        // Extension reloaded or service worker unavailable: show nothing
       }
-
-      const ctx = await apiClient.getProductPriceContext(window.location.href);
-      setPriceContext(ctx);
-      setLoading(false);
     };
 
     // Wait slightly for DOM hydration
@@ -27,8 +32,8 @@ export const PriceHistoryBadge: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  if (!visible) return null;
-  if (loading) return null;
+  if (!visible || !response || !response.signedIn) return null;
+  const { context: priceContext, webUrl } = response;
 
   return (
     <div className="bg-white/95 backdrop-blur-md border border-emerald-300 text-slate-800 rounded-2xl shadow-xl p-3 w-72 space-y-2 select-none animate-in fade-in slide-in-from-bottom-4">
@@ -48,26 +53,27 @@ export const PriceHistoryBadge: React.FC = () => {
 
       {priceContext ? (
         <div className="space-y-1.5 text-xs">
-          {priceContext.bestDealPlatform && priceContext.bestDealPlatform !== "shopee" && (
-            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-2 rounded-xl">
-              <span className="font-bold block">Gia tot hon tren {priceContext.bestDealPlatform.toUpperCase()}!</span>
-              <span>
-                Re hon {priceContext.savingsPercent}% (Chi con {priceContext.bestDealPrice?.toLocaleString("vi-VN")}d)
-              </span>
-            </div>
-          )}
+          {priceContext.bestDealPlatform &&
+            priceContext.bestDealPlatform !== "shopee" &&
+            priceContext.bestDealPrice !== undefined && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-2 rounded-xl">
+                <span className="font-bold block">Gia tot hon tren {priceContext.bestDealPlatform.toUpperCase()}!</span>
+                <span>
+                  {priceContext.savingsPercent !== undefined && <>Re hon {Math.round(priceContext.savingsPercent)}% </>}
+                  (Chi con {priceContext.bestDealPrice.toLocaleString("vi-VN")}d)
+                </span>
+              </div>
+            )}
 
-          {priceContext.lowestPrice30d && (
-            <div className="flex items-center justify-between text-slate-600">
-              <span>Day 30 ngay:</span>
-              <span className="font-bold text-slate-900">
-                {priceContext.lowestPrice30d.toLocaleString("vi-VN")}d
-              </span>
-            </div>
-          )}
+          <div className="flex items-center justify-between text-slate-600">
+            <span>Gia DealHunter ghi nhan:</span>
+            <span className="font-bold text-slate-900">
+              {priceContext.currentPrice !== null ? `${priceContext.currentPrice.toLocaleString("vi-VN")}d` : "Chua co du lieu"}
+            </span>
+          </div>
 
           <a
-            href={`http://localhost:3000/tracking/${priceContext.productId}`}
+            href={`${webUrl}/tracking/${priceContext.trackingId}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 py-1.5 px-2 rounded-lg transition-colors mt-1"
@@ -78,9 +84,9 @@ export const PriceHistoryBadge: React.FC = () => {
         </div>
       ) : (
         <div className="text-[11px] text-slate-500 py-1 space-y-1">
-          <p>San pham chua co tren DealHunter.</p>
+          <p>Ban chua theo doi san pham nay tren DealHunter.</p>
           <a
-            href={`http://localhost:3000?url=${encodeURIComponent(window.location.href)}`}
+            href={`${webUrl}?url=${encodeURIComponent(window.location.href)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-emerald-600 font-bold hover:underline"

@@ -15,8 +15,9 @@ Tiện ích mở rộng trình duyệt (Chrome Extension) theo chuẩn **Manifes
 2. **Hỗ trợ đầy đủ 2 chế độ săn mã**:
    - **Chế độ 1: Bán tự động (Semi-Auto)**: Người dùng mở sẵn trang Shopee, Extension hiển thị Floating HUD góc màn hình đếm ngược mili-giây, cho phép trỏ chọn nút voucher và tự động kích hoạt Turbo Click khi đến giờ G.
    - **Chế độ 2: Tự động hoàn toàn (Full-Auto)**: Người dùng lên lịch hẹn trước trong Popup Extension (chọn khung giờ và link mục tiêu), Service Worker (`chrome.alarms`) tự động mở tab Shopee trước 60 giây, pre-warm kết nối, cuộn trang tới nút và tự động bắn click đúng giờ G.
-3. **Price History & Deal Score Badge**:
-   - Tự động hiển thị widget nhỏ gọn trên trang chi tiết sản phẩm Shopee: báo đáy lịch sử 30 ngày và so sánh Best Deal nếu sản phẩm đang rẻ hơn trên Lazada/TikTok Shop.
+3. **Thẻ giá trên trang sản phẩm (chỉ khi đã đăng nhập DealHunter web)**:
+   - Đã đăng nhập DealHunter web: trên trang sản phẩm Shopee bạn đang theo dõi, hiển thị giá DealHunter ghi nhận và báo nếu sàn khác (Lazada/TikTok Shop) rẻ hơn — chỉ dữ liệu thật trong tài khoản của bạn.
+   - Chưa đăng nhập: thẻ không hiện, extension chỉ có các tính năng săn deal.
 4. **Kiến trúc sẵn sàng mở rộng (Extensible Marketplace Adapter)**:
    - Áp dụng mẫu thiết kế `MarketplaceAdapter` interface, sẵn sàng mở rộng sang Lazada và TikTok Shop mà không cần sửa đổi lõi xử lý thời gian và turbo click.
 
@@ -41,6 +42,16 @@ Sau khi lệnh hoàn tất, thư mục `dist/` sẽ chứa trọn bộ file cài
    /Users/tien.dang/Workplace/reference/dealhunter/extension/dist
    ```
 5. Biểu tượng **DealHunter Assistant** sẽ xuất hiện trên thanh công cụ của trình duyệt. Ghim (Pin) tiện ích lên thanh tiện ích để tiện sử dụng.
+
+### Bước 3 (tuỳ chọn): Kết nối với tài khoản DealHunter web
+Extension không tự đăng nhập. Web DealHunter gửi phiên đăng nhập sang extension mỗi khi bạn đăng nhập hoặc phiên được làm mới (access token 15 phút), và xoá khi bạn đăng xuất.
+1. Mở `chrome://extensions`, sao chép **ID** của DealHunter Assistant.
+2. Trong `dealhunter-web/.env.local` đặt `NEXT_PUBLIC_EXTENSION_ID=<ID>` rồi khởi động lại web (production: biến `EXTENSION_ID` của `docker-compose.prod.yml`).
+3. Đăng nhập DealHunter web bằng Google. Popup extension hiện "Da ket noi DealHunter".
+- Web chỉ gửi được phiên từ các origin trong `externally_connectable` (`public/manifest.json`) và `DEALHUNTER_WEB_ORIGINS` (`src/lib/constants.ts`): `http://localhost:3000`, `http://localhost:3100`, `https://dealhunter.vn`.
+- Phiên chỉ nằm trong `chrome.storage.session` (mất khi đóng trình duyệt) và chỉ service worker dùng; content script trên Shopee không thấy token.
+- Không mở web quá 15 phút thì phiên hết hạn và thẻ giá ẩn đi cho tới lần mở web tiếp theo. Extension không tự làm mới phiên, vì refresh token xoay vòng nghiêm ngặt: làm mới song song với web sẽ bị coi là dùng lại token và mọi phiên bị thu hồi.
+- ID của extension nạp từ thư mục (unpacked) phụ thuộc đường dẫn thư mục; nạp lại từ thư mục khác thì phải cập nhật `NEXT_PUBLIC_EXTENSION_ID`.
 
 ---
 

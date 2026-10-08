@@ -180,6 +180,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required (e.g. https://dealhunter.vn/api/v1)}
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID is required}
+        NEXT_PUBLIC_EXTENSION_ID: ${EXTENSION_ID:-}
     restart: always
     ports:
       - "${WEB_PORT:-3000}:3000"

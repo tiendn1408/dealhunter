@@ -3,15 +3,27 @@ import { TimeOffsetCard } from "./components/TimeOffsetCard";
 import { ScheduleForm } from "./components/ScheduleForm";
 import { TaskList } from "./components/TaskList";
 import { storage } from "../lib/storage";
+import { DEFAULT_SETTINGS, MESSAGE_ACTIONS } from "../lib/constants";
 import { ScheduledTask } from "../lib/types";
 import { ExternalLink, ShieldCheck } from "lucide-react";
 
 export const App: React.FC = () => {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [webUrl, setWebUrl] = useState(DEFAULT_SETTINGS.dealHunterWebUrl);
+  // null while loading; the web app hands its sign-in over to the extension
+  const [account, setAccount] = useState<{ signedIn: boolean; email?: string } | null>(null);
 
   const loadTasks = async () => {
     setTasks(await storage.getTasks());
   };
+
+  useEffect(() => {
+    storage.getSettings().then((s) => setWebUrl(s.dealHunterWebUrl));
+    chrome.runtime
+      .sendMessage({ action: MESSAGE_ACTIONS.GET_WEB_SESSION })
+      .then(setAccount)
+      .catch(() => setAccount({ signedIn: false }));
+  }, []);
 
   useEffect(() => {
     loadTasks();
@@ -40,7 +52,7 @@ export const App: React.FC = () => {
             </div>
           </div>
           <a
-            href="http://localhost:3000"
+            href={webUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white ring-1 ring-white/15 transition hover:bg-white/15"
@@ -52,6 +64,23 @@ export const App: React.FC = () => {
       </header>
 
       <main className="-mt-3 space-y-3 px-4 pb-4">
+        {account && (
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600 shadow-sm">
+            {account.signedIn ? (
+              <span>
+                Da ket noi DealHunter{account.email ? `: ${account.email}` : ""}. Gia theo doi hien tren trang san pham Shopee.
+              </span>
+            ) : (
+              <span>
+                Chua dang nhap DealHunter web: chi dung cac tinh nang san deal.{" "}
+                <a href={webUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-emerald-700 hover:underline">
+                  Dang nhap
+                </a>{" "}
+                de xem gia theo doi ngay tren Shopee.
+              </span>
+            )}
+          </div>
+        )}
         <TimeOffsetCard />
         <ScheduleForm onTaskCreated={loadTasks} />
         <TaskList tasks={tasks} onTasksChanged={loadTasks} />

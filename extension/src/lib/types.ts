@@ -32,6 +32,7 @@ export interface ExtensionSettings {
   soundEnabled: boolean;
   autoCheckoutReady: boolean;
   dealHunterApiUrl: string;
+  dealHunterWebUrl: string;
 }
 
 export interface HuntRuntimeState {
@@ -42,13 +43,24 @@ export interface HuntRuntimeState {
   lastResult?: "success" | "exhausted" | "timeout" | "error";
 }
 
+/** Signed-in DealHunter member session handed over by the web app; never a guest session. */
+export interface WebSession {
+  accessToken: string;
+  expiresAt: number; // epoch ms
+  email?: string;
+  name?: string;
+}
+
+/** Real data from the user's DealHunter account for the product page being viewed. */
 export interface ProductPriceContext {
-  productId: string;
-  title: string;
-  currentPrice: number;
-  lowestPrice30d?: number;
-  medianPrice90d?: number;
+  trackingId: string;
+  title?: string;
+  currentPrice: number | null; // null until DealHunter has fetched a price
   bestDealPlatform?: string;
   bestDealPrice?: number;
   savingsPercent?: number;
 }
+
+export type PriceContextResponse =
+  | { signedIn: false }
+  | { signedIn: true; context: ProductPriceContext | null; webUrl: string };

@@ -1,76 +1,69 @@
 import { storage } from "./storage";
 import { ProductPriceContext } from "./types";
 
+/** The access token was rejected (expired or revoked); the caller should drop the session. */
+export class SessionRejectedError extends Error {}
+
+/** Shop and item IDs from a Shopee product URL (`...-i.<shop>.<item>` or `/product/<shop>/<item>`). */
+export function shopeeIds(url: string): { shopId: string; itemId: string } | null {
+  const m = url.match(/-i\.(\d+)\.(\d+)/) || url.match(/\/product\/(\d+)\/(\d+)/);
+  return m ? { shopId: m[1], itemId: m[2] } : null;
+}
+
+interface Tracking {
+  ID: string;
+  Title?: string;
+  Platform?: string;
+  CanonicalURL?: string;
+  LastPrice?: number | null;
+  LastEffectivePrice?: number | null;
+}
+
+/**
+ * Reads the signed-in member's own DealHunter data. Runs in the background service worker (the API
+ * only accepts requests carrying the member's access token; content scripts never see the token).
+ */
 export class DealHunterApiClient {
-  private async getBaseUrl(): Promise<string> {
-    const settings = await storage.getSettings();
-    return settings.dealHunterApiUrl;
+  private async get(path: string, token: string): Promise<Response> {
+    const { dealHunterApiUrl } = await storage.getSettings();
+    const res = await fetch(`${dealHunterApiUrl}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) throw new SessionRejectedError();
+    return res;
   }
 
-  async getProductPriceContext(productUrl: string): Promise<ProductPriceContext | null> {
-    try {
-      const baseUrl = await this.getBaseUrl();
-      // First check if product is tracked
-      const res = await fetch(`${baseUrl}/tracked-products`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) return null;
+  /** Price context for a Shopee product page, or null when the member does not track that product. */
+  async getProductPriceContext(productUrl: string, token: string): Promise<ProductPriceContext | null> {
+    const ids = shopeeIds(productUrl);
+    if (!ids) return null;
 
-      const data = await res.json();
-      const trackings = data.trackings || data || [];
-      const matched = trackings.find(
-        (t: any) =>
-          t.canonical_url === productUrl ||
-          (productUrl && t.canonical_url && productUrl.includes(t.canonical_url))
-      );
+    const res = await this.get("/tracked-products", token);
+    if (!res.ok) throw new Error(`DealHunter API HTTP ${res.status}`);
+    const { data } = (await res.json()) as { data?: Tracking[] };
+    const matched = (data || []).find((t) => {
+      if (t.Platform !== "shopee" || !t.CanonicalURL) return false;
+      const tIds = shopeeIds(t.CanonicalURL);
+      return !!tIds && tIds.shopId === ids.shopId && tIds.itemId === ids.itemId;
+    });
+    if (!matched) return null;
 
-      if (!matched) return null;
+    const context: ProductPriceContext = {
+      trackingId: matched.ID,
+      title: matched.Title || undefined,
+      currentPrice: matched.LastEffectivePrice ?? matched.LastPrice ?? null,
+    };
 
-      // Fetch comparison to see best deal
-      let bestDealPlatform: string | undefined;
-      let bestDealPrice: number | undefined;
-      let savingsPercent: number | undefined;
-
-      try {
-        const cmpRes = await fetch(`${baseUrl}/tracked-products/${matched.id}/comparison`);
-        if (cmpRes.ok) {
-          const cmpData = await cmpRes.json();
-          if (cmpData.best_deal) {
-            bestDealPlatform = cmpData.best_deal.platform;
-            bestDealPrice = cmpData.best_deal.effective_price;
-            savingsPercent = cmpData.best_deal.savings_percent;
-          }
-        }
-      } catch {
-        // Fallback silently if comparison not available
+    // The comparison is optional: without it the badge just has no cross-platform line
+    const cmpRes = await this.get(`/tracked-products/${matched.ID}/comparison`, token);
+    if (cmpRes.ok) {
+      const cmp = await cmpRes.json();
+      const best = cmp?.best_deal;
+      if (best && typeof best.effective_price === "number" && best.effective_price > 0) {
+        context.bestDealPlatform = best.platform;
+        context.bestDealPrice = best.effective_price;
+        context.savingsPercent = typeof best.saving_percent === "number" ? best.saving_percent : undefined;
       }
-
-      return {
-        productId: matched.id,
-        title: matched.title || "San pham theo doi",
-        currentPrice: matched.last_price || 0,
-        lowestPrice30d: matched.lowest_price,
-        bestDealPlatform,
-        bestDealPrice,
-        savingsPercent,
-      };
-    } catch (err) {
-      console.warn("[DealHunter] API connection skipped:", err);
-      return null;
     }
-  }
-
-  async getVouchers(trackingOrSourceId: string): Promise<any[]> {
-    try {
-      const baseUrl = await this.getBaseUrl();
-      const res = await fetch(`${baseUrl}/tracked-products/${trackingOrSourceId}/vouchers`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return data.vouchers || [];
-    } catch {
-      return [];
-    }
+    return context;
   }
 }
 

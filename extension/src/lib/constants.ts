@@ -2,8 +2,11 @@ export const STORAGE_KEYS = {
   SCHEDULED_TASKS: "dh_scheduled_tasks",
   CLOCK_CALIBRATION: "dh_clock_calibration",
   SETTINGS: "dh_settings",
-  AUTH_TOKEN: "dh_auth_token",
+  WEB_SESSION: "dh_web_session", // chrome.storage.session: cleared when the browser closes
 } as const;
+
+/** DealHunter web origins allowed to hand their sign-in session to the extension (externally_connectable). */
+export const DEALHUNTER_WEB_ORIGINS = ["http://localhost:3000", "http://localhost:3100", "https://dealhunter.vn"];
 
 export const DEFAULT_SETTINGS = {
   burstIntervalMs: 35, // 35ms between clicks
@@ -12,6 +15,7 @@ export const DEFAULT_SETTINGS = {
   soundEnabled: true,
   autoCheckoutReady: true,
   dealHunterApiUrl: "http://localhost:8080/api/v1",
+  dealHunterWebUrl: "http://localhost:3000",
 };
 
 export const SHOPEE_FLASH_HOURS = [0, 9, 12, 15, 18, 21];
@@ -31,4 +35,9 @@ export const MESSAGE_ACTIONS = {
   STOP_BURST_CLICK: "STOP_BURST_CLICK",
   TASK_STATUS_UPDATE: "TASK_STATUS_UPDATE",
   TRIGGER_FULL_AUTO: "TRIGGER_FULL_AUTO",
+  GET_PRICE_CONTEXT: "GET_PRICE_CONTEXT",
+  GET_WEB_SESSION: "GET_WEB_SESSION",
 } as const;
+
+/** Message the DealHunter web app sends (chrome.runtime.sendMessage from the page) on sign-in, token refresh and sign-out. */
+export const WEB_SESSION_MESSAGE = "DH_WEB_SESSION";
