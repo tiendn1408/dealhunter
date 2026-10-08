@@ -125,7 +125,7 @@ func (m *mockNotifRepo) GetUserProfile(ctx context.Context, userID uuid.UUID) (*
 	return &UserProfile{UserID: userID}, nil
 }
 
-func (m *mockNotifRepo) UpdateUserZalo(ctx context.Context, userID uuid.UUID, zaloID, phone string) error {
+func (m *mockNotifRepo) LinkVerifiedPhone(ctx context.Context, userID uuid.UUID, phone string) error {
 	return nil
 }
 

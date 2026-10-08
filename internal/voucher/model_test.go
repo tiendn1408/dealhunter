@@ -1,6 +1,7 @@
 package voucher
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -160,5 +161,46 @@ func TestCalculateEffectivePrice_ZeroPrice_MinOrderExcluded(t *testing.T) {
 	}
 	if len(calc.AvailableVouchers) != 0 {
 		t.Errorf("expected 0 available vouchers when price is 0 and voucher has min order, got %d", len(calc.AvailableVouchers))
+	}
+}
+
+// SEC-09: every voucher field an admin submits is validated (vouchers drive every user's price and
+// Zalo messages).
+func TestProductVoucher_Validate(t *testing.T) {
+	now := time.Now()
+	in := func(d time.Duration) *time.Time { v := now.Add(d); return &v }
+	valid := func() ProductVoucher {
+		return ProductVoucher{VoucherType: "shop_voucher", Title: "Giảm 50K", VoucherCode: "GIAM50", DiscountAmount: 50000, ExpiresAt: in(24 * time.Hour)}
+	}
+	if v := valid(); v.Validate(now) != nil {
+		t.Fatalf("valid voucher rejected: %v", v.Validate(now))
+	}
+	cases := map[string]func(v *ProductVoucher){
+		"unknown type":         func(v *ProductVoucher) { v.VoucherType = "magic" },
+		"empty title":          func(v *ProductVoucher) { v.Title = "  " },
+		"title over 200 chars": func(v *ProductVoucher) { v.Title = strings.Repeat("ạ", 201) },
+		"code over 64 chars":   func(v *ProductVoucher) { v.VoucherCode = strings.Repeat("Á", 65) },
+		"negative amount":      func(v *ProductVoucher) { v.DiscountAmount = -1 },
+		"negative min order":   func(v *ProductVoucher) { v.MinOrderValue = -1 },
+		"percent over 100":     func(v *ProductVoucher) { v.DiscountAmount = 0; v.DiscountPercent = 101 },
+		"no discount at all":   func(v *ProductVoucher) { v.DiscountAmount = 0; v.DiscountPercent = 0 },
+		"missing expiry":       func(v *ProductVoucher) { v.ExpiresAt = nil },
+		"already expired":      func(v *ProductVoucher) { v.ExpiresAt = in(-time.Minute) },
+		"expiry over one year": func(v *ProductVoucher) { v.ExpiresAt = in(MaxVoucherLifetime + time.Hour) },
+		"collect_url too long": func(v *ProductVoucher) { v.CollectURL = "https://shopee.vn/" + strings.Repeat("a", 2048) },
+	}
+	for name, mutate := range cases {
+		v := valid()
+		mutate(&v)
+		if v.Validate(now) == nil {
+			t.Errorf("%s: expected a validation error", name)
+		}
+	}
+	// Limits count characters, not bytes: 200 Vietnamese characters are fine
+	v := valid()
+	v.Title = strings.Repeat("ạ", 200)
+	v.VoucherCode = strings.Repeat("Á", 64)
+	if err := v.Validate(now); err != nil {
+		t.Errorf("200-character title / 64-character code must be accepted: %v", err)
 	}
 }

@@ -138,7 +138,7 @@ func (m *mockNotifRepo) GetUserRecipient(ctx context.Context, userID uuid.UUID, 
 func (m *mockNotifRepo) GetUserProfile(ctx context.Context, userID uuid.UUID) (*notification.UserProfile, error) {
 	return &notification.UserProfile{UserID: userID}, nil
 }
-func (m *mockNotifRepo) UpdateUserZalo(ctx context.Context, userID uuid.UUID, zaloID, phone string) error {
+func (m *mockNotifRepo) LinkVerifiedPhone(ctx context.Context, userID uuid.UUID, phone string) error {
 	return nil
 }
 func (m *mockNotifRepo) DisconnectUserZalo(ctx context.Context, userID uuid.UUID) error {

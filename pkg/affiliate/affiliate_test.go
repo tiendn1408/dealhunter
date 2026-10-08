@@ -151,3 +151,12 @@ func TestTransformer_AccessTradeTemplateWithoutURLIgnored(t *testing.T) {
 		t.Fatalf("expected canonical link, got %s", got)
 	}
 }
+
+// A template without {URL}/{RAW_URL} cannot point at the product, so the canonical link is kept
+func TestTransform_TemplateWithoutURLKeepsOriginal(t *testing.T) {
+	tr := NewTransformer(Config{Enabled: true, ShopeeID: "aff-1", ShopeeTemplate: "https://s.shopee.vn/an_redir?affiliate_id={AFFILIATE_ID}"})
+	raw := "https://shopee.vn/product/1/2"
+	if got := tr.Transform(raw, "shopee", "u_1_p_2"); got != raw {
+		t.Fatalf("expected original link, got %q", got)
+	}
+}

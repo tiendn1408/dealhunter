@@ -2,7 +2,7 @@ package router
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,11 +34,12 @@ func (f *fakeStore) trackingService() *tracking.TrackingService {
 	return tracking.NewTrackingService(nil, f, f, nil, nil)
 }
 
-var errFakeNotFound = errors.New("not found")
+// Same "no row" error the PostgreSQL repositories wrap
+var errFakeNotFound = fmt.Errorf("not found: %w", pgx.ErrNoRows)
 
 // product.ProductRepository
 func (f *fakeStore) UpsertProduct(context.Context, *product.Product) error { return nil }
-func (f *fakeStore) UpsertProductSource(_ context.Context, ps *product.ProductSource) error {
+func (f *fakeStore) UpsertProductSource(_ context.Context, _ pgx.Tx, ps *product.ProductSource) error {
 	f.sources[ps.ID] = ps
 	return nil
 }
@@ -62,8 +63,11 @@ func (f *fakeStore) ProductExists(_ context.Context, productID uuid.UUID) (bool,
 	}
 	return false, nil
 }
-func (f *fakeStore) AssignProductSource(_ context.Context, sourceID, productID uuid.UUID) error {
-	f.sources[sourceID].ProductID = productID
+func (f *fakeStore) AssignProductSource(_ context.Context, _ pgx.Tx, sourceID, fromProductID, toProductID uuid.UUID) error {
+	if f.sources[sourceID].ProductID != fromProductID {
+		return product.ErrSourceMoved
+	}
+	f.sources[sourceID].ProductID = toProductID
 	return nil
 }
 
@@ -118,7 +122,12 @@ func (f *fakeStore) SetTrackingActive(context.Context, uuid.UUID, bool) error { 
 func (f *fakeStore) SetTrackingActiveForUser(context.Context, uuid.UUID, uuid.UUID, bool) error {
 	return nil
 }
-func (f *fakeStore) UserTracksProduct(_ context.Context, userID, productID uuid.UUID) (bool, error) {
+
+// WithGroupLock runs fn directly: the in-memory store has no concurrency to guard against.
+func (f *fakeStore) WithGroupLock(_ context.Context, _ []uuid.UUID, fn func(tx pgx.Tx) error) error {
+	return fn(nil)
+}
+func (f *fakeStore) UserTracksProduct(_ context.Context, _ pgx.Tx, userID, productID uuid.UUID) (bool, error) {
 	for _, t := range f.trackings {
 		if s := f.sources[t.ProductSourceID]; t.UserID == userID && s != nil && s.ProductID == productID {
 			return true, nil
@@ -126,7 +135,7 @@ func (f *fakeStore) UserTracksProduct(_ context.Context, userID, productID uuid.
 	}
 	return false, nil
 }
-func (f *fakeStore) OtherUsersTrackProduct(_ context.Context, productID, userID uuid.UUID) (bool, error) {
+func (f *fakeStore) OtherUsersTrackProduct(_ context.Context, _ pgx.Tx, productID, userID uuid.UUID) (bool, error) {
 	for _, t := range f.trackings {
 		if s := f.sources[t.ProductSourceID]; t.UserID != userID && s != nil && s.ProductID == productID {
 			return true, nil

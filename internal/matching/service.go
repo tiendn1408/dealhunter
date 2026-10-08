@@ -11,9 +11,13 @@ import (
 	"github.com/tiendang/deal-hunter/internal/tracking"
 )
 
-// SourceLinker defines an interface to link a discovered product source to a canonical product.
+// SourceLinker links a discovered product source to a canonical product group.
 type SourceLinker interface {
-	LinkSource(ctx context.Context, userID, productID uuid.UUID, url string) error
+	// LinkSource adds url to productID's group. byUser marks a manual change, which is refused on a group
+	// other users also track; the system's auto-link (byUser=false) may extend a shared group.
+	LinkSource(ctx context.Context, userID, productID uuid.UUID, url string, byUser bool) error
+	// CanEditGroup returns tracking.ErrGroupShared when someone else also tracks productID's group.
+	CanEditGroup(ctx context.Context, userID, productID uuid.UUID) error
 }
 
 // ComparisonProvider defines an interface to read comparison and invalidate caches.
@@ -114,7 +118,7 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 			// A candidate without a price was never price-checked, so it can only be suggested.
 			if score >= ThresholdAutoLink && cand.Price > 0 && s.linker != nil {
 				// High confidence: Auto-link directly
-				err := s.linker.LinkSource(ctx, userID, productID, cand.URL)
+				err := s.linker.LinkSource(ctx, userID, productID, cand.URL, false)
 				if err == nil {
 					result.AutoLinkedSources = append(result.AutoLinkedSources, cand.URL)
 					existingURLs[cand.URL] = true
@@ -200,7 +204,10 @@ func (s *MatchingService) AcceptSuggestion(ctx context.Context, userID, productI
 	}
 
 	if s.linker != nil {
-		if err := s.linker.LinkSource(ctx, userID, sugg.ProductID, sugg.CandidateURL); err != nil {
+		if err := s.linker.CanEditGroup(ctx, userID, sugg.ProductID); err != nil {
+			return err
+		}
+		if err := s.linker.LinkSource(ctx, userID, sugg.ProductID, sugg.CandidateURL, true); err != nil {
 			if !errors.Is(err, tracking.ErrSourceAlreadyLinked) {
 				return fmt.Errorf("link source on accept: %w", err)
 			}
@@ -218,11 +225,17 @@ func (s *MatchingService) AcceptSuggestion(ctx context.Context, userID, productI
 	return nil
 }
 
-// DismissSuggestion rejects a match suggestion of productID so it will not bother the user.
+// DismissSuggestion rejects a match suggestion of productID so it will not bother the user. Suggestions
+// belong to the group, so a group someone else also tracks cannot be changed this way (ErrGroupShared).
 // The caller must already be authorized for productID.
-func (s *MatchingService) DismissSuggestion(ctx context.Context, productID, suggestionID uuid.UUID) error {
+func (s *MatchingService) DismissSuggestion(ctx context.Context, userID, productID, suggestionID uuid.UUID) error {
 	if _, err := s.suggestionForProduct(ctx, productID, suggestionID); err != nil {
 		return err
+	}
+	if s.linker != nil {
+		if err := s.linker.CanEditGroup(ctx, userID, productID); err != nil {
+			return err
+		}
 	}
 	return s.repo.UpdateSuggestionStatus(ctx, suggestionID, StatusDismissed)
 }

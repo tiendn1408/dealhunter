@@ -31,6 +31,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/pkg/database"
 	"github.com/tiendang/deal-hunter/tests/fakemarket"
+	"github.com/tiendang/deal-hunter/tests/fakezalo"
 )
 
 func TestSecurityAndDataIsolationFlow(t *testing.T) {
@@ -76,6 +77,9 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
 	handler.SetComparisonService(compSvc)
 	handler.SetAuthService(authSvc, jwtMgr)
+	// Phone verification codes go to a test double; the verifier itself (Redis, limits) is the real one
+	zaloSender := fakezalo.NewMockZaloClient()
+	handler.SetPhoneVerifier(notification.NewPhoneVerifier(rdb, zaloSender, "otp-template"))
 
 	matchingRepo := matching.NewPostgresMatchingRepository(dbPool)
 	searcher := &fakemarket.Searcher{} // no live marketplace traffic from tests
@@ -758,30 +762,67 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 			t.Fatalf("Expected 404 Not Found for non-existent source alert, got: %d", respAlertFake.StatusCode)
 		}
 
-		// 4. Duplicate Zalo phone connection returns 409 Conflict
-		uniquePhone := fmt.Sprintf("09%08d", time.Now().UnixNano()%100000000)
-		zaloBody1, _ := json.Marshal(map[string]string{"phone": uniquePhone})
-		reqZalo1, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/users/me/zalo", bytes.NewBuffer(zaloBody1))
-		reqZalo1.Header.Set("Content-Type", "application/json")
-		reqZalo1.Header.Set("Authorization", "Bearer "+userAToken)
-		respZalo1, err := client.Do(reqZalo1)
-		if err != nil || respZalo1.StatusCode != http.StatusOK {
-			t.Fatalf("First Zalo connection failed: %v, status: %d", err, respZalo1.StatusCode)
+		// 4. A phone is only linked with the code sent to it; its verified owner takes it over
+		post := func(path, bearer string, body map[string]string) *http.Response {
+			raw, _ := json.Marshal(body)
+			req, _ := http.NewRequest(http.MethodPost, server.URL+path, bytes.NewBuffer(raw))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", bearer)
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("%s: %v", path, err)
+			}
+			resp.Body.Close()
+			return resp
 		}
-		respZalo1.Body.Close()
+		lastCode := func() string {
+			return zaloSender.SentMessages[len(zaloSender.SentMessages)-1].Params["otp"]
+		}
+		uniquePhone := fmt.Sprintf("091%07d", time.Now().UnixNano()%10000000)
+		bearerA := "Bearer " + userAToken
 
-		// Another member attempts to connect the same phone number
-		otherMemberBearer, _, _ := googleLogin(t, server.URL, fmt.Sprintf("member-x-%s@dealhunter.vn", uuid.New().String()[:8]), "")
-		reqZalo2, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/users/me/zalo", bytes.NewBuffer(zaloBody1))
-		reqZalo2.Header.Set("Content-Type", "application/json")
-		reqZalo2.Header.Set("Authorization", otherMemberBearer)
-		respZalo2, err := client.Do(reqZalo2)
-		if err != nil {
-			t.Fatalf("Duplicate Zalo connection request error: %v", err)
+		// Without a code (or with a wrong one) nothing is linked
+		if resp := post("/api/v1/users/me/zalo", bearerA, map[string]string{"phone": uniquePhone, "code": "000000"}); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected 400 linking with a code that was never sent, got %d", resp.StatusCode)
 		}
-		respZalo2.Body.Close()
-		if respZalo2.StatusCode != http.StatusConflict {
-			t.Fatalf("Expected 409 Conflict for duplicate Zalo connection, got: %d", respZalo2.StatusCode)
+		if resp := post("/api/v1/users/me/zalo/otp", bearerA, map[string]string{"phone": uniquePhone}); resp.StatusCode != http.StatusAccepted {
+			t.Fatalf("expected 202 requesting a code, got %d", resp.StatusCode)
+		}
+		codeA := lastCode()
+		if got := zaloSender.SentMessages[len(zaloSender.SentMessages)-1].Recipient; got != "84"+uniquePhone[1:] {
+			t.Fatalf("code sent to %q, expected the normalized number", got)
+		}
+		// Resending right away is refused
+		if resp := post("/api/v1/users/me/zalo/otp", bearerA, map[string]string{"phone": uniquePhone}); resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" {
+			t.Fatalf("expected 429 with Retry-After for an immediate resend, got %d", resp.StatusCode)
+		}
+		if resp := post("/api/v1/users/me/zalo", bearerA, map[string]string{"phone": uniquePhone, "code": codeA}); resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 with the code sent to the phone, got %d", resp.StatusCode)
+		}
+		// A code works once
+		if resp := post("/api/v1/users/me/zalo", bearerA, map[string]string{"phone": uniquePhone, "code": codeA}); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected 400 reusing a code, got %d", resp.StatusCode)
+		}
+
+		// Another member cannot take the number with a guessed code, and gets no hint it is linked
+		otherMemberBearer, _, _ := googleLogin(t, server.URL, fmt.Sprintf("member-x-%s@dealhunter.vn", uuid.New().String()[:8]), "")
+		if resp := post("/api/v1/users/me/zalo/otp", otherMemberBearer, map[string]string{"phone": uniquePhone}); resp.StatusCode != http.StatusAccepted {
+			t.Fatalf("expected 202 (no 409 revealing the number is linked), got %d", resp.StatusCode)
+		}
+		realCode := lastCode()
+		for i := 0; i < 5; i++ {
+			guess := fmt.Sprintf("%06d", i)
+			if guess == realCode {
+				continue
+			}
+			post("/api/v1/users/me/zalo", otherMemberBearer, map[string]string{"phone": uniquePhone, "code": guess})
+		}
+		if resp := post("/api/v1/users/me/zalo", otherMemberBearer, map[string]string{"phone": uniquePhone, "code": realCode}); resp.StatusCode == http.StatusOK {
+			t.Fatal("the code must be discarded after 5 wrong guesses")
+		}
+		var ownerPhone *string
+		if err := dbPool.QueryRow(ctx, `SELECT phone FROM users WHERE id = $1`, userAID).Scan(&ownerPhone); err != nil || ownerPhone == nil || *ownerPhone != "84"+uniquePhone[1:] {
+			t.Fatalf("member A must keep the number after failed takeover attempts, got %v (%v)", ownerPhone, err)
 		}
 	})
 }

@@ -36,9 +36,13 @@ type testTrackingLinker struct {
 	trackingSvc *tracking.TrackingService
 }
 
-func (l *testTrackingLinker) LinkSource(ctx context.Context, userID, productID uuid.UUID, url string) error {
-	_, err := l.trackingSvc.LinkSourceToProduct(ctx, userID, productID, url)
+func (l *testTrackingLinker) LinkSource(ctx context.Context, userID, productID uuid.UUID, url string, byUser bool) error {
+	_, err := l.trackingSvc.LinkSourceToProduct(ctx, userID, productID, url, byUser)
 	return err
+}
+
+func (l *testTrackingLinker) CanEditGroup(ctx context.Context, userID, productID uuid.UUID) error {
+	return l.trackingSvc.CanEditGroup(ctx, userID, productID)
 }
 
 func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {

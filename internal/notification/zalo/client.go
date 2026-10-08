@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/tiendang/deal-hunter/pkg/phone"
 )
 
 type ZaloClient interface {
@@ -67,9 +68,9 @@ func (c *HTTPZaloClient) SendMessage(ctx context.Context, recipient string, temp
 		TemplateID:   templateID,
 		TemplateData: params,
 	}
-	// Decide if recipient is phone number or zalo_id
-	if len(recipient) >= 9 && recipient[0] == '0' {
-		reqBody.Phone = recipient
+	// A phone number (stored normalized as 84xxxxxxxxx, the form ZNS expects) or else a Zalo user ID
+	if phone, err := phone.Normalize(recipient); err == nil {
+		reqBody.Phone = phone
 	} else {
 		reqBody.ZaloID = recipient
 	}

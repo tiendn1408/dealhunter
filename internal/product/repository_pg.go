@@ -48,7 +48,7 @@ func (r *PostgresRepository) UpsertProduct(ctx context.Context, p *Product) erro
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
-func (r *PostgresRepository) UpsertProductSource(ctx context.Context, ps *ProductSource) error {
+func (r *PostgresRepository) UpsertProductSource(ctx context.Context, tx pgx.Tx, ps *ProductSource) error {
 	query := `
 		INSERT INTO product_sources (
 			id, product_id, platform, external_product_id, canonical_url,
@@ -71,7 +71,11 @@ func (r *PostgresRepository) UpsertProductSource(ctx context.Context, ps *Produc
 	}
 	ps.UpdatedAt = now
 
-	return r.pool.QueryRow(ctx, query,
+	row := r.pool.QueryRow
+	if tx != nil {
+		row = tx.QueryRow
+	}
+	return row(ctx, query,
 		ps.ID,
 		ps.ProductID,
 		ps.Platform,
@@ -224,19 +228,28 @@ func (r *PostgresRepository) ProductExists(ctx context.Context, productID uuid.U
 	return exists, err
 }
 
-func (r *PostgresRepository) AssignProductSource(ctx context.Context, sourceID, productID uuid.UUID) error {
+// ErrSourceMoved means the source no longer belongs to the group the caller checked.
+var ErrSourceMoved = errors.New("product source moved to another group")
+
+// AssignProductSource moves a source from one product group to another. It only moves it if it is still
+// in fromProductID (ErrSourceMoved otherwise), so a decision based on that group cannot be applied late.
+func (r *PostgresRepository) AssignProductSource(ctx context.Context, tx pgx.Tx, sourceID, fromProductID, toProductID uuid.UUID) error {
 	query := `
 		UPDATE product_sources
 		SET product_id = $1,
 		    updated_at = NOW()
-		WHERE id = $2;
+		WHERE id = $2 AND product_id = $3;
 	`
-	res, err := r.pool.Exec(ctx, query, productID, sourceID)
+	exec := r.pool.Exec
+	if tx != nil {
+		exec = tx.Exec
+	}
+	res, err := exec(ctx, query, toProductID, sourceID, fromProductID)
 	if err != nil {
 		return fmt.Errorf("assign product source: %w", err)
 	}
 	if res.RowsAffected() == 0 {
-		return errors.New("product source not found")
+		return ErrSourceMoved
 	}
 	return nil
 }

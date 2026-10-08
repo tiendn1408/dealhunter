@@ -84,7 +84,8 @@ func (t *Transformer) Transform(rawURL, platform, subID string) string {
 		template = t.cfg.AccessTradeTemplate
 	}
 
-	if template == "" {
+	// A template that does not carry the product URL would send every product to the same page
+	if template == "" || !(strings.Contains(template, "{URL}") || strings.Contains(template, "{RAW_URL}")) {
 		return rawURL
 	}
 

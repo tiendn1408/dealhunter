@@ -93,7 +93,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 
 	// 3. Link second source (TikTok) to canonicalProductID
 	tiktokURL := "https://mock.dealhunter.vn/tiktok/sony-" + slug
-	source2, err := trackingSvc.LinkSourceToProduct(ctx, userID, canonicalProductID, tiktokURL)
+	source2, err := trackingSvc.LinkSourceToProduct(ctx, userID, canonicalProductID, tiktokURL, true)
 	if err != nil {
 		t.Fatalf("LinkSourceToProduct tiktok failed: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 	}
 
 	// 5. Test duplicate link returns error
-	_, err = trackingSvc.LinkSourceToProduct(ctx, userID, canonicalProductID, tiktokURL)
+	_, err = trackingSvc.LinkSourceToProduct(ctx, userID, canonicalProductID, tiktokURL, true)
 	if err != tracking.ErrSourceAlreadyLinked {
 		t.Errorf("expected ErrSourceAlreadyLinked on duplicate link, got %v", err)
 	}

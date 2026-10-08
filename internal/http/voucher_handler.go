@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/tiendang/deal-hunter/internal/voucher"
 	"github.com/tiendang/deal-hunter/pkg/affiliate"
 )
@@ -133,8 +135,12 @@ func (h *Handler) CreateTrackedProductVoucher(w http.ResponseWriter, r *http.Req
 		sourceID = tracked.ProductSourceID
 	}
 	source, err := h.trackingService.GetProductSource(r.Context(), sourceID)
-	if err != nil || source == nil {
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && source == nil) {
 		http.Error(w, "product source not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		h.serverError(w, r, err)
 		return
 	}
 

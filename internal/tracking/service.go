@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/tiendang/deal-hunter/internal/domain"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
 	"github.com/tiendang/deal-hunter/internal/product"
@@ -85,7 +86,7 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 			CreatedAt:         time.Now(),
 			UpdatedAt:         time.Now(),
 		}
-		if err := s.productRepo.UpsertProductSource(ctx, source); err != nil {
+		if err := s.productRepo.UpsertProductSource(ctx, nil, source); err != nil {
 			return nil, fmt.Errorf("upsert source: %w", err)
 		}
 	}
@@ -165,6 +166,9 @@ func (s *TrackingService) GetProductSource(ctx context.Context, id uuid.UUID) (*
 var (
 	ErrProductNotFound     = errors.New("product not found")
 	ErrSourceAlreadyLinked = errors.New("source already linked to this product")
+	// ErrGroupShared: a user may only change a comparison group nobody else tracks; a shared group is
+	// only extended by the system's auto-match.
+	ErrGroupShared = errors.New("product group is tracked by other users")
 	// ErrSourceInOtherGroup: the URL's source belongs to a product group other users track,
 	// so moving it would silently change their comparison (SEC-07).
 	ErrSourceInOtherGroup = errors.New("source belongs to another product group")
@@ -173,21 +177,28 @@ var (
 // CanAccessProduct reports whether the user may read or change a product group:
 // they must track at least one of its sources.
 func (s *TrackingService) CanAccessProduct(ctx context.Context, userID, productID uuid.UUID) (bool, error) {
-	return s.trackingRepo.UserTracksProduct(ctx, userID, productID)
+	return s.trackingRepo.UserTracksProduct(ctx, nil, userID, productID)
 }
 
 // ResolveSourceForUser resolves id (the user's tracked_product ID or a product_source ID) to a product
 // source the user may access, i.e. a source in a product group they track. Returns ErrProductNotFound otherwise.
 func (s *TrackingService) ResolveSourceForUser(ctx context.Context, userID, id uuid.UUID) (*product.ProductSource, error) {
 	sourceID := id
-	if tracked, err := s.trackingRepo.GetTrackingForUser(ctx, id, userID); err == nil && tracked != nil {
+	tracked, err := s.trackingRepo.GetTrackingForUser(ctx, id, userID)
+	switch {
+	case err == nil && tracked != nil:
 		sourceID = tracked.ProductSourceID
+	case err != nil && !errors.Is(err, pgx.ErrNoRows):
+		return nil, err // a database failure is not "not found" (SEC-12)
 	}
 	source, err := s.productRepo.GetProductSource(ctx, sourceID)
-	if err != nil || source == nil {
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && source == nil) {
 		return nil, ErrProductNotFound
 	}
-	ok, err := s.trackingRepo.UserTracksProduct(ctx, userID, source.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	ok, err := s.trackingRepo.UserTracksProduct(ctx, nil, userID, source.ProductID)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +211,7 @@ func (s *TrackingService) ResolveSourceForUser(ctx context.Context, userID, id u
 // ResolveProductForUser resolves id (a product ID, the user's tracked_product ID or a product_source ID)
 // to a product group the user may access. Returns ErrProductNotFound otherwise.
 func (s *TrackingService) ResolveProductForUser(ctx context.Context, userID, id uuid.UUID) (uuid.UUID, error) {
-	ok, err := s.trackingRepo.UserTracksProduct(ctx, userID, id)
+	ok, err := s.trackingRepo.UserTracksProduct(ctx, nil, userID, id)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -223,15 +234,40 @@ func (s *TrackingService) DetectPlatform(url string) (string, error) {
 	return adapter.Name(), nil
 }
 
+// CanEditGroup reports whether userID may change the comparison group by hand (accept or dismiss
+// match suggestions): only when nobody else tracks it (ErrGroupShared otherwise).
+func (s *TrackingService) CanEditGroup(ctx context.Context, userID, productID uuid.UUID) error {
+	shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, nil, productID, userID)
+	if err != nil {
+		return fmt.Errorf("check group trackers: %w", err)
+	}
+	if shared {
+		return ErrGroupShared
+	}
+	return nil
+}
+
 // LinkSourceToProduct adds the product at url to targetProductID's comparison group. The caller must track
-// the target group; a source already in another group is only moved when no other user tracks that group.
-func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targetProductID uuid.UUID, url string) (*product.ProductSource, error) {
-	ok, err := s.trackingRepo.UserTracksProduct(ctx, userID, targetProductID)
+// the target group. A user-initiated change (byUser) also requires that nobody else tracks the target group:
+// otherwise anyone tracking the same public URL could put arbitrary products in other people's comparison.
+// The system's auto-match (byUser=false) may extend a shared group. In both cases a source already in
+// another group is only moved when no other user tracks that group. Checks and the change happen in one
+// transaction holding locks on both groups, so a concurrent tracking cannot slip in between.
+func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targetProductID uuid.UUID, url string, byUser bool) (*product.ProductSource, error) {
+	ok, err := s.trackingRepo.UserTracksProduct(ctx, nil, userID, targetProductID)
 	if err != nil {
 		return nil, fmt.Errorf("check target product: %w", err)
 	}
 	if !ok {
 		return nil, ErrProductNotFound
+	}
+	// Fail fast before reading the marketplace; re-checked under the group locks below
+	if byUser {
+		if shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, nil, targetProductID, userID); err != nil {
+			return nil, fmt.Errorf("check target group: %w", err)
+		} else if shared {
+			return nil, ErrGroupShared
+		}
 	}
 
 	adapter, err := s.registry.Detect(url)
@@ -250,23 +286,45 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 			return nil, fmt.Errorf("check existing source: %w", err)
 		}
 	}
+	if source != nil && source.ProductID == targetProductID {
+		return nil, ErrSourceAlreadyLinked
+	}
 
+	groups := []uuid.UUID{targetProductID}
 	if source != nil {
-		if source.ProductID == targetProductID {
-			return nil, ErrSourceAlreadyLinked
+		groups = append(groups, source.ProductID)
+	}
+	err = s.trackingRepo.WithGroupLock(ctx, groups, func(tx pgx.Tx) error {
+		// Re-checked under the locks: the group may have changed since the checks above
+		if ok, err := s.trackingRepo.UserTracksProduct(ctx, tx, userID, targetProductID); err != nil {
+			return fmt.Errorf("check target product: %w", err)
+		} else if !ok {
+			return ErrProductNotFound
 		}
-		shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, source.ProductID, userID)
-		if err != nil {
-			return nil, fmt.Errorf("check source group: %w", err)
+		if byUser {
+			if shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, tx, targetProductID, userID); err != nil {
+				return fmt.Errorf("check target group: %w", err)
+			} else if shared {
+				return ErrGroupShared
+			}
 		}
-		if shared {
-			return nil, ErrSourceInOtherGroup
+
+		if source != nil {
+			if shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, tx, source.ProductID, userID); err != nil {
+				return fmt.Errorf("check source group: %w", err)
+			} else if shared {
+				return ErrSourceInOtherGroup
+			}
+			if err := s.productRepo.AssignProductSource(ctx, tx, source.ID, source.ProductID, targetProductID); err != nil {
+				if errors.Is(err, product.ErrSourceMoved) {
+					return ErrSourceInOtherGroup
+				}
+				return fmt.Errorf("reassign source: %w", err)
+			}
+			source.ProductID = targetProductID
+			return nil
 		}
-		if err := s.productRepo.AssignProductSource(ctx, source.ID, targetProductID); err != nil {
-			return nil, fmt.Errorf("reassign source: %w", err)
-		}
-		source.ProductID = targetProductID
-	} else {
+
 		var extID *string
 		if data.ExternalProductID != "" {
 			extID = &data.ExternalProductID
@@ -284,9 +342,17 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 			CreatedAt:         time.Now(),
 			UpdatedAt:         time.Now(),
 		}
-		if err := s.productRepo.UpsertProductSource(ctx, source); err != nil {
-			return nil, fmt.Errorf("insert source: %w", err)
+		if err := s.productRepo.UpsertProductSource(ctx, tx, source); err != nil {
+			return fmt.Errorf("insert source: %w", err)
 		}
+		// Someone created this source concurrently in another group: never move it implicitly
+		if source.ProductID != targetProductID {
+			return ErrSourceInOtherGroup
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Create TrackedProduct with IsPrimary = false if user isn't tracking yet

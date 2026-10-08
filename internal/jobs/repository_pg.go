@@ -131,14 +131,17 @@ func (r *PostgresRepository) MarkFailed(ctx context.Context, id uuid.UUID, code,
 	return nil
 }
 
-func (r *PostgresRepository) MarkDead(ctx context.Context, id uuid.UUID) error {
+// MarkDead ends a job for good, keeping why (error code and message) for diagnosis.
+func (r *PostgresRepository) MarkDead(ctx context.Context, id uuid.UUID, code, msg string) error {
 	query := `
 		UPDATE fetch_jobs
 		SET status = $1,
+		    error_code = $2,
+		    error_message = $3,
 		    finished_at = NOW()
-		WHERE id = $2;
+		WHERE id = $4;
 	`
-	_, err := r.pool.Exec(ctx, query, domain.JobStatusDead, id)
+	_, err := r.pool.Exec(ctx, query, domain.JobStatusDead, code, msg, id)
 	if err != nil {
 		return fmt.Errorf("mark job dead: %w", err)
 	}

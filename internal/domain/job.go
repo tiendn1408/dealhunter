@@ -40,5 +40,5 @@ type JobRepository interface {
 	MarkRunning(ctx context.Context, id uuid.UUID) error
 	MarkSucceeded(ctx context.Context, tx pgx.Tx, id uuid.UUID) error
 	MarkFailed(ctx context.Context, id uuid.UUID, code, msg string) error
-	MarkDead(ctx context.Context, id uuid.UUID) error
+	MarkDead(ctx context.Context, id uuid.UUID, code, msg string) error
 }

@@ -25,11 +25,11 @@ func (h *Handler) StartGuestSession(w http.ResponseWriter, r *http.Request) {
 
 	// Every call creates a user row, so creation is rate limited per client IP.
 	if h.guestLimiter != nil {
-		allowed, err := h.guestLimiter.Allow(r.Context(), clientIP(r))
+		allowed, retryAfter, err := h.guestLimiter.Allow(r.Context(), clientIP(r))
 		if err != nil {
 			h.log().Warn("guest rate limiter unavailable", "err", err)
 		} else if !allowed {
-			w.Header().Set("Retry-After", "600")
+			writeRetryAfter(w, retryAfter)
 			http.Error(w, "too many guest sessions, try again later", http.StatusTooManyRequests)
 			return
 		}
@@ -37,7 +37,7 @@ func (h *Handler) StartGuestSession(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := h.authService.StartGuestSession(r.Context())
 	if err != nil {
-		http.Error(w, "could not start guest session", http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeSession(w, sess)
@@ -119,7 +119,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	if cookie, err := r.Cookie(refreshCookieName); err == nil {
 		if err := h.authService.Logout(r.Context(), cookie.Value); err != nil {
-			http.Error(w, "logout failed", http.StatusInternalServerError)
+			h.serverError(w, r, err)
 			return
 		}
 	}
@@ -145,7 +145,7 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		http.Error(w, "could not load user", http.StatusInternalServerError)
+		h.serverError(w, r, err)
 		return
 	}
 

@@ -106,10 +106,15 @@ func (h *Handler) AcceptMatchSuggestion(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	if !h.allowScrape(w, r, userID) {
+		return
+	}
 	if err := h.matchingService.AcceptSuggestion(r.Context(), userID, productID, suggestionID); err != nil {
 		switch {
 		case errors.Is(err, matching.ErrSuggestionNotFound):
 			http.Error(w, "suggestion not found", http.StatusNotFound)
+		case errors.Is(err, tracking.ErrGroupShared):
+			http.Error(w, msgGroupShared, http.StatusConflict)
 		case errors.Is(err, tracking.ErrSourceInOtherGroup):
 			http.Error(w, "Sản phẩm gợi ý đang thuộc một nhóm so sánh khác", http.StatusConflict)
 		case errors.Is(err, marketplace.ErrProductUnavailable):
@@ -141,14 +146,18 @@ func (h *Handler) DismissMatchSuggestion(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, productID, ok := h.suggestionScope(w, r)
+	userID, productID, ok := h.suggestionScope(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.matchingService.DismissSuggestion(r.Context(), productID, suggestionID); err != nil {
+	if err := h.matchingService.DismissSuggestion(r.Context(), userID, productID, suggestionID); err != nil {
 		if errors.Is(err, matching.ErrSuggestionNotFound) {
 			http.Error(w, "suggestion not found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, tracking.ErrGroupShared) {
+			http.Error(w, msgGroupShared, http.StatusConflict)
 			return
 		}
 		h.serverError(w, r, err)
@@ -212,6 +221,9 @@ func (h *Handler) TriggerAutoMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Retrieve product comparison/sources to get reference title and price
+	if !h.allowScrape(w, r, userID) {
+		return
+	}
 	cmp, err := h.comparisonSvc.GetComparison(r.Context(), productID)
 	if err != nil || cmp == nil || len(cmp.Sources) == 0 {
 		http.Error(w, "product sources not found", http.StatusNotFound)
@@ -267,6 +279,9 @@ func (h *Handler) TriggerTrackedProductAutoMatch(w http.ResponseWriter, r *http.
 		return
 	}
 
+	if !h.allowScrape(w, r, userID) {
+		return
+	}
 	cmp, err := h.comparisonSvc.GetComparison(r.Context(), productID)
 	if err != nil || cmp == nil || len(cmp.Sources) == 0 {
 		http.Error(w, "product sources not found", http.StatusNotFound)

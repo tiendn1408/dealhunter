@@ -13,13 +13,15 @@ Tai lieu nay dac ta chi tiet toan bo cac endpoint HTTP REST API cua he thong **D
 ### Authentication & Authorization Headers:
 Moi endpoint du lieu ca nhan deu yeu cau **access token** trong header `Authorization: Bearer <access_token>`.
 Header `X-User-ID` **khong con duoc chap nhan** (bi bo qua); request khong co token hop le tra ve `401`.
+Router kiem tra token cho **moi** route ngoai danh sach cong khai (`/health`, `/metrics`, `POST /auth/guest|google|refresh|logout`, webhook Zalo) truoc khi toi handler.
 
 - **Access token**: JWT HS256, song **15 phut** (`ACCESS_TOKEN_TTL`), claim `role` = `guest` hoac `user`. Frontend chi luu trong bo nho.
 - **Refresh token**: cookie `dh_refresh` (HttpOnly, SameSite=Lax, Secure o production, Path `/api/v1/auth`), song **30 ngay** (`REFRESH_TOKEN_TTL`).
   Moi lan refresh se xoay vong token (nghiem ngat, khong co thoi gian an han); dung lai token da xoay vong bi coi la danh cap va thu hoi toan bo phien.
   Frontend tuan tu hoa refresh giua cac tab bang Web Locks API. Logout thu hoi ca "ho" token cua lan dang nhap do.
 - **Chong CSRF cho `/auth/*`**: moi `POST /auth/*` bat buoc `Content-Type: application/json` (`415` neu khong) va neu co header `Origin` thi phai nam trong `CORS_ALLOWED_ORIGINS` (`403` neu khong).
-- **Guest vs thanh vien**: token guest dung duoc cho cac API theo doi gia; lien ket Zalo (`POST/DELETE /users/me/zalo`) chi danh cho thanh vien da dang nhap (`403` voi guest). Token guest het hieu luc ngay khi guest da duoc di tru vao tai khoan.
+- **Guest vs thanh vien**: token guest dung duoc cho cac API theo doi gia; lien ket Zalo (`POST /users/me/zalo/otp`, `POST/DELETE /users/me/zalo`) chi danh cho thanh vien da dang nhap (`403` voi guest). Token guest het hieu luc ngay khi guest da duoc di tru vao tai khoan (ghi du lieu bang token do ⇒ `401`).
+- **Gioi han tan suat**: `POST /auth/guest` 20 lan / 10 phut / IP; cac thao tac khien server truy cap san (`POST /tracked-products`, `link-source`, `auto-match`, accept goi y) 30 lan / 10 phut / nguoi dung. Vuot gioi han ⇒ `429` kem `Retry-After` (giay). Cua so truot (sliding window).
 - **Khach vang lai**: goi `POST /auth/guest` de nhan phien guest do server ky (khong tu sinh UUID phia client).
 - Frontend goi API voi `credentials: "include"` cho cac endpoint `/auth/*`; khi gap `401`, goi `/auth/refresh` mot lan roi thu lai.
 
@@ -27,11 +29,13 @@ Header `X-User-ID` **khong con duoc chap nhan** (bi bo qua); request khong co to
 - Content-Type: `application/json; charset=utf-8`
 - Ma loi chuan:
   - `400 Bad Request`: Payload JSON khong hop le hoac URL khong hop le.
+  - `413 Payload Too Large`: Body lon hon 64KB (moi route `/api/v1`, ke ca webhook).
   - `401 Unauthorized`: Token het han hoac khong co quyen truy cap.
   - `404 Not Found`: Khong tim thay tai nguyen.
-  - `409 Conflict`: Trung lap ban ghi (vi du: san pham nguon da ton tai).
+  - `409 Conflict`: Trung lap ban ghi, hoac thay doi thu cong mot nhom so sanh co nguoi khac cung theo doi.
+  - `429 Too Many Requests`: Vuot gioi han tan suat (kem `Retry-After`).
   - `422 Unprocessable Entity`: Du lieu khong thoa man dieu kien nghiep vu.
-  - `500 Internal Server Error`: Loi he thong hoac co so du lieu.
+  - `500 Internal Server Error`: Loi he thong hoac co so du lieu. Body luon la `internal server error`; chi tiet chi ghi log phia server kem `request_id`. Loi co so du lieu khong bao gio bi tra thanh `404`.
   - `502 Bad Gateway`: Khong doc duoc san pham tu san (trang bi chan, da go hoac thay doi). He thong **khong** thay the bang du lieu gia (tieu de tu URL, gia cu, nguoi ban mac dinh).
 
 ---
@@ -116,6 +120,17 @@ He thong **khong** co `demo-login` hay token gia lap (`mock-google-*`); Google l
     "zalo_connected": true
   }
   ```
+
+---
+
+### 3.5. Lien Ket Zalo (Xac Minh So Dien Thoai Bang OTP)
+Chi thanh vien (`403` voi guest). So dien thoai duoc chuan hoa ve dang `84xxxxxxxxx` (nhan `0912345678`, `84912345678`, `+84 912-345-678`); chi nhan so di dong Viet Nam.
+- **Gui ma**: `POST /api/v1/users/me/zalo/otp` — body `{"phone": "0912345678"}` ⇒ `202 {"phone":"84912345678","expires_in":300,"resend_after":60}`.
+  Ma 6 so gui qua ZNS (mau `ZALO_OTP_TEMPLATE_ID`, bien `otp`), het han 5 phut, chi luu hash. Gui lai sau 60 giay; toi da 5 ma / gio / thanh vien va 5 ma / gio / so dien thoai ⇒ `429` + `Retry-After`. `400` so khong hop le; `503` chua cau hinh Zalo OA / mau OTP; `502` Zalo gui that bai.
+  Khong tra `409` khi so da lien ket voi tai khoan khac (khong lo so nao da co tai khoan).
+- **Xac minh & lien ket**: `POST /api/v1/users/me/zalo` (alias `POST /user/zalo/connect`) — body `{"phone": "...", "code": "123456"}` ⇒ `200 {"status":"connected","phone":"84912345678"}`.
+  `400` ma sai / het han (ma chi dung mot lan); sai 5 lan ⇒ ma bi huy, `429`, phai xin ma moi. Nguoi chung minh so huu so se tiep quan so do neu no dang gan voi tai khoan khac. Khong con nhan `zalo_id` tu nguoi dung.
+- **Huy lien ket**: `DELETE /api/v1/users/me/zalo` (alias `POST /auth/zalo/disconnect`, `DELETE /user/zalo`).
 
 ---
 
@@ -261,7 +276,9 @@ He thong **khong** co `demo-login` hay token gia lap (`mock-google-*`); Google l
     "url": "https://tiktok.com/@shop/product/123456"
   }
   ```
-- **Response**: `201 Created` (hoac `409 Conflict` neu da ton tai).
+- **Response**: `201 Created`.
+- **`409 Conflict`**: nguon da nam trong nhom; nguon thuoc nhom khac co nguoi khac theo doi; hoac **nhom dich co nguoi khac cung theo doi** — nhom dung chung chi duoc he thong tu ghep (auto-match), nguoi dung khong thay doi thu cong (SEC-07). Kiem tra va thay doi chay trong mot transaction khoa ca hai nhom.
+- `429` khi vuot gioi han tan suat.
 
 ### 6.3. Danh Sach Nhom San Pham Da San
 - **Endpoint**: `GET /api/v1/product-groups`
@@ -300,6 +317,8 @@ He thong **khong** co `demo-login` hay token gia lap (`mock-google-*`); Google l
 - **Endpoint**: `POST /api/v1/products/{product_id}/match-suggestions/{id}/accept`
 - **Endpoint**: `POST /api/v1/products/{product_id}/match-suggestions/{id}/dismiss`
 - **Response `200 OK`**
+- **`409 Conflict`**: nhom co nguoi khac cung theo doi (goi y thuoc ve nhom, nen nhom dung chung khong duoc thay doi thu cong).
+- `404`: goi y khong thuoc `{product_id}` hoac nguoi goi khong theo doi nhom. Accept bi gioi han tan suat (`429`).
 
 ---
 

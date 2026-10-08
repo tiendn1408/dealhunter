@@ -15,9 +15,10 @@ func TestJWTManager_GenerateAndValidate(t *testing.T) {
 	email := "test@dealhunter.vn"
 	name := "Test User"
 	user := &User{
-		ID:    userUUID,
-		Email: &email,
-		Name:  &name,
+		ID:           userUUID,
+		Email:        &email,
+		Name:         &name,
+		AuthProvider: "google",
 	}
 
 	token, err := manager.GenerateAccessToken(user)
@@ -48,8 +49,9 @@ func TestJWTManager_ExpiredToken(t *testing.T) {
 	userUUID := uuid.New()
 	email := "expired@dealhunter.vn"
 	user := &User{
-		ID:    userUUID,
-		Email: &email,
+		ID:           userUUID,
+		Email:        &email,
+		AuthProvider: "google",
 	}
 
 	token, err := manager.GenerateAccessToken(user)
@@ -118,5 +120,31 @@ func TestJWTManager_RejectsTokenWithoutRoleOrIssuer(t *testing.T) {
 	noExpiry := forge(&UserClaims{UserID: uuid.New(), Role: RoleUser, RegisteredClaims: jwt.RegisteredClaims{Issuer: "dealhunter"}})
 	if _, err := manager.ValidateToken(noExpiry); err != ErrInvalidToken {
 		t.Errorf("token without exp: expected ErrInvalidToken, got %v", err)
+	}
+}
+
+// A migrated guest must never get a session, and nothing but a Google account is a member
+func TestGenerateAccessToken_OnlyLiveAccounts(t *testing.T) {
+	m := NewJWTManager("jwt-test-secret-key-at-least-32-bytes-long", time.Minute)
+	for _, provider := range []string{"migrated", "", "demo"} {
+		if _, err := m.GenerateAccessToken(&User{ID: uuid.New(), AuthProvider: provider}); err == nil {
+			t.Errorf("provider %q: expected no token", provider)
+		}
+	}
+	if RoleFor(&User{AuthProvider: "migrated"}) != RoleGuest {
+		t.Error("migrated account must not map to the member role")
+	}
+}
+
+// Only HS256 is accepted, even with the right secret
+func TestValidateToken_RejectsOtherHMAC(t *testing.T) {
+	secret := "jwt-test-secret-key-at-least-32-bytes-long"
+	m := NewJWTManager(secret, time.Minute)
+	claims := &UserClaims{UserID: uuid.New(), Role: RoleUser, RegisteredClaims: jwt.RegisteredClaims{
+		Issuer: "dealhunter", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+	}}
+	tok, _ := jwt.NewWithClaims(jwt.SigningMethodHS512, claims).SignedString([]byte(secret))
+	if _, err := m.ValidateToken(tok); err == nil {
+		t.Fatal("expected HS512 token to be rejected")
 	}
 }

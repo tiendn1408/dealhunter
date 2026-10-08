@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,12 +11,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tiendang/deal-hunter/internal/auth"
+	"github.com/tiendang/deal-hunter/internal/voucher"
 )
 
 // stubUserRepo implements auth.UserRepository with fixed results for handler tests.
 type stubUserRepo struct {
+	email      string
 	googleErr  error
 	rotateUser uuid.UUID
 	rotateErr  error
@@ -26,7 +31,11 @@ func (s *stubUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*auth.User, e
 	if s.getByIDErr != nil {
 		return nil, s.getByIDErr
 	}
-	return &auth.User{ID: id, AuthProvider: "google"}, nil
+	u := &auth.User{ID: id, AuthProvider: "google"}
+	if s.email != "" {
+		u.Email = &s.email
+	}
+	return u, nil
 }
 func (s *stubUserRepo) GetByEmail(ctx context.Context, email string) (*auth.User, error) {
 	return nil, auth.ErrUserNotFound
@@ -127,3 +136,87 @@ func TestRefreshSession_CookieHandling(t *testing.T) {
 		})
 	}
 }
+
+// A write rejected because the guest was merged into a member account ends the guest session (401),
+// any other failure stays a generic 500.
+func TestServerError_MigratedUserWriteIs401(t *testing.T) {
+	h := newTestHandler()
+	h.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{fmt.Errorf("create tracking: %w", &pgconn.PgError{Code: "DH001"}), http.StatusUnauthorized},
+		{errors.New("db down"), http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		w := httptest.NewRecorder()
+		h.serverError(w, httptest.NewRequest(http.MethodPost, "/api/v1/tracked-products", nil), tc.err)
+		if w.Code != tc.want {
+			t.Errorf("%v: expected %d, got %d", tc.err, tc.want, w.Code)
+		}
+	}
+}
+
+// SEC-09: vouchers are global data, so only ADMIN_EMAILS may create them; an empty list means nobody.
+func TestCreateVoucher_AdminOnly(t *testing.T) {
+	post := func(h *Handler, asMember bool) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tracked-products/x/vouchers", strings.NewReader(`{}`))
+		if asMember {
+			authAsMember(req, uuid.New())
+		} else {
+			authAs(req, uuid.New())
+		}
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", uuid.NewString())
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		w := httptest.NewRecorder()
+		h.CreateTrackedProductVoucher(w, req)
+		return w.Code
+	}
+	handler := func(email string, admins []string) *Handler {
+		h := newAuthTestHandler(t, &stubUserRepo{email: email})
+		h.SetVoucherRepository(noVoucherRepo{})
+		h.trackingService = newFakeStore().trackingService()
+		h.SetAdminEmails(admins)
+		return h
+	}
+
+	if code := post(handler("boss@example.com", nil), true); code != http.StatusForbidden {
+		t.Errorf("empty ADMIN_EMAILS must refuse everyone, got %d", code)
+	}
+	if code := post(handler("someone@example.com", []string{"boss@example.com"}), true); code != http.StatusForbidden {
+		t.Errorf("member not in ADMIN_EMAILS: expected 403, got %d", code)
+	}
+	if code := post(handler("boss@example.com", []string{"boss@example.com"}), false); code != http.StatusForbidden {
+		t.Errorf("guest token, even with an admin email: expected 403, got %d", code)
+	}
+}
+
+// SEC-12: a failure is logged server-side and answered with a generic body: no SQL, driver or
+// upstream detail reaches the client.
+func TestServerError_GenericBody(t *testing.T) {
+	h := newTestHandler()
+	var logs strings.Builder
+	h.logger = slog.New(slog.NewTextHandler(&logs, nil))
+	w := httptest.NewRecorder()
+	secret := `ERROR: relation "users" does not exist (SQLSTATE 42P01)`
+	h.serverError(w, httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil), errors.New(secret))
+	if w.Code != http.StatusInternalServerError || strings.TrimSpace(w.Body.String()) != "internal server error" {
+		t.Fatalf("expected a generic 500, got %d %q", w.Code, w.Body.String())
+	}
+	if !strings.Contains(logs.String(), "SQLSTATE 42P01") {
+		t.Fatal("the detail must be logged server-side")
+	}
+}
+
+// noVoucherRepo fails the test run if a refused request ever reached storage.
+type noVoucherRepo struct{}
+
+func (noVoucherRepo) UpsertVoucher(context.Context, *voucher.ProductVoucher) error {
+	panic("voucher stored by a non-admin")
+}
+func (noVoucherRepo) GetVouchersBySourceID(context.Context, uuid.UUID) ([]*voucher.ProductVoucher, error) {
+	return nil, nil
+}
+func (noVoucherRepo) DeleteExpiredVouchers(context.Context) error { return nil }

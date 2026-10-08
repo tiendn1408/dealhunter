@@ -34,6 +34,7 @@ func (a *TikTokAdapter) Name() string {
 }
 
 func (a *TikTokAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
+	var lastErr error // classified cause of the last failed request
 	// Expand shortlinks if necessary
 	if strings.Contains(rawURL, "vt.tiktok.com") {
 		resolved, err := a.client.ResolveFinalURL(ctx, rawURL)
@@ -59,6 +60,7 @@ func (a *TikTokAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 
 	// 1. Try HTML Crawler Extraction (OpenGraph / JSON-LD)
 	resp, err := a.client.Fetch(ctx, rawURL, nil)
+	lastErr = err
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, rawURL)
 		if extractErr == nil && extracted.Title != "" && extracted.Price > 0 {
@@ -83,14 +85,16 @@ func (a *TikTokAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 		}
 	}
 
-	return nil, fmt.Errorf("%w: tiktok %s", marketplace.ErrProductUnavailable, rawURL)
+	return nil, marketplace.Unavailable("tiktok", rawURL, lastErr)
 }
 
 func (a *TikTokAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
+	var lastErr error // classified cause of the last failed request
 	targetURL := source.CanonicalURL
 
 	// 1. Try HTML crawl
 	resp, err := a.client.Fetch(ctx, targetURL, nil)
+	lastErr = err
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, targetURL)
 		if extractErr == nil && extracted.Price > 0 {
@@ -106,5 +110,5 @@ func (a *TikTokAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 		}
 	}
 
-	return nil, fmt.Errorf("%w: tiktok price %s", marketplace.ErrProductUnavailable, targetURL)
+	return nil, marketplace.Unavailable("tiktok price", targetURL, lastErr)
 }

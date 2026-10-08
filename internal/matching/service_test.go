@@ -70,12 +70,17 @@ func (ms *mockSearcher) Search(_ context.Context, platform, _ string) ([]*MatchC
 
 type mockLinker struct {
 	linkedURLs []string
+	byUser     []bool
+	groupErr   error // returned by CanEditGroup (e.g. tracking.ErrGroupShared)
 }
 
-func (ml *mockLinker) LinkSource(_ context.Context, _, _ uuid.UUID, url string) error {
+func (ml *mockLinker) LinkSource(_ context.Context, _, _ uuid.UUID, url string, byUser bool) error {
 	ml.linkedURLs = append(ml.linkedURLs, url)
+	ml.byUser = append(ml.byUser, byUser)
 	return nil
 }
+
+func (ml *mockLinker) CanEditGroup(context.Context, uuid.UUID, uuid.UUID) error { return ml.groupErr }
 
 type mockComparisonProvider struct {
 	invalidated bool
@@ -166,10 +171,10 @@ func TestMatchingService_DiscoverAndMatch(t *testing.T) {
 		ProductID: productID,
 		Status:    StatusPending,
 	})
-	if err := svc.DismissSuggestion(ctx, uuid.New(), dismissID); !errors.Is(err, ErrSuggestionNotFound) {
+	if err := svc.DismissSuggestion(ctx, userID, uuid.New(), dismissID); !errors.Is(err, ErrSuggestionNotFound) {
 		t.Fatalf("expected ErrSuggestionNotFound for foreign product, got %v", err)
 	}
-	if err := svc.DismissSuggestion(ctx, productID, dismissID); err != nil {
+	if err := svc.DismissSuggestion(ctx, userID, productID, dismissID); err != nil {
 		t.Fatalf("unexpected error on dismiss: %v", err)
 	}
 	d, _ := repo.GetSuggestionByID(ctx, dismissID)

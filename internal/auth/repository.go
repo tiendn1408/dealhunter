@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -111,23 +112,12 @@ func (r *PostgresUserRepository) UpsertGoogleUser(ctx context.Context, id Google
 		return nil, errors.New("google identity requires sub and email")
 	}
 
-	row := r.pool.QueryRow(ctx, `
-		UPDATE users SET
-			email = $2,
-			name = COALESCE(NULLIF($3, ''), name),
-			avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
-			updated_at = NOW()
-		WHERE google_sub = $1
-		RETURNING `+userColumns, id.Sub, id.Email, id.Name, id.Picture)
-	user, err := scanUser(row)
-	if err == nil {
-		return user, nil
-	}
-	if !errors.Is(err, ErrUserNotFound) {
-		return nil, err
+	user, err := r.updateGoogleUserBySub(ctx, id)
+	if err == nil || !errors.Is(err, ErrUserNotFound) {
+		return user, err
 	}
 
-	row = r.pool.QueryRow(ctx, `
+	row := r.pool.QueryRow(ctx, `
 		INSERT INTO users (id, email, name, avatar_url, auth_provider, google_sub, created_at, updated_at)
 		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), 'google', $5, NOW(), NOW())
 		ON CONFLICT (email) DO UPDATE SET
@@ -138,8 +128,34 @@ func (r *PostgresUserRepository) UpsertGoogleUser(ctx context.Context, id Google
 		WHERE users.auth_provider = 'google' AND users.google_sub IS NULL
 		RETURNING `+userColumns, uuid.New(), id.Email, id.Name, id.Picture, id.Sub)
 	user, err = scanUser(row)
+	if isUniqueViolation(err) {
+		// A concurrent first login of the same person inserted the row with this `sub`
+		return r.updateGoogleUserBySub(ctx, id)
+	}
 	if errors.Is(err, ErrUserNotFound) {
-		// The email belongs to a non-Google account or to a different Google `sub`
+		// Either a concurrent first login of the same person bound the email row to this `sub` just now,
+		// or the email belongs to a non-Google account or to a different Google `sub`.
+		if user, err := r.updateGoogleUserBySub(ctx, id); err == nil || !errors.Is(err, ErrUserNotFound) {
+			return user, err
+		}
+		return nil, ErrAccountConflict
+	}
+	return user, err
+}
+
+// updateGoogleUserBySub refreshes the profile of the account bound to a Google `sub` (ErrUserNotFound if none).
+// Changing the email to one another account already uses is an account conflict.
+func (r *PostgresUserRepository) updateGoogleUserBySub(ctx context.Context, id GoogleIdentity) (*User, error) {
+	row := r.pool.QueryRow(ctx, `
+		UPDATE users SET
+			email = $2,
+			name = COALESCE(NULLIF($3, ''), name),
+			avatar_url = COALESCE(NULLIF($4, ''), avatar_url),
+			updated_at = NOW()
+		WHERE google_sub = $1
+		RETURNING `+userColumns, id.Sub, id.Email, id.Name, id.Picture)
+	user, err := scanUser(row)
+	if isUniqueViolation(err) {
 		return nil, ErrAccountConflict
 	}
 	return user, err
@@ -244,8 +260,10 @@ func (r *PostgresUserRepository) MigrateGuestData(ctx context.Context, guestID u
 		return nil, fmt.Errorf("detach guest zalo link: %w", err)
 	}
 	if guestZalo != nil || guestPhone != nil {
+		// Moved as a pair, and only to an account without any Zalo link: mixing the target's Zalo ID
+		// with the guest's phone would address messages to a different person.
 		if _, err := tx.Exec(ctx,
-			`UPDATE users SET zalo_id = COALESCE(zalo_id, $2), phone = COALESCE(phone, $3), updated_at = NOW() WHERE id = $1`,
+			`UPDATE users SET zalo_id = $2, phone = $3, updated_at = NOW() WHERE id = $1 AND zalo_id IS NULL AND phone IS NULL`,
 			targetUserID, guestZalo, guestPhone); err != nil {
 			return nil, fmt.Errorf("move guest zalo link: %w", err)
 		}
@@ -297,4 +315,10 @@ func scanUser(row pgx.Row) (*User, error) {
 		return nil, fmt.Errorf("scan user: %w", err)
 	}
 	return &u, nil
+}
+
+// isUniqueViolation reports a PostgreSQL unique-constraint violation (SQLSTATE 23505).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

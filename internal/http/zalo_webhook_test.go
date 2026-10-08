@@ -68,7 +68,7 @@ func (m *mockWebhookNotifRepo) GetUserRecipient(_ context.Context, _ uuid.UUID, 
 func (m *mockWebhookNotifRepo) GetUserProfile(_ context.Context, _ uuid.UUID) (*notification.UserProfile, error) {
 	return nil, nil
 }
-func (m *mockWebhookNotifRepo) UpdateUserZalo(_ context.Context, _ uuid.UUID, _, _ string) error {
+func (m *mockWebhookNotifRepo) LinkVerifiedPhone(_ context.Context, _ uuid.UUID, _ string) error {
 	return nil
 }
 func (m *mockWebhookNotifRepo) DisconnectUserZalo(_ context.Context, _ uuid.UUID) error {

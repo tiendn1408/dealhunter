@@ -24,6 +24,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/marketplace/tiktok"
 	"github.com/tiendang/deal-hunter/internal/matching"
 	"github.com/tiendang/deal-hunter/internal/notification"
+	"github.com/tiendang/deal-hunter/internal/notification/zalo"
 	"github.com/tiendang/deal-hunter/internal/pricing"
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
@@ -136,6 +137,11 @@ func main() {
 	handler.SetCORSAllowedOrigins(cfg.CORSOrigins())
 	handler.SetAdminEmails(cfg.AdminEmailList())
 	handler.SetGuestRateLimiter(router.NewRedisRateLimiter(rdb, "dh:rl:guest", 20, 10*time.Minute))
+	// Requests that make the server call a marketplace, per user
+	handler.SetScrapeRateLimiter(router.NewRedisRateLimiter(rdb, "dh:rl:scrape", 30, 10*time.Minute))
+	if v := newPhoneVerifier(cfg, rdb, logger); v != nil {
+		handler.SetPhoneVerifier(v)
+	}
 	r := router.NewRouter(logger, handler)
 
 	srv := &http.Server{
@@ -188,7 +194,23 @@ type trackingLinker struct {
 	trackingSvc *tracking.TrackingService
 }
 
-func (l *trackingLinker) LinkSource(ctx context.Context, userID, productID uuid.UUID, url string) error {
-	_, err := l.trackingSvc.LinkSourceToProduct(ctx, userID, productID, url)
+func (l *trackingLinker) LinkSource(ctx context.Context, userID, productID uuid.UUID, url string, byUser bool) error {
+	_, err := l.trackingSvc.LinkSourceToProduct(ctx, userID, productID, url, byUser)
 	return err
+}
+
+func (l *trackingLinker) CanEditGroup(ctx context.Context, userID, productID uuid.UUID) error {
+	return l.trackingSvc.CanEditGroup(ctx, userID, productID)
+}
+
+// newPhoneVerifier sends Zalo phone verification codes by ZNS. Without Zalo OA credentials or an OTP
+// template it returns nil and linking Zalo answers 503. The API only reads the OA access token
+// (the notifier refreshes it), so it never races the notifier's refresh-token rotation.
+func newPhoneVerifier(cfg *config.Config, rdb *redis.Client, logger *slog.Logger) *notification.PhoneVerifier {
+	if !cfg.ZaloEnabled || cfg.ZaloOTPTemplateID == "" {
+		logger.Warn("Zalo phone verification is NOT configured: linking Zalo is unavailable",
+			"zalo_enabled", cfg.ZaloEnabled, "otp_template", cfg.ZaloOTPTemplateID != "")
+		return nil
+	}
+	return notification.NewPhoneVerifier(rdb, zalo.NewHTTPZaloClient(cfg.ZaloOAAccessToken, rdb), cfg.ZaloOTPTemplateID)
 }

@@ -243,6 +243,9 @@ func (r *PostgresRepository) DeactivateRule(ctx context.Context, id uuid.UUID) e
 	return err
 }
 
+// ErrRuleNotFound: no alert rule with that ID belongs to the user.
+var ErrRuleNotFound = errors.New("alert rule not found")
+
 func (r *PostgresRepository) DeactivateRuleForUser(ctx context.Context, id, userID uuid.UUID) error {
 	query := `
 		UPDATE alert_rules
@@ -254,7 +257,7 @@ func (r *PostgresRepository) DeactivateRuleForUser(ctx context.Context, id, user
 		return fmt.Errorf("deactivate rule for user: %w", err)
 	}
 	if res.RowsAffected() == 0 {
-		return errors.New("alert rule not found")
+		return ErrRuleNotFound
 	}
 	return nil
 }

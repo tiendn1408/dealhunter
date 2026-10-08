@@ -302,9 +302,18 @@ func (r *PostgresRepository) MarkAsRead(ctx context.Context, id uuid.UUID, userI
 		SET read_at = NOW()
 		WHERE id = $1 AND user_id = $2;
 	`
-	_, err := r.pool.Exec(ctx, query, id, userID)
-	return err
+	res, err := r.pool.Exec(ctx, query, id, userID)
+	if err != nil {
+		return fmt.Errorf("mark notification read: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotificationNotFound
+	}
+	return nil
 }
+
+// ErrNotificationNotFound: no notification with that ID belongs to the user.
+var ErrNotificationNotFound = errors.New("notification not found")
 
 func (r *PostgresRepository) GetLog(ctx context.Context, id uuid.UUID) (*NotificationLog, error) {
 	query := `
@@ -374,13 +383,27 @@ func (r *PostgresRepository) GetUserProfile(ctx context.Context, userID uuid.UUI
 	return &p, nil
 }
 
-func (r *PostgresRepository) UpdateUserZalo(ctx context.Context, userID uuid.UUID, zaloID, phone string) error {
-	ensureQuery := `INSERT INTO users (id, created_at) VALUES ($1, NOW()) ON CONFLICT (id) DO NOTHING;`
-	_, _ = r.pool.Exec(ctx, ensureQuery, userID)
+// LinkVerifiedPhone links a phone number the user proved to own (OTP). The verified owner takes the
+// number over from any other account it was linked to, so nobody can reserve someone else's number.
+// An unverified Zalo ID is cleared: notifications then go to the verified number.
+func (r *PostgresRepository) LinkVerifiedPhone(ctx context.Context, userID uuid.UUID, phone string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-	query := `UPDATE users SET zalo_id = NULLIF($1, ''), phone = NULLIF($2, '') WHERE id = $3;`
-	_, err := r.pool.Exec(ctx, query, zaloID, phone, userID)
-	return err
+	if _, err := tx.Exec(ctx, `UPDATE users SET phone = NULL, updated_at = NOW() WHERE phone = $1 AND id <> $2`, phone, userID); err != nil {
+		return fmt.Errorf("release phone from previous account: %w", err)
+	}
+	tag, err := tx.Exec(ctx, `UPDATE users SET phone = $1, zalo_id = NULL, updated_at = NOW() WHERE id = $2`, phone, userID)
+	if err != nil {
+		return fmt.Errorf("link phone: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("link phone: user %s not found", userID)
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresRepository) DisconnectUserZalo(ctx context.Context, userID uuid.UUID) error {

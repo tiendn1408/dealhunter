@@ -160,7 +160,7 @@ func (v *ProductVoucher) Validate(now time.Time) error {
 		return errors.New("voucher_type must be shop_voucher, platform_voucher or freeship_voucher")
 	case strings.TrimSpace(v.Title) == "" || utf8.RuneCountInString(v.Title) > 200:
 		return errors.New("title is required (max 200 characters)")
-	case len(v.VoucherCode) > 64:
+	case utf8.RuneCountInString(v.VoucherCode) > 64:
 		return errors.New("voucher_code is too long (max 64 characters)")
 	case v.DiscountAmount < 0 || v.MinOrderValue < 0:
 		return errors.New("discount_amount and min_order_value must not be negative")

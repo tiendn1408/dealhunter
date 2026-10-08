@@ -47,56 +47,64 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 			r.Post("/google", handler.GoogleLogin)
 			r.Post("/refresh", handler.RefreshSession)
 			r.Post("/logout", handler.Logout)
-			r.Get("/me", handler.GetCurrentUser)
+			r.With(handler.requireAccessToken).Get("/me", handler.GetCurrentUser)
+			// Inside the group so the CSRF guard covers it like every other POST /auth/*
+			r.With(handler.requireAccessToken).Get("/zalo/status", handler.GetUserProfile)
+			r.With(handler.requireAccessToken).Post("/zalo/disconnect", handler.DisconnectZalo)
 		})
 
-		r.Post("/tracked-products", handler.TrackProduct)
-		r.Get("/tracked-products", handler.ListTrackings)
-		r.Get("/tracked-products/{id}", handler.GetTracking)
-		r.Get("/tracked-products/{id}/prices", handler.GetTrackingPrices)
-		r.Post("/tracked-products/{id}/pause", handler.PauseTracking)
-		r.Post("/tracked-products/{id}/resume", handler.ResumeTracking)
-
-		// Phase 2: Alert Rules & Notifications
-		r.Post("/tracked-products/{id}/alerts", handler.CreateAlert)
-		r.Get("/tracked-products/{id}/alerts", handler.ListAlerts)
-		r.Get("/alert-rules", handler.ListUserAlerts)
-		r.Delete("/alerts/{alert_id}", handler.DeactivateAlert)
-		r.Get("/alerts/{alert_id}/logs", handler.GetAlertLogs)
-		r.Get("/notifications", handler.ListNotifications)
-		r.Post("/notifications/{id}/read", handler.MarkNotificationAsRead)
-
-		// Phase 2: User Profile & Zalo Connection
-		r.Get("/users/me", handler.GetUserProfile)
-		r.Post("/users/me/zalo", handler.ConnectZalo)
-		r.Delete("/users/me/zalo", handler.DisconnectZalo)
-		r.Get("/auth/zalo/status", handler.GetUserProfile)
-		r.Post("/auth/zalo/disconnect", handler.DisconnectZalo)
-		r.Post("/user/zalo/connect", handler.ConnectZalo)
-		r.Get("/user/zalo/status", handler.GetUserProfile)
-		r.Delete("/user/zalo", handler.DisconnectZalo)
-
-		// Phase 3: Cross-platform Price Comparison
-		r.Get("/products/{product_id}/comparison", handler.GetProductComparison)
-		r.Post("/products/{product_id}/link-source", handler.LinkProductSource)
-		r.Get("/product-groups", handler.ListProductGroups)
-		r.Get("/tracked-products/{id}/comparison", handler.GetTrackedProductComparison)
-
-		// GAP-03: Cross-platform Auto-Matching & Suggestions
-		r.Get("/products/{product_id}/match-suggestions", handler.GetMatchSuggestions)
-		r.Post("/products/{product_id}/match-suggestions/{id}/accept", handler.AcceptMatchSuggestion)
-		r.Post("/products/{product_id}/match-suggestions/{id}/dismiss", handler.DismissMatchSuggestion)
-		r.Post("/products/{product_id}/auto-match", handler.TriggerAutoMatch)
-		r.Get("/tracked-products/{id}/match-suggestions", handler.GetTrackedProductMatchSuggestions)
-		r.Post("/tracked-products/{id}/auto-match", handler.TriggerTrackedProductAutoMatch)
-
-		// GAP-04: Zalo OA & ZNS Webhooks
+		// GAP-04: Zalo OA & ZNS Webhooks (authenticated by the Zalo signature, not a user token)
 		r.Post("/webhooks/zalo", handler.HandleZaloWebhook)
 		r.Post("/notifications/webhook/zalo", handler.HandleZaloWebhook)
 
-		// Phase 3.5.2: Voucher Intelligence & 2-Step Combo
-		r.Get("/tracked-products/{id}/vouchers", handler.GetTrackedProductVouchers)
-		r.Post("/tracked-products/{id}/vouchers", handler.CreateTrackedProductVoucher)
+		// Everything below acts for a signed-in user (guest or member): a valid access token is required
+		// before any handler runs. Handlers still resolve the user and check ownership themselves.
+		r.Group(func(r chi.Router) {
+			r.Use(handler.requireAccessToken)
+
+			r.Post("/tracked-products", handler.TrackProduct)
+			r.Get("/tracked-products", handler.ListTrackings)
+			r.Get("/tracked-products/{id}", handler.GetTracking)
+			r.Get("/tracked-products/{id}/prices", handler.GetTrackingPrices)
+			r.Post("/tracked-products/{id}/pause", handler.PauseTracking)
+			r.Post("/tracked-products/{id}/resume", handler.ResumeTracking)
+
+			// Phase 2: Alert Rules & Notifications
+			r.Post("/tracked-products/{id}/alerts", handler.CreateAlert)
+			r.Get("/tracked-products/{id}/alerts", handler.ListAlerts)
+			r.Get("/alert-rules", handler.ListUserAlerts)
+			r.Delete("/alerts/{alert_id}", handler.DeactivateAlert)
+			r.Get("/alerts/{alert_id}/logs", handler.GetAlertLogs)
+			r.Get("/notifications", handler.ListNotifications)
+			r.Post("/notifications/{id}/read", handler.MarkNotificationAsRead)
+
+			// Phase 2: User Profile & Zalo Connection
+			r.Get("/users/me", handler.GetUserProfile)
+			r.Post("/users/me/zalo/otp", handler.RequestZaloOTP)
+			r.Post("/users/me/zalo", handler.ConnectZalo)
+			r.Delete("/users/me/zalo", handler.DisconnectZalo)
+			r.Post("/user/zalo/connect", handler.ConnectZalo)
+			r.Get("/user/zalo/status", handler.GetUserProfile)
+			r.Delete("/user/zalo", handler.DisconnectZalo)
+
+			// Phase 3: Cross-platform Price Comparison
+			r.Get("/products/{product_id}/comparison", handler.GetProductComparison)
+			r.Post("/products/{product_id}/link-source", handler.LinkProductSource)
+			r.Get("/product-groups", handler.ListProductGroups)
+			r.Get("/tracked-products/{id}/comparison", handler.GetTrackedProductComparison)
+
+			// GAP-03: Cross-platform Auto-Matching & Suggestions
+			r.Get("/products/{product_id}/match-suggestions", handler.GetMatchSuggestions)
+			r.Post("/products/{product_id}/match-suggestions/{id}/accept", handler.AcceptMatchSuggestion)
+			r.Post("/products/{product_id}/match-suggestions/{id}/dismiss", handler.DismissMatchSuggestion)
+			r.Post("/products/{product_id}/auto-match", handler.TriggerAutoMatch)
+			r.Get("/tracked-products/{id}/match-suggestions", handler.GetTrackedProductMatchSuggestions)
+			r.Post("/tracked-products/{id}/auto-match", handler.TriggerTrackedProductAutoMatch)
+
+			// Phase 3.5.2: Voucher Intelligence & 2-Step Combo
+			r.Get("/tracked-products/{id}/vouchers", handler.GetTrackedProductVouchers)
+			r.Post("/tracked-products/{id}/vouchers", handler.CreateTrackedProductVoucher)
+		})
 	})
 
 	return r
@@ -161,4 +169,16 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// requireAccessToken rejects a request without a valid access token (signature, issuer, expiry, role)
+// with 401 before it reaches a handler, so no user route can be served anonymously by mistake.
+func (h *Handler) requireAccessToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := h.bearerClaims(r); err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

@@ -301,7 +301,7 @@ func (r *PostgresRepository) SetTrackingActive(ctx context.Context, id uuid.UUID
 		return fmt.Errorf("update tracking active state: %w", err)
 	}
 	if res.RowsAffected() == 0 {
-		return errors.New("tracking not found")
+		return domain.ErrTrackingNotFound
 	}
 	return nil
 }
@@ -318,12 +318,46 @@ func (r *PostgresRepository) SetTrackingActiveForUser(ctx context.Context, id, u
 		return fmt.Errorf("update tracking active state: %w", err)
 	}
 	if res.RowsAffected() == 0 {
-		return errors.New("tracking not found")
+		return domain.ErrTrackingNotFound
 	}
 	return nil
 }
 
-func (r *PostgresRepository) UserTracksProduct(ctx context.Context, userID, productID uuid.UUID) (bool, error) {
+// querier is a pool or a transaction.
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func (r *PostgresRepository) q(tx pgx.Tx) querier {
+	if tx != nil {
+		return tx
+	}
+	return r.pool
+}
+
+// WithGroupLock runs fn in a transaction that holds exclusive locks on the given product groups (taken in
+// a fixed order, so concurrent callers cannot deadlock). New trackings take a share lock on their group
+// (migration 000015), so checks made inside fn about who tracks a group stay true until fn commits.
+func (r *PostgresRepository) WithGroupLock(ctx context.Context, productIDs []uuid.UUID, fn func(tx pgx.Tx) error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `SELECT id FROM products WHERE id = ANY($1) ORDER BY id FOR UPDATE`, productIDs); err != nil {
+		return fmt.Errorf("lock product groups: %w", err)
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit group change: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UserTracksProduct(ctx context.Context, tx pgx.Tx, userID, productID uuid.UUID) (bool, error) {
 	query := `
 		SELECT EXISTS (
 			SELECT 1
@@ -333,13 +367,13 @@ func (r *PostgresRepository) UserTracksProduct(ctx context.Context, userID, prod
 		);
 	`
 	var ok bool
-	if err := r.pool.QueryRow(ctx, query, userID, productID).Scan(&ok); err != nil {
+	if err := r.q(tx).QueryRow(ctx, query, userID, productID).Scan(&ok); err != nil {
 		return false, fmt.Errorf("check product access: %w", err)
 	}
 	return ok, nil
 }
 
-func (r *PostgresRepository) OtherUsersTrackProduct(ctx context.Context, productID, userID uuid.UUID) (bool, error) {
+func (r *PostgresRepository) OtherUsersTrackProduct(ctx context.Context, tx pgx.Tx, productID, userID uuid.UUID) (bool, error) {
 	query := `
 		SELECT EXISTS (
 			SELECT 1
@@ -349,7 +383,7 @@ func (r *PostgresRepository) OtherUsersTrackProduct(ctx context.Context, product
 		);
 	`
 	var ok bool
-	if err := r.pool.QueryRow(ctx, query, productID, userID).Scan(&ok); err != nil {
+	if err := r.q(tx).QueryRow(ctx, query, productID, userID).Scan(&ok); err != nil {
 		return false, fmt.Errorf("check other trackers: %w", err)
 	}
 	return ok, nil

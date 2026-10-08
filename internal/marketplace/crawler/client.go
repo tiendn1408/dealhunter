@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/tiendang/deal-hunter/pkg/retry"
 )
 
 var defaultUserAgents = []string{
@@ -142,12 +144,16 @@ func (c *Client) Fetch(ctx context.Context, targetURL string, customHeaders map[
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
+		return nil, retry.Network(err)
 	}
 	defer resp.Body.Close()
 
 	if c.rateLimiter != nil && (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) {
 		c.rateLimiter.RecordBackoff(parsed.Host)
+	}
+	// A blocked, missing or failing page is never parsed: error pages can still carry og:price tags
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, retry.FromHTTPStatus(resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))

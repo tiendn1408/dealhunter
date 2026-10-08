@@ -74,6 +74,11 @@ func (r *PostgresUserRepository) RotateRefreshToken(ctx context.Context, oldHash
 	}
 	defer tx.Rollback(ctx)
 
+	// Serialize with logout and other rotations of the same login (see lockRefreshFamily)
+	if err := lockRefreshFamily(ctx, tx, oldHash); err != nil {
+		return uuid.Nil, err
+	}
+
 	var (
 		id           uuid.UUID
 		userID       uuid.UUID
@@ -133,23 +138,50 @@ func (r *PostgresUserRepository) RotateRefreshToken(ctx context.Context, oldHash
 }
 
 // RevokeRefreshFamily revokes every token of the login that tokenHash belongs to (logout),
-// including tokens a concurrent refresh in another tab may have just issued.
+// including tokens a concurrent refresh in another tab may have just issued: the family lock makes
+// logout wait for an in-flight rotation, and the UPDATE then sees the token it committed.
 func (r *PostgresUserRepository) RevokeRefreshFamily(ctx context.Context, tokenHash string) error {
-	_, err := r.pool.Exec(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if err := lockRefreshFamily(ctx, tx, tokenHash); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
 		UPDATE refresh_tokens SET revoked_at = NOW()
 		WHERE revoked_at IS NULL
-		  AND family_id = (SELECT family_id FROM refresh_tokens WHERE token_hash = $1)`, tokenHash)
-	if err != nil {
+		  AND family_id = (SELECT family_id FROM refresh_tokens WHERE token_hash = $1)`, tokenHash); err != nil {
 		return fmt.Errorf("revoke refresh family: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit refresh family revocation: %w", err)
 	}
 	return nil
 }
 
-// PurgeRefreshTokens deletes tokens that expired, or were revoked, more than `retain` ago.
+// lockRefreshFamily takes a transaction-scoped lock on the login (token family) tokenHash belongs to.
+// Rotation and logout both take it before touching any token row, so they never interleave (a logout
+// can no longer miss a token a concurrent rotation is about to commit) and cannot deadlock.
+// An unknown hash takes no lock; the caller's own lookup then rejects it.
+func lockRefreshFamily(ctx context.Context, tx pgx.Tx, tokenHash string) error {
+	if _, err := tx.Exec(ctx, `
+		SELECT pg_advisory_xact_lock(hashtextextended(family_id::text, 0))
+		FROM refresh_tokens WHERE token_hash = $1`, tokenHash); err != nil {
+		return fmt.Errorf("lock refresh family: %w", err)
+	}
+	return nil
+}
+
+// PurgeRefreshTokens deletes tokens that expired, or were revoked by logout/migration, more than `retain`
+// ago. Rotated tokens are kept until they expire: replaying one must keep being detected as theft for as
+// long as it could otherwise have been used.
 func (r *PostgresUserRepository) PurgeRefreshTokens(ctx context.Context, retain time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-retain)
 	tag, err := r.pool.Exec(ctx,
-		`DELETE FROM refresh_tokens WHERE expires_at < $1 OR revoked_at < $1`, cutoff)
+		`DELETE FROM refresh_tokens WHERE expires_at < $1 OR (revoked_at < $1 AND replaced_by IS NULL)`, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("purge refresh tokens: %w", err)
 	}

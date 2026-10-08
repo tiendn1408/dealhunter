@@ -80,6 +80,7 @@ type Repository interface {
 	GetLog(ctx context.Context, id uuid.UUID) (*NotificationLog, error)
 	GetUserRecipient(ctx context.Context, userID uuid.UUID, channel string) (string, error)
 	GetUserProfile(ctx context.Context, userID uuid.UUID) (*UserProfile, error)
-	UpdateUserZalo(ctx context.Context, userID uuid.UUID, zaloID, phone string) error
+	// LinkVerifiedPhone links a phone number whose ownership was proven (OTP) to userID.
+	LinkVerifiedPhone(ctx context.Context, userID uuid.UUID, phone string) error
 	DisconnectUserZalo(ctx context.Context, userID uuid.UUID) error
 }

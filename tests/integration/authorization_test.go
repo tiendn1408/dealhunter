@@ -72,7 +72,7 @@ func TestProductGroupAuthorization(t *testing.T) {
 	handler.SetAlertAndNotificationRepos(alert.NewPostgresRepository(dbPool), notification.NewPostgresRepository(dbPool))
 	handler.SetComparisonService(compSvc)
 	handler.SetAuthService(newTestAuthService(t, authRepo, jwtMgr), jwtMgr)
-	handler.SetMatchingService(matching.NewMatchingService(matchingRepo, &fakemarket.Searcher{}, nil, compSvc))
+	handler.SetMatchingService(matching.NewMatchingService(matchingRepo, &fakemarket.Searcher{}, &testTrackingLinker{trackingSvc: trackingSvc}, compSvc))
 	handler.SetVoucherRepository(voucher.NewPostgresRepository(dbPool))
 	handler.SetGuestRateLimiter(router.NewRedisRateLimiter(rdb, "dh:test:rl:"+uuid.New().String(), 3, time.Minute))
 
@@ -135,6 +135,45 @@ func TestProductGroupAuthorization(t *testing.T) {
 
 	trackA, sourceA, productA := track(bearerA, newURL("laptop"))
 	_, sourceB, productB := track(bearerB, newURL("phone"))
+
+	// SEC-07: tracking the same public URL makes a group shared; then only the system's auto-match may
+	// change it, never one of its users (they could put any product in the others' comparison).
+	t.Run("SEC07_SharedGroupOnlyChangedBySystem", func(t *testing.T) {
+		sharedURL := newURL("shared")
+		_, _, groupG := track(bearerA, sharedURL)
+		_, sessC, _ := googleLogin(t, server.URL, fmt.Sprintf("authz-c-%s@dealhunter.vn", uuid.New().String()[:8]), "")
+		track("Bearer "+sessC.AccessToken, sharedURL) // C now tracks the same source: G is shared
+
+		if code, body := call(http.MethodPost, "/api/v1/products/"+groupG.String()+"/link-source", bearerA, map[string]string{"url": newURL("cheap-fake")}); code != http.StatusConflict {
+			t.Fatalf("link-source into a shared group: expected 409, got %d %s", code, body)
+		}
+
+		sugg := &matching.MatchSuggestion{ID: uuid.New(), ProductID: groupG, CandidatePlatform: "mock", CandidateURL: newURL("suggested"),
+			CandidateTitle: "Suggested", MatchScore: 0.8, Status: matching.StatusPending}
+		if err := matchingRepo.SaveSuggestion(ctx, sugg); err != nil {
+			t.Fatal(err)
+		}
+		for _, action := range []string{"accept", "dismiss"} {
+			path := fmt.Sprintf("/api/v1/products/%s/match-suggestions/%s/%s", groupG, sugg.ID, action)
+			if code, body := call(http.MethodPost, path, bearerA, nil); code != http.StatusConflict {
+				t.Fatalf("%s on a shared group: expected 409, got %d %s", action, code, body)
+			}
+		}
+		if got, _ := matchingRepo.GetSuggestionByID(ctx, sugg.ID); got == nil || got.Status != matching.StatusPending {
+			t.Fatalf("suggestion of a shared group must stay pending, got %+v", got)
+		}
+
+		// The system's auto-link may still extend the shared group
+		if _, err := trackingSvc.LinkSourceToProduct(ctx, sessA.User.ID, groupG, newURL("auto"), false); err != nil {
+			t.Fatalf("system auto-link into a shared group: %v", err)
+		}
+
+		// A group only A tracks can still be changed by A
+		_, _, groupSolo := track(bearerA, newURL("solo"))
+		if code, body := call(http.MethodPost, "/api/v1/products/"+groupSolo.String()+"/link-source", bearerA, map[string]string{"url": newURL("solo-extra")}); code != http.StatusOK && code != http.StatusCreated {
+			t.Fatalf("link-source into an unshared group: expected success, got %d %s", code, body)
+		}
+	})
 
 	t.Run("OutsiderCannotReadOrChangeProductGroup", func(t *testing.T) {
 		for _, tc := range []struct{ method, path string }{
@@ -250,8 +289,8 @@ func TestProductGroupAuthorization(t *testing.T) {
 
 	t.Run("SEC11_OversizedBodyRejected", func(t *testing.T) {
 		big := map[string]string{"url": "https://mock.dealhunter.vn/item/" + strings.Repeat("a", 70<<10)}
-		if code, _ := call(http.MethodPost, "/api/v1/tracked-products", bearerA, big); code != http.StatusBadRequest {
-			t.Errorf("oversized body: expected 400, got %d", code)
+		if code, _ := call(http.MethodPost, "/api/v1/tracked-products", bearerA, big); code != http.StatusRequestEntityTooLarge {
+			t.Errorf("oversized body: expected 413, got %d", code)
 		}
 	})
 

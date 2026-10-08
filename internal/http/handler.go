@@ -6,12 +6,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/alert"
 	"github.com/tiendang/deal-hunter/internal/auth"
@@ -24,6 +24,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/tracking"
 	"github.com/tiendang/deal-hunter/internal/voucher"
 	"github.com/tiendang/deal-hunter/pkg/affiliate"
+	"github.com/tiendang/deal-hunter/pkg/phone"
 )
 
 type Handler struct {
@@ -43,6 +44,8 @@ type Handler struct {
 	voucherRepo          voucher.Repository
 	adminEmails          map[string]bool
 	guestLimiter         RateLimiter
+	scrapeLimiter        RateLimiter
+	phoneVerifier        PhoneVerifier
 	logger               *slog.Logger
 }
 
@@ -66,6 +69,43 @@ func (h *Handler) SetAdminEmails(emails []string) {
 			h.adminEmails[e] = true
 		}
 	}
+}
+
+// SetScrapeRateLimiter limits, per user, the requests that make the server call a marketplace
+// (track a URL, link a source, auto-match, accept a suggestion).
+func (h *Handler) SetScrapeRateLimiter(l RateLimiter) {
+	h.scrapeLimiter = l
+}
+
+// PhoneVerifier sends and checks the code that proves a member owns a phone number
+// (notification.PhoneVerifier sends it by ZNS).
+type PhoneVerifier interface {
+	Request(ctx context.Context, userID uuid.UUID, phone string) (*notification.OTPChallenge, error)
+	Verify(ctx context.Context, userID uuid.UUID, phone, code string) error
+}
+
+// SetPhoneVerifier enables linking Zalo by phone (OTP sent by ZNS). Without it linking answers 503.
+func (h *Handler) SetPhoneVerifier(v PhoneVerifier) {
+	h.phoneVerifier = v
+}
+
+// allowScrape enforces the per-user scrape limit; it answers 429 itself when the user is over it.
+// A limiter outage lets the request through (logged), like the guest limiter.
+func (h *Handler) allowScrape(w http.ResponseWriter, r *http.Request, userID uuid.UUID) bool {
+	if h.scrapeLimiter == nil {
+		return true
+	}
+	allowed, retryAfter, err := h.scrapeLimiter.Allow(r.Context(), userID.String())
+	if err != nil {
+		h.log().Warn("scrape rate limiter unavailable", "err", err)
+		return true
+	}
+	if !allowed {
+		writeRetryAfter(w, retryAfter)
+		http.Error(w, "Bạn thao tác quá nhanh (mỗi thao tác này phải truy cập sàn). Vui lòng thử lại sau.", http.StatusTooManyRequests)
+		return false
+	}
+	return true
 }
 
 // SetGuestRateLimiter limits how often one client may create guest accounts.
@@ -203,6 +243,9 @@ func (h *Handler) TrackProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.allowScrape(w, r, userID) {
+		return
+	}
 	tracked, err := h.trackingService.TrackURL(r.Context(), userID, req.URL)
 	if err != nil {
 		if errors.Is(err, marketplace.ErrProductUnavailable) {
@@ -455,7 +498,11 @@ func (h *Handler) PauseTracking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.trackingService.PauseTracking(r.Context(), id, userID); err != nil {
-		http.Error(w, "tracking not found", http.StatusNotFound)
+		if errors.Is(err, domain.ErrTrackingNotFound) {
+			http.Error(w, "tracking not found", http.StatusNotFound)
+			return
+		}
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -481,7 +528,11 @@ func (h *Handler) ResumeTracking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.trackingService.ResumeTracking(r.Context(), id, userID); err != nil {
-		http.Error(w, "tracking not found", http.StatusNotFound)
+		if errors.Is(err, domain.ErrTrackingNotFound) {
+			http.Error(w, "tracking not found", http.StatusNotFound)
+			return
+		}
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -650,7 +701,11 @@ func (h *Handler) DeactivateAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.alertRepo.DeactivateRuleForUser(r.Context(), alertID, userID); err != nil {
-		http.Error(w, "alert rule not found", http.StatusNotFound)
+		if errors.Is(err, alert.ErrRuleNotFound) {
+			http.Error(w, "alert rule not found", http.StatusNotFound)
+			return
+		}
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -683,7 +738,11 @@ func (h *Handler) GetAlertLogs(w http.ResponseWriter, r *http.Request) {
 	// Verify alert rule ownership
 	if h.alertRepo != nil {
 		rule, err := h.alertRepo.GetRule(r.Context(), alertID)
-		if err != nil || rule == nil || rule.UserID != userID {
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if rule == nil || rule.UserID != userID {
 			http.Error(w, "alert rule not found", http.StatusNotFound)
 			return
 		}
@@ -761,6 +820,10 @@ func (h *Handler) MarkNotificationAsRead(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.notifRepo.MarkAsRead(r.Context(), notifID, userID); err != nil {
+		if errors.Is(err, notification.ErrNotificationNotFound) {
+			http.Error(w, "notification not found", http.StatusNotFound)
+			return
+		}
 		h.serverError(w, r, err)
 		return
 	}
@@ -822,16 +885,64 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(profile)
 }
 
-var (
-	phonePattern  = regexp.MustCompile(`^\+?[0-9]{9,15}$`)
-	zaloIDPattern = regexp.MustCompile(`^[0-9A-Za-z_-]{1,64}$`)
-)
+const msgZaloNotConfigured = "Liên kết Zalo chưa được cấu hình trên máy chủ (Zalo OA / mẫu ZNS OTP)."
 
-type ConnectZaloRequest struct {
-	ZaloID string `json:"zalo_id,omitempty"`
-	Phone  string `json:"phone,omitempty"`
+// ZaloOTPRequest asks for a verification code to be sent by ZNS to Phone.
+type ZaloOTPRequest struct {
+	Phone string `json:"phone"`
 }
 
+// ConnectZaloRequest links Phone after its owner typed back the code sent to it. A Zalo ID is no longer
+// accepted from users: nothing would prove it belongs to them.
+type ConnectZaloRequest struct {
+	Phone string `json:"phone"`
+	Code  string `json:"code"`
+}
+
+// RequestZaloOTP handles POST /api/v1/users/me/zalo/otp: sends a 6-digit code by ZNS to the phone.
+func (h *Handler) RequestZaloOTP(w http.ResponseWriter, r *http.Request) {
+	var req ZaloOTPRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	userID, ok := h.requireMember(w, r)
+	if !ok {
+		return
+	}
+	number, err := phone.Normalize(req.Phone)
+	if err != nil {
+		http.Error(w, "Số điện thoại không hợp lệ (cần số di động Việt Nam, ví dụ 0912345678)", http.StatusBadRequest)
+		return
+	}
+
+	if h.phoneVerifier == nil {
+		http.Error(w, msgZaloNotConfigured, http.StatusServiceUnavailable)
+		return
+	}
+	challenge, err := h.phoneVerifier.Request(r.Context(), userID, number)
+	var limited *notification.OTPRateLimitedError
+	switch {
+	case err == nil:
+	case errors.As(err, &limited):
+		writeRetryAfter(w, limited.RetryAfter)
+		http.Error(w, "Bạn yêu cầu mã quá nhiều lần. Vui lòng thử lại sau.", http.StatusTooManyRequests)
+		return
+	case errors.Is(err, notification.ErrOTPNotConfigured):
+		http.Error(w, msgZaloNotConfigured, http.StatusServiceUnavailable)
+		return
+	default:
+		h.log().Error("send zalo otp failed", "request_id", middleware.GetReqID(r.Context()), "phone", notification.MaskRecipient(number), "err", err)
+		http.Error(w, "Không gửi được mã xác minh qua Zalo. Vui lòng thử lại sau.", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(challenge)
+}
+
+// ConnectZalo handles POST /api/v1/users/me/zalo: links the number once the code sent to it is verified.
 func (h *Handler) ConnectZalo(w http.ResponseWriter, r *http.Request) {
 	if h.notifRepo == nil {
 		http.Error(w, "service not available", http.StatusServiceUnavailable)
@@ -843,42 +954,50 @@ func (h *Handler) ConnectZalo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-
-	req.ZaloID, req.Phone = strings.TrimSpace(req.ZaloID), strings.TrimSpace(req.Phone)
-	if req.ZaloID == "" && req.Phone == "" {
-		http.Error(w, "either zalo_id or phone is required", http.StatusBadRequest)
-		return
-	}
-	if req.Phone != "" && !phonePattern.MatchString(req.Phone) {
-		http.Error(w, "invalid phone number", http.StatusBadRequest)
-		return
-	}
-	if req.ZaloID != "" && !zaloIDPattern.MatchString(req.ZaloID) {
-		http.Error(w, "invalid zalo_id", http.StatusBadRequest)
-		return
-	}
-
 	userID, ok := h.requireMember(w, r)
 	if !ok {
 		return
 	}
+	number, err := phone.Normalize(req.Phone)
+	if err != nil {
+		http.Error(w, "Số điện thoại không hợp lệ (cần số di động Việt Nam, ví dụ 0912345678)", http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(req.Code)
+	if len(code) != 6 {
+		http.Error(w, "Mã xác minh gồm 6 chữ số", http.StatusBadRequest)
+		return
+	}
 
-	if err := h.notifRepo.UpdateUserZalo(r.Context(), userID, req.ZaloID, req.Phone); err != nil {
-		if strings.Contains(err.Error(), "duplicate key") ||
-			strings.Contains(err.Error(), "23505") ||
-			strings.Contains(err.Error(), "unique constraint") {
-			http.Error(w, "Zalo ID hoặc số điện thoại đã được liên kết với một tài khoản khác", http.StatusConflict)
-			return
-		}
+	if h.phoneVerifier == nil {
+		http.Error(w, msgZaloNotConfigured, http.StatusServiceUnavailable)
+		return
+	}
+	switch err := h.phoneVerifier.Verify(r.Context(), userID, number, code); {
+	case err == nil:
+	case errors.Is(err, notification.ErrOTPInvalid):
+		http.Error(w, "Mã xác minh không đúng hoặc đã hết hạn", http.StatusBadRequest)
+		return
+	case errors.Is(err, notification.ErrOTPTooManyAttempts):
+		http.Error(w, "Nhập sai mã quá nhiều lần. Vui lòng yêu cầu mã mới.", http.StatusTooManyRequests)
+		return
+	case errors.Is(err, notification.ErrOTPNotConfigured):
+		http.Error(w, msgZaloNotConfigured, http.StatusServiceUnavailable)
+		return
+	default:
+		h.serverError(w, r, err)
+		return
+	}
+
+	if err := h.notifRepo.LinkVerifiedPhone(r.Context(), userID, number); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "connected",
-		"zalo_id": req.ZaloID,
-		"phone":   req.Phone,
+		"status": "connected",
+		"phone":  number,
 	})
 }
 
@@ -971,10 +1090,15 @@ func (h *Handler) LinkProductSource(w http.ResponseWriter, r *http.Request) {
 		h.accessError(w, r, err, "product not found")
 		return
 	}
+	if !h.allowScrape(w, r, userID) {
+		return
+	}
 
-	source, err := h.trackingService.LinkSourceToProduct(r.Context(), userID, productID, req.URL)
+	source, err := h.trackingService.LinkSourceToProduct(r.Context(), userID, productID, req.URL, true)
 	if err != nil {
 		switch {
+		case errors.Is(err, tracking.ErrGroupShared):
+			http.Error(w, msgGroupShared, http.StatusConflict)
 		case errors.Is(err, tracking.ErrSourceAlreadyLinked):
 			http.Error(w, "Sản phẩm từ đường dẫn này đã được liên kết với nhóm sản phẩm", http.StatusConflict)
 		case errors.Is(err, tracking.ErrSourceInOtherGroup):

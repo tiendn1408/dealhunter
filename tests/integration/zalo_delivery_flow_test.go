@@ -94,7 +94,7 @@ func TestZaloDeliveryLifecycleFlow(t *testing.T) {
 		CreatedAt:         time.Now(),
 		UpdatedAt:         time.Now(),
 	}
-	if err := productRepo.UpsertProductSource(ctx, source); err != nil {
+	if err := productRepo.UpsertProductSource(ctx, nil, source); err != nil {
 		t.Fatalf("upsert source failed: %v", err)
 	}
 

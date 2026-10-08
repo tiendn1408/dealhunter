@@ -29,10 +29,15 @@ func RequestLogger(logger *slog.Logger) func(next http.Handler) http.Handler {
 // maxJSONBodyBytes caps request bodies; every API request body is a small JSON document (SEC-11).
 const maxJSONBodyBytes = 64 << 10
 
-// LimitBody rejects request bodies larger than limit bytes (decoding fails, handlers answer 400).
+// LimitBody rejects request bodies larger than limit bytes: a declared Content-Length over the limit is
+// answered 413 before any handler runs; a body without one is cut off (decoding fails, handlers answer 400).
 func LimitBody(limit int64) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.ContentLength > limit {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
 			if r.Body != nil {
 				r.Body = http.MaxBytesReader(w, r.Body, limit)
 			}

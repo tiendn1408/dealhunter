@@ -26,6 +26,7 @@ type Config struct {
 	MaxRetry            int
 	ZaloOAAccessToken   string
 	ZaloTemplateID      string
+	ZaloOTPTemplateID   string // ZNS template for the phone verification code (variable: otp)
 	ZaloAppID           string
 	ZaloOASecretKey     string
 	ZaloRefreshToken    string
@@ -84,6 +85,7 @@ func Load() (*Config, error) {
 
 	zaloToken := getEnv("ZALO_OA_ACCESS_TOKEN", "")
 	zaloTemplate := getEnv("ZALO_TEMPLATE_ID", "")
+	zaloOTPTemplate := getEnv("ZALO_OTP_TEMPLATE_ID", "")
 	zaloAppID := getEnv("ZALO_APP_ID", "")
 	zaloSecret := getEnv("ZALO_OA_SECRET_KEY", "")
 	zaloRefreshToken := getEnv("ZALO_REFRESH_TOKEN", "")
@@ -94,7 +96,8 @@ func Load() (*Config, error) {
 	}
 	zaloEnabled := getEnv("ZALO_ENABLED", "false") == "true" || zaloToken != "" || zaloRefreshToken != ""
 
-	appEnv := getEnv("APP_ENV", "development")
+	// Fail closed: a deployment that forgets APP_ENV gets production rules (local dev sets it in .env)
+	appEnv := getEnv("APP_ENV", "production")
 	isDev := !isStrictEnv(appEnv)
 
 	accessTTL, err := time.ParseDuration(getEnv("ACCESS_TOKEN_TTL", "15m"))
@@ -123,6 +126,7 @@ func Load() (*Config, error) {
 		MaxRetry:            maxRetry,
 		ZaloOAAccessToken:   zaloToken,
 		ZaloTemplateID:      zaloTemplate,
+		ZaloOTPTemplateID:   zaloOTPTemplate,
 		ZaloAppID:           zaloAppID,
 		ZaloOASecretKey:     zaloSecret,
 		ZaloRefreshToken:    zaloRefreshToken,

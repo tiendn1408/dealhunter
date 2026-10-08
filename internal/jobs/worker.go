@@ -19,6 +19,7 @@ import (
 	"github.com/tiendang/deal-hunter/internal/product"
 	"github.com/tiendang/deal-hunter/internal/queue"
 	"github.com/tiendang/deal-hunter/pkg/metrics"
+	"github.com/tiendang/deal-hunter/pkg/retry"
 )
 
 // Worker processes price-fetch jobs consumed from the Redis Stream.
@@ -172,12 +173,15 @@ func (w *Worker) processJob(ctx context.Context, msg queue.Message) {
 
 	if err != nil {
 		metrics.PriceFetchTotal.WithLabelValues(source.Platform, "failure").Inc()
-		w.logger.Error("Fetch failed", "job_id", job.ID, "err", err)
-		if job.Attempt >= 5 {
-			_ = w.jobRepo.MarkDead(ctx, job.ID)
+		// DATA-01: the adapter classifies the failure (blocked, rate_limited, timeout, not_found, ...).
+		// A permanent one (e.g. the product was removed) is never retried; the retry schedule itself is REL-02.
+		code := retry.Code(err)
+		w.logger.Error("Fetch failed", "job_id", job.ID, "code", code, "retryable", retry.IsRetryable(err), "err", err)
+		if !retry.IsRetryable(err) || job.Attempt >= 5 {
+			_ = w.jobRepo.MarkDead(ctx, job.ID, code, err.Error())
 		} else {
 			metrics.JobRetryTotal.Inc()
-			_ = w.jobRepo.MarkFailed(ctx, job.ID, "fetch_failed", err.Error())
+			_ = w.jobRepo.MarkFailed(ctx, job.ID, code, err.Error())
 		}
 		_ = w.q.Ack(ctx, msg.MsgID)
 		return

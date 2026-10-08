@@ -55,6 +55,7 @@ func (a *ShopeeAdapter) Name() string {
 }
 
 func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
+	var lastErr error // classified cause of the last failed request
 	// Expand shortlinks if necessary
 	if strings.Contains(rawURL, "s.shopee.vn") {
 		resolved, err := a.client.ResolveFinalURL(ctx, rawURL)
@@ -93,6 +94,7 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 		resp, err := a.client.Fetch(ctx, apiURL, map[string]string{
 			"Referer": rawURL,
 		})
+		lastErr = err
 		if err == nil && resp.StatusCode == 200 {
 			var apiResp shopeeApiResponse
 			if jsonErr := json.Unmarshal(resp.Body, &apiResp); jsonErr == nil && apiResp.Error == 0 && apiResp.Data.Name != "" &&
@@ -122,6 +124,7 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 
 	// 2. Try HTML Crawler Extraction (OpenGraph / JSON-LD)
 	resp, err := a.client.Fetch(ctx, rawURL, nil)
+	lastErr = err
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, rawURL)
 		if extractErr == nil && extracted.Title != "" && extracted.Price > 0 {
@@ -146,10 +149,11 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 		}
 	}
 
-	return nil, fmt.Errorf("%w: shopee %s", marketplace.ErrProductUnavailable, rawURL)
+	return nil, marketplace.Unavailable("shopee", rawURL, lastErr)
 }
 
 func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
+	var lastErr error // classified cause of the last failed request
 	targetURL := source.CanonicalURL
 
 	// 1. Try API if item and shop IDs are parseable
@@ -165,6 +169,7 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 		resp, err := a.client.Fetch(ctx, apiURL, map[string]string{
 			"Referer": targetURL,
 		})
+		lastErr = err
 		if err == nil && resp.StatusCode == 200 {
 			var apiResp shopeeApiResponse
 			if jsonErr := json.Unmarshal(resp.Body, &apiResp); jsonErr == nil && apiResp.Error == 0 {
@@ -190,6 +195,7 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 
 	// 2. Try HTML crawl
 	resp, err := a.client.Fetch(ctx, targetURL, nil)
+	lastErr = err
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, targetURL)
 		if extractErr == nil && extracted.Price > 0 {
@@ -205,5 +211,5 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 		}
 	}
 
-	return nil, fmt.Errorf("%w: shopee price %s", marketplace.ErrProductUnavailable, targetURL)
+	return nil, marketplace.Unavailable("shopee price", targetURL, lastErr)
 }

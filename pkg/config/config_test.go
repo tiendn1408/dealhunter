@@ -128,3 +128,16 @@ func TestZaloWebhookSecretFallsBackWhenEmpty(t *testing.T) {
 		t.Fatalf("expected fallback to ZALO_OA_SECRET_KEY, got %q", cfg.ZaloWebhookSecret)
 	}
 }
+
+// A deployment that forgets APP_ENV must not fall back to relaxed development rules
+func TestLoad_MissingAppEnvIsStrict(t *testing.T) {
+	t.Setenv("APP_ENV", "")
+	os.Unsetenv("APP_ENV")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.IsProduction() {
+		t.Fatalf("expected production rules without APP_ENV, got AppEnv=%q", cfg.AppEnv)
+	}
+}

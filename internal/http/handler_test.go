@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,7 +125,7 @@ func (m *mockAlertRepo) DeactivateRuleForUser(ctx context.Context, id, userID uu
 			return nil
 		}
 	}
-	return errors.New("alert rule not found")
+	return alert.ErrRuleNotFound
 }
 
 type mockNotifRepo struct {
@@ -206,7 +206,7 @@ func (m *mockNotifRepo) GetUserProfile(ctx context.Context, userID uuid.UUID) (*
 	}, nil
 }
 
-func (m *mockNotifRepo) UpdateUserZalo(ctx context.Context, userID uuid.UUID, zaloID, phone string) error {
+func (m *mockNotifRepo) LinkVerifiedPhone(ctx context.Context, userID uuid.UUID, phone string) error {
 	return nil
 }
 
@@ -219,6 +219,7 @@ func setupTestRouter() (*chi.Mux, *mockAlertRepo, *mockNotifRepo) {
 	alertRepo := &mockAlertRepo{}
 	notifRepo := &mockNotifRepo{}
 	handler.SetAlertAndNotificationRepos(alertRepo, notifRepo)
+	handler.SetPhoneVerifier(&stubPhoneVerifier{code: "123456"})
 
 	r := chi.NewRouter()
 	r.Use(defaultAuth)
@@ -231,6 +232,7 @@ func setupTestRouter() (*chi.Mux, *mockAlertRepo, *mockNotifRepo) {
 		r.Get("/notifications", handler.ListNotifications)
 		r.Post("/notifications/{id}/read", handler.MarkNotificationAsRead)
 		r.Get("/users/me", handler.GetUserProfile)
+		r.Post("/users/me/zalo/otp", handler.RequestZaloOTP)
 		r.Post("/users/me/zalo", handler.ConnectZalo)
 		r.Delete("/users/me/zalo", handler.DisconnectZalo)
 	})
@@ -538,29 +540,48 @@ func TestUserProfileAndZaloConnect(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", w.Code)
 	}
 
-	// 2. Guests cannot claim a phone number
-	connectBody, _ := json.Marshal(map[string]interface{}{
-		"phone": "0912345678",
-	})
-	guestReq := httptest.NewRequest(http.MethodPost, "/api/v1/users/me/zalo", bytes.NewReader(connectBody))
-	guestReq.Header.Set("Content-Type", "application/json")
-	wGuest := httptest.NewRecorder()
-	r.ServeHTTP(wGuest, guestReq)
-	if wGuest.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for guest Zalo connect, got %d", wGuest.Code)
+	// 2. Guests can neither request a code nor link a phone number
+	for _, path := range []string{"/api/v1/users/me/zalo/otp", "/api/v1/users/me/zalo"} {
+		body, _ := json.Marshal(map[string]string{"phone": "0912345678", "code": "123456"})
+		guestReq := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		wGuest := httptest.NewRecorder()
+		r.ServeHTTP(wGuest, guestReq)
+		if wGuest.Code != http.StatusForbidden {
+			t.Fatalf("%s: expected 403 for guest, got %d", path, wGuest.Code)
+		}
 	}
 
-	// 3. Members can connect Zalo
-	connectReq := httptest.NewRequest(http.MethodPost, "/api/v1/users/me/zalo", bytes.NewReader(connectBody))
-	connectReq.Header.Set("Content-Type", "application/json")
-	authAsMember(connectReq, defaultUserID)
-	wConnect := httptest.NewRecorder()
-	r.ServeHTTP(wConnect, connectReq)
-	if wConnect.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", wConnect.Code, wConnect.Body.String())
+	member := func(path string, body map[string]string) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
+		authAsMember(req, defaultUserID)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
 	}
 
-	// 4. Disconnect Zalo
+	// 3. Member requests a code; the phone is normalized
+	if w := member("/api/v1/users/me/zalo/otp", map[string]string{"phone": "+84 912-345-678"}); w.Code != http.StatusAccepted || !strings.Contains(w.Body.String(), `"phone":"84912345678"`) {
+		t.Fatalf("expected 202 with normalized phone, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := member("/api/v1/users/me/zalo/otp", map[string]string{"phone": "12345"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an invalid phone, got %d", w.Code)
+	}
+
+	// 4. A wrong code does not link; the right one does, with the normalized number
+	if w := member("/api/v1/users/me/zalo", map[string]string{"phone": "0912345678", "code": "000000"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for a wrong code, got %d", w.Code)
+	}
+	if w := member("/api/v1/users/me/zalo", map[string]string{"phone": "0912345678", "code": "123456"}); w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for the right code, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// A Zalo ID cannot be linked without proof any more
+	if w := member("/api/v1/users/me/zalo", map[string]string{"zalo_id": "someone-else"}); w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for a Zalo ID without a verified phone, got %d", w.Code)
+	}
+
+	// 5. Disconnect Zalo
 	disconnectReq := httptest.NewRequest(http.MethodDelete, "/api/v1/users/me/zalo", nil)
 	authAsMember(disconnectReq, defaultUserID)
 	wDisconnect := httptest.NewRecorder()
@@ -730,3 +751,17 @@ func TestUnauthenticatedRequestsAreRejected(t *testing.T) {
 
 func i64(v int64) *int64 { return &v }
 func boolp(v bool) *bool { return &v }
+
+// stubPhoneVerifier accepts only `code`, whatever the phone.
+type stubPhoneVerifier struct{ code string }
+
+func (s *stubPhoneVerifier) Request(_ context.Context, _ uuid.UUID, phone string) (*notification.OTPChallenge, error) {
+	return &notification.OTPChallenge{Phone: phone, ExpiresIn: 300, ResendAfter: 60}, nil
+}
+
+func (s *stubPhoneVerifier) Verify(_ context.Context, _ uuid.UUID, _, code string) error {
+	if code != s.code {
+		return notification.ErrOTPInvalid
+	}
+	return nil
+}

@@ -34,6 +34,7 @@ func (a *LazadaAdapter) Name() string {
 }
 
 func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
+	var lastErr error // classified cause of the last failed request
 	// Expand shortlinks if necessary
 	if strings.Contains(rawURL, "s.lazada.vn") {
 		resolved, err := a.client.ResolveFinalURL(ctx, rawURL)
@@ -60,6 +61,7 @@ func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 
 	// 1. Try HTML Crawler Extraction (OpenGraph / JSON-LD)
 	resp, err := a.client.Fetch(ctx, rawURL, nil)
+	lastErr = err
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, rawURL)
 		if extractErr == nil && extracted.Title != "" && extracted.Price > 0 {
@@ -84,14 +86,16 @@ func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 		}
 	}
 
-	return nil, fmt.Errorf("%w: lazada %s", marketplace.ErrProductUnavailable, rawURL)
+	return nil, marketplace.Unavailable("lazada", rawURL, lastErr)
 }
 
 func (a *LazadaAdapter) FetchPrice(ctx context.Context, source *product.ProductSource) (*pricing.PriceSnapshot, error) {
+	var lastErr error // classified cause of the last failed request
 	targetURL := source.CanonicalURL
 
 	// 1. Try HTML crawl
 	resp, err := a.client.Fetch(ctx, targetURL, nil)
+	lastErr = err
 	if err == nil && len(resp.Body) > 0 {
 		extracted, extractErr := crawler.ExtractFromHTML(resp.Body, targetURL)
 		if extractErr == nil && extracted.Price > 0 {
@@ -107,5 +111,5 @@ func (a *LazadaAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 		}
 	}
 
-	return nil, fmt.Errorf("%w: lazada price %s", marketplace.ErrProductUnavailable, targetURL)
+	return nil, marketplace.Unavailable("lazada price", targetURL, lastErr)
 }

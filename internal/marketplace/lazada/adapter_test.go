@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/marketplace"
 	"github.com/tiendang/deal-hunter/internal/product"
+	"github.com/tiendang/deal-hunter/pkg/retry"
 )
 
 func TestLazadaAdapter_Name(t *testing.T) {
@@ -40,6 +41,12 @@ func TestLazadaAdapter_BlockedPageFails(t *testing.T) {
 	source := &product.ProductSource{ID: uuid.New(), CanonicalURL: testURL, LastPrice: &lastPrice}
 	if snap, err := adapter.FetchPrice(ctx, source); !errors.Is(err, marketplace.ErrProductUnavailable) {
 		t.Fatalf("FetchPrice: expected ErrProductUnavailable (no stale price), got snap=%+v err=%v", snap, err)
+	}
+
+	// The block is classified as temporary, so the worker retries instead of giving up (DATA-01)
+	_, err := adapter.FetchPrice(ctx, source)
+	if retry.Code(err) != "blocked" || !retry.IsRetryable(err) {
+		t.Fatalf("expected a retryable 'blocked' cause, got code=%q err=%v", retry.Code(err), err)
 	}
 }
 

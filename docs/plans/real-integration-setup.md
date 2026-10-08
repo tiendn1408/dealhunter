@@ -85,3 +85,9 @@ Mục tiêu: xác nhận công thức `sha256(appId + body + timestamp + OASecre
 - `internal/marketplace/shopee/adapter_test.go` không còn gọi `shopee.vn`: item API trỏ vào server test. Đã chạy toàn bộ test adapter/crawler/matching trong sandbox chặn mạng ra ngoài ⇒ đều đạt.
 - `internal/notification/zalo/token_manager_test.go` không còn `FlushDB`: chỉ xoá 2 key của token manager trước/sau mỗi test. Đã kiểm chứng key khác trong DB 15 vẫn còn sau khi chạy test.
 - Webhook Zalo ghi log lý do khi từ chối và `zalo webhook accepted` khi nhận (phục vụ kiểm chứng ở mục B).
+
+## Mẫu ZNS gửi mã xác minh (liên kết Zalo)
+Liên kết Zalo yêu cầu người dùng nhập mã 6 số gửi qua ZNS tới số điện thoại của họ.
+1. Trong Zalo Cloud Account / ZNS, tạo mẫu **OTP** có một biến tên `otp` (ví dụ nội dung: "Mã xác minh DealHunter của bạn là {{otp}}. Mã có hiệu lực 5 phút."), gửi duyệt.
+2. Khi được duyệt, đặt `ZALO_OTP_TEMPLATE_ID=<template_id>` cho API (cùng các biến Zalo OA đã có). Thiếu biến này ⇒ liên kết Zalo trả `503`.
+3. Mỗi lần gửi mã tính phí ZNS; hệ thống giới hạn 5 mã / giờ / thành viên và / số điện thoại.
