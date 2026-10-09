@@ -25,7 +25,7 @@ func (h *Handler) StartGuestSession(w http.ResponseWriter, r *http.Request) {
 
 	// Every call creates a user row, so creation is rate limited per client IP.
 	if h.guestLimiter != nil {
-		allowed, retryAfter, err := h.guestLimiter.Allow(r.Context(), clientIP(r))
+		allowed, retryAfter, err := h.guestLimiter.Allow(r.Context(), rateLimitKey(r))
 		if err != nil {
 			h.log().Warn("guest rate limiter unavailable", "err", err)
 		} else if !allowed {

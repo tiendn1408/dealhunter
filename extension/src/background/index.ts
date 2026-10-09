@@ -89,8 +89,9 @@ async function getPriceContext(url: string): Promise<PriceContextResponse> {
   const session = await webSession.get();
   if (!session) return { signedIn: false };
   try {
-    const context = await apiClient.getProductPriceContext(url, session.accessToken);
-    const { webUrl } = await storage.getEndpoints();
+    const context = await apiClient.getProductPriceContext(url, session);
+    // Links go to the web app that sent this session (else the last known / default web URL)
+    const webUrl = session.webUrl ?? (await storage.getEndpoints()).webUrl;
     return { signedIn: true, context, webUrl };
   } catch (err) {
     if (err instanceof SessionRejectedError) {

@@ -365,15 +365,18 @@ func (r *PostgresRepository) GetUserRecipient(ctx context.Context, userID uuid.U
 	return recipient, nil
 }
 
-func (r *PostgresRepository) GetUserProfile(ctx context.Context, userID uuid.UUID) (*UserProfile, error) {
-	// Ensure user exists
-	ensureQuery := `INSERT INTO users (id, created_at) VALUES ($1, NOW()) ON CONFLICT (id) DO NOTHING;`
-	_, _ = r.pool.Exec(ctx, ensureQuery, userID)
+// ErrUserNotFound: no user with that ID.
+var ErrUserNotFound = errors.New("user not found")
 
+func (r *PostgresRepository) GetUserProfile(ctx context.Context, userID uuid.UUID) (*UserProfile, error) {
+	// Read only: users are created by guest sessions and Google sign-in, never as a side effect
 	query := `SELECT id, COALESCE(zalo_id, ''), COALESCE(phone, ''), created_at FROM users WHERE id = $1;`
 	var p UserProfile
 	var zaloID, phone string
 	err := r.pool.QueryRow(ctx, query, userID).Scan(&p.UserID, &zaloID, &phone, &p.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get user profile: %w", err)
 	}

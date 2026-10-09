@@ -325,6 +325,8 @@ func ParseVNDPrice(priceStr string) (int64, error) {
 	clean = strings.ReplaceAll(clean, "vnd", "")
 	clean = strings.ReplaceAll(clean, "đ", "")
 	clean = strings.ReplaceAll(clean, " ", "")
+	clean = strings.ReplaceAll(clean, "\u00a0", "") // no-break space (Intl vi-VN currency format)
+	clean = strings.ReplaceAll(clean, "\u202f", "") // narrow no-break space
 
 	// The last ',' or '.' is a decimal separator when 1-2 digits follow it (6290000.00, 6.290.000,00,
 	// 6,290,000.5), or when it is the only separator and more than 3 digits precede it (6290000.000 —

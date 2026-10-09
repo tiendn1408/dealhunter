@@ -279,6 +279,8 @@ sudo systemctl enable --now dealhunter-api dealhunter-worker dealhunter-schedule
 
 ## 5. Cau Hinh Nginx Reverse Proxy & SSL Let's Encrypt
 
+> **IP client va rate limit**: API chi tin header `X-Forwarded-For` tu cac dia chi trong `TRUSTED_PROXIES` (compose mac dinh: localhost va gateway mang Docker `DEALHUNTER_GATEWAY` = `172.30.240.1`). Nginx phai **noi them** IP client vao `X-Forwarded-For` (`$proxy_add_x_forwarded_for`, nhu cau hinh duoi). API chi bind `127.0.0.1:8080`, nen moi request phai di qua nginx. Neu doi subnet (`DEALHUNTER_SUBNET`/`DEALHUNTER_GATEWAY`) hoac dat proxy o may khac, cap nhat `TRUSTED_PROXIES` cho dung IP proxy.
+
 Tao file `/etc/nginx/sites-available/dealhunter.vn`:
 
 ```nginx

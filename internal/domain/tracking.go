@@ -37,7 +37,7 @@ type TrackingRepository interface {
 	// OtherUsersTrackProduct reports whether anyone except userID tracks a source of the product group.
 	OtherUsersTrackProduct(ctx context.Context, tx pgx.Tx, productID, userID uuid.UUID) (bool, error)
 	// WithGroupLock runs fn in a transaction holding exclusive locks on the product groups.
-	WithGroupLock(ctx context.Context, productIDs []uuid.UUID, fn func(tx pgx.Tx) error) error
+	WithGroupLock(ctx context.Context, sourceIDs, productIDs []uuid.UUID, fn func(tx pgx.Tx) error) error
 	UpdateNextFetchAt(ctx context.Context, tx pgx.Tx, id uuid.UUID, nextFetch time.Time) error
 	UpdateNextFetchAtForUser(ctx context.Context, tx pgx.Tx, id, userID uuid.UUID, nextFetch time.Time) error
 	ClaimDueTrackings(ctx context.Context, limit int) ([]*TrackedProduct, error)

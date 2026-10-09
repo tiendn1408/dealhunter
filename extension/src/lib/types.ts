@@ -68,6 +68,10 @@ export interface WebSession {
   expiresAt: number; // epoch ms
   email?: string;
   name?: string;
+  /** The API the token was issued for (sent with it by the web app): the token is only ever sent there. */
+  apiUrl: string;
+  /** The web app that sent the token; undefined when it sent no valid URL. */
+  webUrl?: string;
 }
 
 /** Real data from the user's DealHunter account for the product page being viewed. */

@@ -6,6 +6,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -72,4 +73,18 @@ func clientIP(r *http.Request) string {
 		return host
 	}
 	return r.RemoteAddr
+}
+
+// rateLimitKey is the per-client key for IP-based rate limits: the IPv4 address, or the /64 of an IPv6
+// address (a subscriber usually controls a whole /64 and could otherwise rotate addresses to reset
+// every per-IP limit).
+func rateLimitKey(r *http.Request) string {
+	addr, ok := remoteAddr(r.RemoteAddr)
+	if !ok {
+		return clientIP(r)
+	}
+	if addr.Is6() {
+		return netip.PrefixFrom(addr, 64).Masked().String()
+	}
+	return addr.String()
 }

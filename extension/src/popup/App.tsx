@@ -3,7 +3,6 @@ import { TimeOffsetCard } from "./components/TimeOffsetCard";
 import { ScheduleForm } from "./components/ScheduleForm";
 import { TaskList } from "./components/TaskList";
 import { storage } from "../lib/storage";
-import { resolveEndpoints } from "../lib/endpoints";
 import { DEFAULT_SETTINGS, MESSAGE_ACTIONS, SHOPEE_FLASH_HOURS, SHOPEE_URLS } from "../lib/constants";
 import { ScheduledTask } from "../lib/types";
 import { Language, getTranslation } from "../lib/i18n";
@@ -99,8 +98,8 @@ export const App: React.FC = () => {
 
   // 3. Settings & Web Session
   useEffect(() => {
+    storage.getEndpoints().then((e) => setWebUrl(e.webUrl));
     storage.getSettings().then((s) => {
-      setWebUrl(resolveEndpoints(s).webUrl);
       if (s.language) setLang(s.language);
     });
     chrome.runtime

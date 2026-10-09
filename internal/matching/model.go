@@ -50,4 +50,7 @@ type AutoMatchResult struct {
 	AutoLinkedSources  []string           `json:"auto_linked_sources"`
 	NewSuggestions     []*MatchSuggestion `json:"new_suggestions"`
 	TotalDiscovered    int                `json:"total_discovered"`
+	// Incomplete: part of the run failed (a platform's search, or checking/storing a candidate), so the
+	// result may be missing candidates; the caller should say so rather than present it as complete.
+	Incomplete bool `json:"incomplete"`
 }

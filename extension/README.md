@@ -78,7 +78,7 @@ Chay toan bo test suite:
 ```bash
 npm test
 ```
-Bao gom toan bo **89 unit tests** (12 suites) kiem tra toan dien:
+Bao gom toan bo **102 unit tests** (12 suites) kiem tra toan dien:
 - `hunt_coordinator.ts`: Kiem tra quan ly phien san tap trung, dong bo giua HUD va Schedule.
 - `hunt_engine.test.ts` (15 tests): Kiem tra co che san, relocate nut khi re-render, click burst 35ms, fallback reload tai T+250ms, graceful timeout khi khong co nut.
 - `element_resolver.test.ts` (6 tests): Kiem tra may trang thai hanh vi (W3C ARIA, data attributes, disabled transition, text mutation, icon injection) loai bo 100% hardcoded text.
@@ -88,9 +88,9 @@ Bao gom toan bo **89 unit tests** (12 suites) kiem tra toan dien:
 - `time_calibrator.test.ts` (6 tests): Kiem tra thuat toan can chinh thoi gian qua RTT.
 - `timer_worker.test.ts` (1 test): Kiem tra Web Worker ticker khong tre.
 - `drop_time.test.ts` (6 tests): Kiem tra tinh toan moc gio Viet Nam (GMT+7).
-- `storage.test.ts` (6 tests): Kiem tra doc ghi chrome.storage local.
-- `web_session.test.ts` (12 tests): Kiem tra giao tiep session token voi Web app.
-- `endpoints.test.ts` (21 tests) va `api_client.test.ts` (5 tests): Kiem tra API client va endpoints.
+- `storage.test.ts` (7 tests): Kiem tra doc ghi chrome.storage local (ghi settings dong thoi khong mat key).
+- `web_session.test.ts` (19 tests): Kiem tra giao tiep session token voi Web app; token luu cung apiUrl/webUrl trong mot ban ghi chrome.storage.session (2 trang dev/prod day dong thoi khong bao gio ghep token voi apiUrl cua trang khac).
+- `endpoints.test.ts` (21 tests) va `api_client.test.ts` (10 tests): Kiem tra API client va endpoints.
 
 ---
 

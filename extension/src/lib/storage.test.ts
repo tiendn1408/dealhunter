@@ -117,3 +117,21 @@ describe("storage per-domain calibration", () => {
   });
 });
 
+
+describe("storage.saveSettings", () => {
+  it("concurrent writes of different keys keep both (no lost update)", async () => {
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: async (key: string) => (await tick(), { [key]: structuredClone(localStore[key]) }),
+          set: async (items: Record<string, unknown>) => (await tick(), void Object.assign(localStore, items)),
+        },
+      },
+    });
+    await Promise.all([storage.setLanguage("vi"), storage.saveSettings({ soundEnabled: false })]);
+    const settings = await storage.getSettings();
+    expect(settings.language).toBe("vi");
+    expect(settings.soundEnabled).toBe(false);
+  });
+});

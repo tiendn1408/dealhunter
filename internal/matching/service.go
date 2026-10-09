@@ -77,7 +77,12 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 	// 1. Gather existing source URLs to avoid duplicate matching
 	existingURLs := make(map[string]bool)
 	if s.comparison != nil {
-		if cmp, err := s.comparison.GetComparison(ctx, productID); err == nil && cmp != nil {
+		cmp, err := s.comparison.GetComparison(ctx, productID)
+		if err != nil {
+			// Without the group's current sources, candidates already in it could not be recognized
+			return nil, fmt.Errorf("load product group: %w", err)
+		}
+		if cmp != nil {
 			for _, src := range cmp.Sources {
 				existingURLs[src.CanonicalURL] = true
 				existingURLs[strings.TrimRight(src.CanonicalURL, "/")] = true
@@ -90,7 +95,7 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 	// comparison, so there it only makes suggestions; auto-linking a shared group is left to the system.
 	canAutoLink := s.linker != nil && s.linker.CanEditGroup(ctx, userID, productID) == nil
 
-	var searchErr error
+	var searchErr, storeErr error
 
 	for _, targetPlatform := range targetPlatforms {
 		candidates, err := s.searcher.Search(ctx, targetPlatform, norm.SearchQuery)
@@ -109,8 +114,14 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 				continue
 			}
 
-			// Check if suggestion already exists in DB
-			existing, _ := s.repo.GetSuggestionByProductAndURL(ctx, productID, cand.URL)
+			// Check if suggestion already exists in DB. If that cannot be checked, the candidate is skipped:
+			// treating it as new could re-suggest something the user already dismissed.
+			existing, err := s.repo.GetSuggestionByProductAndURL(ctx, productID, cand.URL)
+			if err != nil {
+				storeErr = fmt.Errorf("check earlier suggestion: %w", err)
+				result.Incomplete = true
+				continue
+			}
 			if existing != nil {
 				if existing.Status == StatusDismissed {
 					// User explicitly dismissed this candidate before; respect their choice
@@ -135,8 +146,8 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 					if s.comparison != nil {
 						_ = s.comparison.Invalidate(ctx, productID)
 					}
-					// Persist as auto_linked in suggestions table for audit
-					_ = s.repo.SaveSuggestion(ctx, &MatchSuggestion{
+					// Persist as auto_linked in suggestions table for audit (the link itself is already done)
+					if err := s.repo.SaveSuggestion(ctx, &MatchSuggestion{
 						ID:                uuid.New(),
 						ProductID:         productID,
 						CandidatePlatform: cand.Platform,
@@ -146,7 +157,10 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 						CandidatePrice:    cand.Price,
 						MatchScore:        score,
 						Status:            StatusAutoLinked,
-					})
+					}); err != nil {
+						storeErr = fmt.Errorf("record auto-link: %w", err)
+						result.Incomplete = true
+					}
 					continue
 				}
 
@@ -174,10 +188,11 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 					MatchScore:        score,
 					Status:            StatusPending,
 				}
-				if err := s.repo.SaveSuggestion(ctx, sugg); err == nil {
-					if existing == nil {
-						result.NewSuggestions = append(result.NewSuggestions, sugg)
-					}
+				if err := s.repo.SaveSuggestion(ctx, sugg); err != nil {
+					storeErr = fmt.Errorf("save suggestion: %w", err)
+					result.Incomplete = true
+				} else if existing == nil {
+					result.NewSuggestions = append(result.NewSuggestions, sugg)
 				}
 			}
 		}
@@ -187,6 +202,13 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 	// search yet, so a blocked Shopee search must not look like an empty answer)
 	if result.TotalDiscovered == 0 && searchErr != nil {
 		return nil, searchErr
+	}
+	// Candidates were found but none could be checked or stored: a failure, not "nothing to suggest"
+	if storeErr != nil && len(result.AutoLinkedSources) == 0 && len(result.NewSuggestions) == 0 {
+		return nil, storeErr
+	}
+	if searchErr != nil {
+		result.Incomplete = true // another platform's search failed; what is returned is partial
 	}
 	return result, nil
 }

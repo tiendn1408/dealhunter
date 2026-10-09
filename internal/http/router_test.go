@@ -201,3 +201,33 @@ func TestScrapeLimitedPerClientIP(t *testing.T) {
 		}
 	}
 }
+
+// countingLimiter records which keys it was asked about.
+type countingLimiter struct {
+	deny  bool
+	asked []string
+}
+
+func (l *countingLimiter) Allow(_ context.Context, key string) (bool, time.Duration, error) {
+	l.asked = append(l.asked, key)
+	return !l.deny, time.Minute, nil
+}
+
+// A request refused by the per-IP limit must not also use up the user's own allowance.
+func TestScrapeIPLimitCheckedFirst(t *testing.T) {
+	h := newTestHandler()
+	h.trackingService = newFakeStore().trackingService()
+	userLimiter, ipLimiter := &countingLimiter{}, &countingLimiter{deny: true}
+	h.SetScrapeRateLimiter(userLimiter)
+	h.SetScrapeIPRateLimiter(ipLimiter)
+	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), h)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tracked-products", strings.NewReader(`{"url":"https://shopee.vn/x-i.1.2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	authAs(req, uuid.New())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests || len(userLimiter.asked) != 0 {
+		t.Fatalf("expected 429 without touching the user limit, got %d, user limiter asked %v", w.Code, userLimiter.asked)
+	}
+}

@@ -12,6 +12,7 @@ import (
 
 type mockMatchingRepo struct {
 	suggestions map[uuid.UUID]*MatchSuggestion
+	lookupErr   error // returned by GetSuggestionByProductAndURL
 }
 
 func newMockMatchingRepo() *mockMatchingRepo {
@@ -40,6 +41,9 @@ func (m *mockMatchingRepo) GetSuggestionByID(_ context.Context, id uuid.UUID) (*
 }
 
 func (m *mockMatchingRepo) GetSuggestionByProductAndURL(_ context.Context, pid uuid.UUID, url string) (*MatchSuggestion, error) {
+	if m.lookupErr != nil {
+		return nil, m.lookupErr
+	}
 	for _, s := range m.suggestions {
 		if s.ProductID == pid && s.CandidateURL == url {
 			return s, nil
@@ -252,5 +256,26 @@ func TestMatchingService_SearchFailureIsReported(t *testing.T) {
 	svc = NewMatchingService(newMockMatchingRepo(), withTikTok, &mockLinker{}, &mockComparisonProvider{})
 	if res, err := svc.DiscoverAndMatch(ctx, uuid.New(), uuid.New(), "shopee", "Tai nghe Sony WH-1000XM5", 6290000); err != nil || res.TotalDiscovered != 1 {
 		t.Fatalf("candidates from another platform must still be returned, got %+v %v", res, err)
+	}
+}
+
+// A database failure while checking a candidate's earlier suggestion must not be read as "no earlier
+// suggestion": the candidate is skipped (never re-suggested over a decision), and a run where nothing
+// could be checked reports the failure.
+func TestMatchingService_LookupFailureIsNotSwallowed(t *testing.T) {
+	repo := newMockMatchingRepo()
+	repo.lookupErr = errors.New("db down")
+	linker := &mockLinker{}
+	searcher := &mockSearcher{candidates: []*MatchCandidate{{
+		Platform: "lazada", URL: "https://lazada.vn/products/x-i1.html", Title: "Tai nghe Sony WH-1000XM5", SellerName: "Sony Official", Price: 6200000, IsMall: true,
+	}}}
+	svc := NewMatchingService(repo, searcher, linker, &mockComparisonProvider{})
+
+	_, err := svc.DiscoverAndMatch(context.Background(), uuid.New(), uuid.New(), "shopee", "Tai nghe Sony WH-1000XM5", 6290000)
+	if err == nil {
+		t.Fatal("expected the lookup failure to be reported")
+	}
+	if len(repo.suggestions) != 0 || len(linker.linkedURLs) != 0 {
+		t.Fatalf("nothing may be saved or linked for an unchecked candidate, got %d suggestions, %d links", len(repo.suggestions), len(linker.linkedURLs))
 	}
 }

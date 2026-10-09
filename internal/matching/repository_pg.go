@@ -38,7 +38,9 @@ func (r *PostgresMatchingRepository) SaveSuggestion(ctx context.Context, s *Matc
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (product_id, candidate_url) DO UPDATE
 		SET match_score = EXCLUDED.match_score,
-		    status = EXCLUDED.status,
+		    -- A decision already taken (dismissed, accepted, auto-linked) is never undone by a re-run
+		    status = CASE WHEN product_match_suggestions.status = 'pending' THEN EXCLUDED.status
+		                  ELSE product_match_suggestions.status END,
 		    candidate_title = EXCLUDED.candidate_title,
 		    candidate_seller = EXCLUDED.candidate_seller,
 		    candidate_price = EXCLUDED.candidate_price,

@@ -23,6 +23,9 @@ func TestTrustedRealIP(t *testing.T) {
 		{"X-Real-IP when there is no X-Forwarded-For", "172.17.0.1:40000", "", "198.51.100.9", "198.51.100.9"},
 		{"malformed hop: nothing believed", "127.0.0.1:40000", "198.51.100.9, not-an-ip", "", "127.0.0.1"},
 		{"only proxies in the chain: proxy address kept", "127.0.0.1:40000", "172.17.0.5", "", "127.0.0.1"},
+		{"hop with a port (some load balancers)", "127.0.0.1:40000", "198.51.100.9:5678", "", "198.51.100.9"},
+		{"IPv6 hop with a port", "127.0.0.1:40000", "[2001:db8::7]:443", "", "2001:db8::7"},
+		{"empty trailing hop is ignored", "127.0.0.1:40000", "198.51.100.9, ", "", "198.51.100.9"},
 	}
 	for _, tc := range cases {
 		var got string
@@ -46,5 +49,22 @@ func TestTrustedRealIP(t *testing.T) {
 	}
 	if p, err := ParseTrustedProxies(""); err != nil || len(p) != 0 {
 		t.Error("an empty list trusts nobody")
+	}
+}
+
+// Rate limits key IPv6 clients by their /64: one subscriber usually controls a whole /64, so keying by
+// the full address would let them rotate addresses to reset every per-IP limit.
+func TestRateLimitKey(t *testing.T) {
+	for addr, want := range map[string]string{
+		"203.0.113.7:1234":           "203.0.113.7",
+		"[2001:db8:1:2:aaaa::1]:443": "2001:db8:1:2::/64",
+		"[2001:db8:1:2:bbbb::9]:443": "2001:db8:1:2::/64",
+		"[::ffff:203.0.113.7]:80":    "203.0.113.7",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = addr
+		if got := rateLimitKey(req); got != want {
+			t.Errorf("%s: got %s, want %s", addr, got, want)
+		}
 	}
 }

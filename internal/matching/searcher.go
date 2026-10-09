@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -19,7 +20,8 @@ type CandidateSearcher interface {
 
 // MultiPlatformSearcher coordinates cross-platform product searches across Shopee, Lazada, and TikTok Shop.
 type MultiPlatformSearcher struct {
-	crawler *crawler.Client
+	shopeeBase string // https://shopee.vn; a test server in tests
+	crawler    *crawler.Client
 }
 
 func NewMultiPlatformSearcher(c *crawler.Client) *MultiPlatformSearcher {
@@ -29,7 +31,7 @@ func NewMultiPlatformSearcher(c *crawler.Client) *MultiPlatformSearcher {
 			c = client
 		}
 	}
-	return &MultiPlatformSearcher{crawler: c}
+	return &MultiPlatformSearcher{shopeeBase: "https://shopee.vn", crawler: c}
 }
 
 // Search searches candidates for a query on a given platform.
@@ -51,7 +53,7 @@ var ErrSearchUnavailable = errors.New("marketplace search unavailable")
 
 // searchShopee searches Shopee for candidate items.
 func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) ([]*MatchCandidate, error) {
-	apiURL := fmt.Sprintf("https://shopee.vn/api/v4/search/search_items?by=relevancy&keyword=%s&limit=5&newest=0&order=desc&page_type=search&scenario=PAGE_GLOBAL_SEARCH&version=2", url.QueryEscape(query))
+	apiURL := fmt.Sprintf(s.shopeeBase+"/api/v4/search/search_items?by=relevancy&keyword=%s&limit=5&newest=0&order=desc&page_type=search&scenario=PAGE_GLOBAL_SEARCH&version=2", url.QueryEscape(query))
 
 	resp, err := s.crawler.Fetch(ctx, apiURL, map[string]string{
 		"Referer": "https://shopee.vn/",
@@ -61,10 +63,16 @@ func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) 
 		return nil, fmt.Errorf("%w: shopee: %w", ErrSearchUnavailable, err)
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: shopee: search answered HTTP %d", ErrSearchUnavailable, resp.StatusCode)
+	}
+
 	var candidates []*MatchCandidate
-	if resp.StatusCode == 200 {
+	{
 		var apiResp struct {
-			Items []struct {
+			Error int `json:"error"`
+			// A pointer tells "no items field" (blocked / changed answer) from a real empty list
+			Items *[]struct {
 				ItemBasic struct {
 					ItemID       int64  `json:"itemid"`
 					ShopID       int64  `json:"shopid"`
@@ -80,8 +88,10 @@ func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) 
 		if jErr := json.Unmarshal(resp.Body, &apiResp); jErr != nil {
 			// An anti-bot page answered with 200 instead of the search JSON
 			return nil, fmt.Errorf("%w: shopee: unreadable search response: %w", ErrSearchUnavailable, jErr)
-		} else if len(apiResp.Items) > 0 {
-			for _, item := range apiResp.Items {
+		} else if apiResp.Error != 0 || apiResp.Items == nil {
+			return nil, fmt.Errorf("%w: shopee: search answered error %d without results", ErrSearchUnavailable, apiResp.Error)
+		} else {
+			for _, item := range *apiResp.Items {
 				b := item.ItemBasic
 				if b.ItemID <= 0 || b.Name == "" {
 					continue

@@ -327,16 +327,23 @@ func (r *PostgresRepository) q(tx pgx.Tx) querier {
 	return r.pool
 }
 
-// WithGroupLock runs fn in a transaction that holds exclusive locks on the given product groups (taken in
-// a fixed order, so concurrent callers cannot deadlock). New trackings take a share lock on their group
-// (migration 000015), so checks made inside fn about who tracks a group stay true until fn commits.
-func (r *PostgresRepository) WithGroupLock(ctx context.Context, productIDs []uuid.UUID, fn func(tx pgx.Tx) error) error {
+// WithGroupLock runs fn in a transaction that holds locks on the given product sources and then on the
+// given product groups (each set in a fixed order). Every path that locks both takes the source rows
+// first — the new-tracking trigger (migration 000016) does too — so a group change and a new tracking of
+// the same source serialize instead of deadlocking; checks made inside fn about who tracks a group stay
+// true until fn commits.
+func (r *PostgresRepository) WithGroupLock(ctx context.Context, sourceIDs, productIDs []uuid.UUID, fn func(tx pgx.Tx) error) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
+	if len(sourceIDs) > 0 {
+		if _, err := tx.Exec(ctx, `SELECT id FROM product_sources WHERE id = ANY($1) ORDER BY id FOR NO KEY UPDATE`, sourceIDs); err != nil {
+			return fmt.Errorf("lock product sources: %w", err)
+		}
+	}
 	if _, err := tx.Exec(ctx, `SELECT id FROM products WHERE id = ANY($1) ORDER BY id FOR NO KEY UPDATE`, productIDs); err != nil {
 		return fmt.Errorf("lock product groups: %w", err)
 	}

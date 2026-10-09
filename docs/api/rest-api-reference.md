@@ -172,7 +172,8 @@ Chi thanh vien (`403` voi guest). So dien thoai duoc chuan hoa ve dang `84xxxxxx
 - **Response `200 OK`**: Thong tin chi tiet san pham, cac nguon lien ket va thong so thoi gian quet.
 
 ### 4.4. Lich Su Bien Dong Gia (Price History)
-- **Endpoint**: `GET /api/v1/tracked-products/{id}/prices`
+- **Endpoint**: `GET /api/v1/tracked-products/{id}/prices?from=<t>&to=<t>`
+- `from`/`to` (tuy chon): RFC3339 (`2026-07-11T00:00:00Z`) hoac ngay (`2026-07-11`; `to` dang ngay gom ca ngay do). Mac dinh 30 ngay gan nhat. Sai dinh dang hoac `from` sau `to` ⇒ `400` (khong lang le quay ve mac dinh).
 - **Response `200 OK`**:
   ```json
   [

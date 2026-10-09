@@ -38,8 +38,12 @@ func forwardedClient(r *http.Request, isTrusted func(netip.Addr) bool) (netip.Ad
 	if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
 		hops := strings.Split(strings.Join(xff, ","), ",")
 		for i := len(hops) - 1; i >= 0; i-- {
-			addr, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
-			if err != nil {
+			hop := strings.TrimSpace(hops[i])
+			if hop == "" {
+				continue // "a, " — an empty entry carries no address
+			}
+			addr, ok := parseHop(hop)
+			if !ok {
 				return netip.Addr{}, false // a malformed hop: trust nothing from this header
 			}
 			if !isTrusted(addr) {
@@ -50,6 +54,18 @@ func forwardedClient(r *http.Request, isTrusted func(netip.Addr) bool) (netip.Ad
 	}
 	if addr, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("X-Real-IP"))); err == nil {
 		return addr.Unmap(), true
+	}
+	return netip.Addr{}, false
+}
+
+// parseHop reads an X-Forwarded-For entry: an address, or an address with a port ("1.2.3.4:5678",
+// "[2001:db8::1]:443") as some load balancers write it.
+func parseHop(hop string) (netip.Addr, bool) {
+	if addr, err := netip.ParseAddr(hop); err == nil {
+		return addr, true
+	}
+	if ap, err := netip.ParseAddrPort(hop); err == nil {
+		return ap.Addr(), true
 	}
 	return netip.Addr{}, false
 }

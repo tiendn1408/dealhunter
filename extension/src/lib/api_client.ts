@@ -1,5 +1,4 @@
-import { storage } from "./storage";
-import { ProductPriceContext } from "./types";
+import { ProductPriceContext, WebSession } from "./types";
 
 /** The access token was rejected (expired or revoked); the caller should drop the session. */
 export class SessionRejectedError extends Error {}
@@ -24,25 +23,49 @@ interface ComparisonSource {
   source_id?: string;
   platform?: string;
   canonical_url?: string;
+  /** Item price; null when unknown. */
+  listed_price?: number | null;
+  /** null when the marketplace did not state it. */
+  shipping_fee?: number | null;
+  /** Item price plus shipping when the fee is known. */
   effective_price?: number | null;
 }
 
 interface Comparison {
   sources?: ComparisonSource[];
-  best_deal?: { platform?: string; effective_price?: number | null } | null;
+  /**
+   * shipping_included=false: some source's shipping fee is unknown, so the sources were compared on item
+   * prices and effective_price is the best item price.
+   */
+  best_deal?: { platform?: string; effective_price?: number | null; shipping_included?: boolean } | null;
+}
+
+const isPositive = (n: unknown): n is number => typeof n === "number" && n > 0;
+
+/** The viewed source's item price: listed_price, or effective_price minus a known shipping fee. */
+function itemPrice(s: ComparisonSource): number | undefined {
+  if (isPositive(s.listed_price)) return s.listed_price;
+  if (isPositive(s.effective_price) && typeof s.shipping_fee === "number" && s.shipping_fee >= 0) {
+    const item = s.effective_price - s.shipping_fee;
+    return item > 0 ? item : undefined;
+  }
+  return undefined;
 }
 
 /**
- * How much cheaper (percent) `bestPrice` is than the viewed Shopee source's own effective price, from the
+ * How much cheaper (percent) `bestPrice` is than the viewed Shopee source's own price, from the
  * comparison sources. The viewed source is the Shopee source of the tracking (same source ID, or the same
- * shop/item IDs when the ID is not available). Undefined when that price is unknown or not higher.
+ * shop/item IDs when the ID is not available). Like is compared with like: with `shippingIncluded` the
+ * effective prices (item + shipping), without it the item prices (as the best price then is one).
+ * Undefined when the viewed price or the basis of the best price is unknown, or the viewed price is not higher.
  */
 export function savingVsViewedSource(
   sources: ComparisonSource[] | undefined,
   tracking: { ProductSourceID?: string; CanonicalURL?: string },
-  bestPrice: number
+  bestPrice: number,
+  shippingIncluded: boolean | undefined
 ): number | undefined {
-  if (!Array.isArray(sources) || !(bestPrice > 0)) return undefined;
+  if (!Array.isArray(sources) || !(bestPrice > 0) || typeof shippingIncluded !== "boolean") return undefined;
   const trackedIds = tracking.CanonicalURL ? shopeeIds(tracking.CanonicalURL) : null;
   const viewed = sources.find((s) => {
     if (s.platform !== "shopee") return false;
@@ -50,8 +73,9 @@ export function savingVsViewedSource(
     const ids = s.canonical_url ? shopeeIds(s.canonical_url) : null;
     return !!ids && !!trackedIds && ids.shopId === trackedIds.shopId && ids.itemId === trackedIds.itemId;
   });
-  const viewedPrice = viewed?.effective_price;
-  if (typeof viewedPrice !== "number" || !(viewedPrice > 0) || viewedPrice <= bestPrice) return undefined;
+  if (!viewed) return undefined;
+  const viewedPrice = shippingIncluded ? viewed.effective_price : itemPrice(viewed);
+  if (!isPositive(viewedPrice) || viewedPrice <= bestPrice) return undefined;
   return ((viewedPrice - bestPrice) / viewedPrice) * 100;
 }
 
@@ -60,19 +84,19 @@ export function savingVsViewedSource(
  * only accepts requests carrying the member's access token; content scripts never see the token).
  */
 export class DealHunterApiClient {
-  private async get(path: string, token: string): Promise<Response> {
-    const { apiUrl } = await storage.getEndpoints();
-    const res = await fetch(`${apiUrl}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  /** The token is only ever sent to the API it was issued for (stored with it in the session). */
+  private async get(path: string, session: Pick<WebSession, "accessToken" | "apiUrl">): Promise<Response> {
+    const res = await fetch(`${session.apiUrl}${path}`, { headers: { Authorization: `Bearer ${session.accessToken}` } });
     if (res.status === 401) throw new SessionRejectedError();
     return res;
   }
 
   /** Price context for a Shopee product page, or null when the member does not track that product. */
-  async getProductPriceContext(productUrl: string, token: string): Promise<ProductPriceContext | null> {
+  async getProductPriceContext(productUrl: string, session: Pick<WebSession, "accessToken" | "apiUrl">): Promise<ProductPriceContext | null> {
     const ids = shopeeIds(productUrl);
     if (!ids) return null;
 
-    const res = await this.get("/tracked-products", token);
+    const res = await this.get("/tracked-products", session);
     if (!res.ok) throw new Error(`DealHunter API HTTP ${res.status}`);
     const { data } = (await res.json()) as { data?: Tracking[] };
     const matched = (data || []).find((t) => {
@@ -89,7 +113,7 @@ export class DealHunterApiClient {
     };
 
     // The comparison is optional: without it the badge just has no cross-platform line
-    const cmpRes = await this.get(`/tracked-products/${matched.ID}/comparison`, token);
+    const cmpRes = await this.get(`/tracked-products/${matched.ID}/comparison`, session);
     if (cmpRes.ok) {
       const cmp = (await cmpRes.json()) as Comparison | null;
       const best = cmp?.best_deal;
@@ -98,7 +122,7 @@ export class DealHunterApiClient {
         context.bestDealPrice = best.effective_price;
         // Not the server's saving_percent: that one is relative to the most expensive source, not to
         // the Shopee listing being viewed
-        context.savingsPercent = savingVsViewedSource(cmp?.sources, matched, best.effective_price);
+        context.savingsPercent = savingVsViewedSource(cmp?.sources, matched, best.effective_price, best.shipping_included);
       }
     }
     return context;

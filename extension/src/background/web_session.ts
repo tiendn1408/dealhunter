@@ -9,15 +9,20 @@ import { validateApiUrl, validateWebUrl } from "../lib/endpoints";
  * The extension never refreshes it: refresh tokens rotate strictly and a refresh racing the web app's
  * would revoke every session. The web app pushes a fresh access token on sign-in and on each refresh,
  * and clears it on sign-out. Without a valid token the extension only offers its deal-hunting tools.
- * The same message carries the web app's API and web URLs, stored (in chrome.storage.local settings, so
- * links keep working after sign-out) for API calls and links.
+ * The same message carries the web app's API and web URLs. They are stored WITH the token, as one record
+ * written in a single chrome.storage.session set: two DealHunter pages (e.g. dev and production) pushing
+ * at once can only replace each other's whole record, so a token is never paired with another page's API
+ * URL. The web URL is also remembered on its own (chrome.storage.local) so links keep working after sign-out.
  */
 export const webSession = {
   async get(): Promise<WebSession | null> {
     const data = await chrome.storage.session.get(STORAGE_KEYS.WEB_SESSION);
     const session = data[STORAGE_KEYS.WEB_SESSION] as WebSession | undefined;
     if (!session || session.expiresAt <= Date.now()) return null;
-    return session;
+    // A record without a valid API URL of its own (e.g. stored by an older version) is not usable
+    const apiUrl = validateApiUrl(session.apiUrl);
+    if (!apiUrl) return null;
+    return { ...session, apiUrl, webUrl: validateWebUrl(session.webUrl) ?? undefined };
   },
 
   async set(session: WebSession): Promise<void> {
@@ -37,30 +42,28 @@ export const webSession = {
     const msg = message as Record<string, unknown> | null;
     if (!msg || msg.type !== WEB_SESSION_MESSAGE) return false;
 
-    // The web app's own API and web URLs (production config). Kept only when valid: the API must be a
-    // DealHunter host and the web URL must be the sending page's origin. Invalid values are ignored and
-    // the previous (or default) URLs stay in use.
+    // The web app's own API and web URLs. Kept only when valid: the API must be a DealHunter host and
+    // the web URL must be the sending page's origin.
     const apiUrl = validateApiUrl(msg.apiUrl);
     const webUrl = validateWebUrl(msg.webUrl, origin);
-    if (apiUrl || webUrl) {
-      await storage.saveSettings({
-        ...(apiUrl ? { dealHunterApiUrl: apiUrl } : {}),
-        ...(webUrl ? { dealHunterWebUrl: webUrl } : {}),
-      });
-    }
 
     const token = msg.accessToken;
     const expiresAt = msg.expiresAt;
-    if (typeof token !== "string" || !token || typeof expiresAt !== "number" || expiresAt <= Date.now()) {
+    const tokenValid = typeof token === "string" && !!token && typeof expiresAt === "number" && expiresAt > Date.now();
+    // A token whose API is unknown (no valid apiUrl sent with it) has nowhere it may be sent: not stored
+    if (!tokenValid || !apiUrl) {
       await this.clear();
-      return true;
+    } else {
+      await this.set({
+        accessToken: token as string,
+        expiresAt: expiresAt as number,
+        email: typeof msg.email === "string" ? msg.email : undefined,
+        name: typeof msg.name === "string" ? msg.name : undefined,
+        apiUrl,
+        webUrl: webUrl ?? undefined,
+      });
     }
-    await this.set({
-      accessToken: token,
-      expiresAt,
-      email: typeof msg.email === "string" ? msg.email : undefined,
-      name: typeof msg.name === "string" ? msg.name : undefined,
-    });
+    if (webUrl) await storage.saveLastWebUrl(webUrl);
     return true;
   },
 };

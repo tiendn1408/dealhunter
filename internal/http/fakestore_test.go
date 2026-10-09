@@ -124,7 +124,7 @@ func (f *fakeStore) SetTrackingActiveForUser(context.Context, uuid.UUID, uuid.UU
 }
 
 // WithGroupLock runs fn directly: the in-memory store has no concurrency to guard against.
-func (f *fakeStore) WithGroupLock(_ context.Context, _ []uuid.UUID, fn func(tx pgx.Tx) error) error {
+func (f *fakeStore) WithGroupLock(_ context.Context, _, _ []uuid.UUID, fn func(tx pgx.Tx) error) error {
 	return fn(nil)
 }
 func (f *fakeStore) UserTracksProduct(_ context.Context, _ pgx.Tx, userID, productID uuid.UUID) (bool, error) {

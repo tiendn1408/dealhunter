@@ -15,16 +15,16 @@
 
 ## Việc Cần Làm Tiếp (bàn giao 2026-10-08)
 
-**Trạng thái**: Bước 1 + 1.5 + 2 **hoàn tất** sau 2 đợt rà soát độc lập ngày 2026-10-08 (mục "Rà soát lại …" và "Rà soát lần 3"). Phần lớn đã commit (`088e155`, `e08cf30` và các commit sau); các sửa cuối của đợt rà soát lần 3 có thể còn chưa commit — kiểm tra `git status`.
+**Trạng thái**: Bước 1 + 1.5 + 2 **hoàn tất** sau 4 đợt rà soát độc lập (2026-10-08 → 2026-10-09: "Rà soát lại …", "Rà soát lần 3", "Đợt sửa phần còn lại", "Rà soát lần 5"). Kiểm tra `git status` để biết phần nào chưa commit.
 
 **Việc đầu tiên khi làm tiếp**
-1. Chạy migration mới (`make migrate-up`: tới `000017`).
+1. Chạy migration (`make migrate-up`: tới `000017`).
 2. Sang Bước 3 (queue/worker).
 3. Kiểm chứng (E2E trình duyệt, Google/Zalo thật) làm sau khi hoàn thành toàn bộ kế hoạch này.
 
 **Bước 2 — Phân quyền & validate input** [DONE] 2026-10-08
 - [x] SEC-07, SEC-08, SEC-09, SEC-11 (phần còn lại), SEC-12; comparison/match-suggestions yêu cầu token + quyền; rate limit `POST /auth/guest`.
-- [ ] Còn lại (chuyển Bước 7): `middleware.RealIP` tin `X-Forwarded-For`/`X-Real-IP` do client gửi ⇒ rate limit guest có thể bị lách nếu API lộ trực tiếp. Khi deploy chỉ cho API nhận kết nối từ reverse proxy và proxy phải **ghi đè** (không nối thêm) header IP.
+- [x] (Đã xử lý 2026-10-09) IP client: `TrustedRealIP` chỉ tin header từ `TRUSTED_PROXIES` và lấy hop ngoài cùng bên phải không thuộc proxy tin cậy — proxy **nối thêm** vào `X-Forwarded-For` (`$proxy_add_x_forwarded_for` của nginx) là đúng; API chỉ bind `127.0.0.1`.
 
 **Bước 3 → 9** (chi tiết ở các mục 2–8 bên dưới)
 - [ ] Bước 3 — Queue/worker: REL-01 (XAUTOCLAIM reclaim), REL-02 (retry/backoff, `pkg/retry`), REL-03 (claim nguyên tử), REL-04 (lập lịch theo product_source), REL-05 (alert trùng), REL-06/07 (outbox, fetch ngay khi track), REL-10 (Consume quay vòng CPU).
@@ -159,6 +159,18 @@
 - [x] Trang chi tiết: mũi tên/màu biến động giá theo đúng chiều tăng/giảm.
 - Không sửa được: giá trị tồn kho bịa từ trước Bước 1.5 trong DB cũ (không phân biệt được với dữ liệu thật) — DB dev đã reset.
 - Còn lại cho Bước 7 (OPS-03): `/metrics` tách cổng nội bộ; cổng web `3000` cũng nên bind `127.0.0.1`.
+
+**Rà soát lần 5 (2026-10-09)** — 2 agent rà độc lập code sửa ở đợt 3 và "Đợt sửa phần còn lại". Mỗi lỗi dưới đây có test viết **trước** khi sửa, xác nhận fail trên code cũ rồi pass sau khi sửa:
+- [x] **Deadlock gắn nguồn ↔ theo dõi cùng nguồn** (do 000016 gây ra: trigger khoá nguồn rồi nhóm, gắn nguồn khoá nhóm rồi nguồn — tái hiện `40P01`): `WithGroupLock(sourceIDs, productIDs)` khoá dòng nguồn **trước** rồi mới khoá nhóm, cùng thứ tự với trigger. Test `TestLinkSourceVsNewTrackingNoDeadlock` (fail ngay vòng đầu với thứ tự cũ).
+- [x] **Lách quota OTP bằng cách ngắt kết nối** (tin vẫn tới nạn nhân nhưng quota được hoàn — tái hiện 20/20): gửi ZNS bằng context tách khỏi request (`WithoutCancel` + timeout 20s); chỉ hoàn quota khi chắc chắn **không gửi** (`zalo.ErrNotSent`: thiếu token, lỗi tạo request, HTTP 4xx, mã lỗi nghiệp vụ Zalo); timeout, 5xx, thiếu `msg_id` ⇒ coi như có thể đã gửi, giữ mã và quota. Test phân loại lỗi của Zalo client (server giả) và 3 test OTP mới.
+- [x] **Shopee trả 200 kèm JSON lỗi bị coi là "không có ứng viên"**: `error ≠ 0`, thiếu/`null` `items`, HTTP khác 200 ⇒ `ErrSearchUnavailable` (502); `items: []` mới là "không có". Test 6 dạng phản hồi.
+- [x] **Gợi ý đã bỏ/đã nhận bị đặt lại `pending`**: `SaveSuggestion` không bao giờ đổi trạng thái đã quyết định (`dismissed`/`accepted`/`auto_linked`); `DiscoverAndMatch` không còn nuốt lỗi: lỗi đọc nhóm ⇒ lỗi; lỗi tra cứu gợi ý ⇒ bỏ qua ứng viên (không lưu, không ghép); không làm được gì vì lỗi ⇒ lỗi; làm được một phần ⇒ `incomplete: true`.
+- [x] **Proxy tin cậy**: compose production cố định subnet (`DEALHUNTER_SUBNET`, mặc định `172.30.240.0/24`) và chỉ tin gateway (`DEALHUNTER_GATEWAY`, `172.30.240.1`), không tin cả dải Docker (container khác giả được IP; subnet không cố định có thể gom mọi client về một IP).
+- [x] IPv6: khoá rate limit theo /64 (guest và thao tác gọi ra sàn); hop `X-Forwarded-For` có cổng (`1.2.3.4:5678`, `[v6]:443`) hoặc rỗng ở cuối được đọc đúng; giới hạn theo IP kiểm tra trước giới hạn theo người dùng (bị chặn theo IP không trừ hạn mức người dùng).
+- [x] `GetUserProfile` không còn tự tạo dòng user (chỉ tạo guest / đăng nhập Google mới tạo user); user không tồn tại ⇒ 401.
+- [x] Giá dạng `6.290.000 ₫` có dấu cách không ngắt (định dạng vi-VN) parse đúng.
+- [x] Web/extension: xem báo cáo cùng đợt (thống kê 90 ngày và "Tất cả" lấy đúng khoảng; mũi tên ở trang danh sách; banner hết phiên khi đăng xuất chủ động; chặn gửi mã theo từng số; extension so giá cùng cơ sở và lưu token cùng URL API nguyên tử; preflight E2E kiểm cả Redis).
+- Ghi chú: script Lua của OTP và rate limiter dùng nhiều key ⇒ sẽ lỗi `CROSSSLOT` nếu chuyển sang Redis Cluster (hiện dùng Redis 1 node). `GetUserMultiSourceProducts` dùng giá có ship nếu biết — lệch với best deal khi có nguồn chưa rõ ship (hiện phí ship luôn chưa rõ).
 
 **Chỉ dùng dữ liệu thật (2026-10-08)** — dự án đang phát triển, toàn bộ dữ liệu local là dữ liệu test/mock:
 - [x] **Nguyên nhân dữ liệu mock quay lại**: integration test ghi thẳng vào DB dev (`DATABASE_URL`, mặc định `dealdb`) và Redis DB 0 — sau migration `000010` DB dev vẫn có 645 user test (`*@dealhunter.vn`) và 132 sản phẩm, phần lớn `mock.dealhunter.vn`. Nay test dùng `TEST_DATABASE_URL` / `TEST_REDIS_URL` (mặc định `dealdb_test`, Redis DB 15) và **từ chối chạy** nếu tên DB không kết thúc bằng `_test` hoặc Redis là DB 0. `make test-integration` tự tạo + migrate `dealdb_test`.

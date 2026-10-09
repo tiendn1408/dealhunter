@@ -291,9 +291,11 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 	}
 
 	groups := []uuid.UUID{targetProductID}
+	var lockedSources []uuid.UUID // an existing source is locked before the groups (see WithGroupLock)
 	callerTracksSource := false
 	if source != nil {
 		groups = append(groups, source.ProductID)
+		lockedSources = append(lockedSources, source.ID)
 		tracked, err := s.trackingRepo.GetTrackingBySource(ctx, userID, source.ID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("check caller tracking: %w", err)
@@ -321,7 +323,7 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 		}
 		return nil
 	}
-	err = s.trackingRepo.WithGroupLock(ctx, groups, func(tx pgx.Tx) error {
+	err = s.trackingRepo.WithGroupLock(ctx, lockedSources, groups, func(tx pgx.Tx) error {
 		// Re-checked under the locks: the group may have changed since the checks above
 		if ok, err := s.trackingRepo.UserTracksProduct(ctx, tx, userID, targetProductID); err != nil {
 			return fmt.Errorf("check target product: %w", err)

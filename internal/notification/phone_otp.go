@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/tiendang/deal-hunter/internal/notification/zalo"
 )
 
 var (
@@ -175,10 +176,17 @@ func (v *PhoneVerifier) Request(ctx context.Context, userID uuid.UUID, phone str
 		return nil, fmt.Errorf("store otp: %w", err)
 	}
 
-	if _, err := v.sender.SendMessage(ctx, phone, v.templateID, map[string]string{"otp": code}); err != nil {
-		// Nothing reached the phone: drop the code and give the quota back
-		v.rdb.Del(context.WithoutCancel(ctx), otpKey(userID, phone))
-		v.release(keys)
+	// The send must not depend on the client staying connected: otherwise hanging up right after Zalo
+	// accepted the message would look like a failure and give the quota back (spamming the number for free)
+	sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	defer cancel()
+	if _, err := v.sender.SendMessage(sendCtx, phone, v.templateID, map[string]string{"otp": code}); err != nil {
+		// Only a send that certainly did not happen is given back; after a timeout or an unclear answer the
+		// code may have been delivered, so the code stays valid and the quota stays used
+		if errors.Is(err, zalo.ErrNotSent) {
+			v.rdb.Del(sendCtx, otpKey(userID, phone))
+			v.release(keys)
+		}
 		return nil, fmt.Errorf("send otp: %w", err)
 	}
 	return &OTPChallenge{Phone: phone, ExpiresIn: int(v.TTL.Seconds()), ResendAfter: int(v.ResendAfter.Seconds())}, nil

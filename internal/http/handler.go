@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -110,7 +111,7 @@ func (h *Handler) allowScrape(w http.ResponseWriter, r *http.Request, userID uui
 	for _, check := range []struct {
 		limiter RateLimiter
 		key     string
-	}{{h.scrapeLimiter, userID.String()}, {h.scrapeIPLimiter, clientIP(r)}} {
+	}{{h.scrapeIPLimiter, rateLimitKey(r)}, {h.scrapeLimiter, userID.String()}} { // IP first: a refusal there must not use up the user's allowance
 		if check.limiter == nil {
 			continue
 		}
@@ -480,18 +481,10 @@ func (h *Handler) GetTrackingPrices(w http.ResponseWriter, r *http.Request) {
 	}
 	sourceID = source.ID
 
-	to := time.Now()
-	from := to.AddDate(0, 0, -30)
-
-	if qFrom := r.URL.Query().Get("from"); qFrom != "" {
-		if t, err := time.Parse("2006-01-02", qFrom); err == nil {
-			from = t
-		}
-	}
-	if qTo := r.URL.Query().Get("to"); qTo != "" {
-		if t, err := time.Parse("2006-01-02", qTo); err == nil {
-			to = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
-		}
+	from, to, err := parseHistoryRange(r.URL.Query(), time.Now())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	snapshots, err := h.pricingService.GetHistory(r.Context(), sourceID, from, to)
@@ -900,6 +893,11 @@ func (h *Handler) GetUserProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	profile, err := h.notifRepo.GetUserProfile(r.Context(), userID)
+	if errors.Is(err, notification.ErrUserNotFound) {
+		// A valid token for a user that no longer exists: the session is over
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -1211,4 +1209,41 @@ func (h *Handler) GetTrackedProductComparison(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(comparisonResult)
+}
+
+// parseHistoryRange reads the optional from/to of a price-history request: RFC3339 timestamps or plain
+// dates (a plain "to" date includes that whole day). Without them the last 30 days are returned. A value
+// that cannot be read, or from after to, is an error rather than silently falling back to the default.
+func parseHistoryRange(q url.Values, now time.Time) (time.Time, time.Time, error) {
+	from, to := now.AddDate(0, 0, -30), now
+	parse := func(name, v string, endOfDay bool) (time.Time, error) {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			return t, nil
+		}
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			if endOfDay {
+				t = t.Add(24*time.Hour - time.Second)
+			}
+			return t, nil
+		}
+		return time.Time{}, fmt.Errorf("invalid %s: use RFC3339 (2006-01-02T15:04:05Z) or a date (2006-01-02)", name)
+	}
+	if v := q.Get("from"); v != "" {
+		t, err := parse("from", v, false)
+		if err != nil {
+			return from, to, err
+		}
+		from = t
+	}
+	if v := q.Get("to"); v != "" {
+		t, err := parse("to", v, true)
+		if err != nil {
+			return from, to, err
+		}
+		to = t
+	}
+	if from.After(to) {
+		return from, to, fmt.Errorf("from must not be after to")
+	}
+	return from, to, nil
 }

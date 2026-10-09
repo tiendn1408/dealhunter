@@ -60,8 +60,9 @@ services:
       - "127.0.0.1:${HTTP_PORT:-8080}:8080"
     environment:
       APP_ENV: production
-      # Reverse proxy (host nginx reaches the container through the Docker gateway) whose X-Forwarded-For is believed
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32,::1/128,172.16.0.0/12}
+      # Reverse proxy whose X-Forwarded-For is believed: the host's nginx reaches the container from the
+      # network gateway. Never the whole Docker range: another container could then fake client IPs.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32,::1/128,${DEALHUNTER_GATEWAY:-172.30.240.1}/32}
       HTTP_PORT: 8080
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgres://${POSTGRES_USER:-dealuser}:${POSTGRES_PASSWORD:-dealpass}@postgres:5432/${POSTGRES_DB:-dealdb}?sslmode=disable
@@ -206,3 +207,9 @@ volumes:
 networks:
   dealhunter-prod-network:
     name: dealhunter-prod-network
+    # A fixed subnet makes the gateway address known: only the gateway (the host's nginx reaching the
+    # 127.0.0.1-bound API) is a trusted proxy, not every container on the network
+    ipam:
+      config:
+        - subnet: ${DEALHUNTER_SUBNET:-172.30.240.0/24}
+          gateway: ${DEALHUNTER_GATEWAY:-172.30.240.1}

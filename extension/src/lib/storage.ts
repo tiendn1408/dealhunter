@@ -2,6 +2,10 @@ import { STORAGE_KEYS, DEFAULT_SETTINGS } from "./constants";
 import { ScheduledTask, ClockCalibration, ExtensionSettings, SavedPageTarget } from "./types";
 import { DealHunterEndpoints, resolveEndpoints } from "./endpoints";
 
+// Settings are read-modify-written: queue the writes of this context so concurrent ones never drop each
+// other's keys. (Other contexts write only the keys they own; the web URL has its own storage key.)
+let settingsWrites: Promise<unknown> = Promise.resolve();
+
 export const storage = {
   async getTasks(): Promise<ScheduledTask[]> {
     const data = await chrome.storage.local.get(STORAGE_KEYS.SCHEDULED_TASKS);
@@ -69,15 +73,34 @@ export const storage = {
   },
 
   async saveSettings(settings: Partial<ExtensionSettings>): Promise<void> {
-    const current = await this.getSettings();
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.SETTINGS]: { ...current, ...settings },
+    const write = settingsWrites.then(async () => {
+      const data = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
+      // Merge into what is stored now (not into defaults), changing only the given keys
+      await chrome.storage.local.set({
+        [STORAGE_KEYS.SETTINGS]: { ...(data[STORAGE_KEYS.SETTINGS] || {}), ...settings },
+      });
+    });
+    settingsWrites = write.catch(() => {});
+    return write;
+  },
+
+  /**
+   * Validated DealHunter URLs for links: the last web URL a DealHunter page sent (kept after sign-out),
+   * else the dev defaults. The API URL used for requests is the one stored with the session token
+   * (web_session.ts), never this one.
+   */
+  async getEndpoints(): Promise<DealHunterEndpoints> {
+    const data = await chrome.storage.local.get(STORAGE_KEYS.LAST_WEB_URL);
+    const settings = await this.getSettings();
+    return resolveEndpoints({
+      dealHunterApiUrl: settings.dealHunterApiUrl,
+      dealHunterWebUrl: data[STORAGE_KEYS.LAST_WEB_URL] ?? settings.dealHunterWebUrl,
     });
   },
 
-  /** Validated DealHunter API/web URLs (pushed by the web app; dev defaults otherwise). */
-  async getEndpoints(): Promise<DealHunterEndpoints> {
-    return resolveEndpoints(await this.getSettings());
+  /** Remembers the web URL for links. Its own key: a single write that cannot clobber other settings. */
+  async saveLastWebUrl(webUrl: string): Promise<void> {
+    await chrome.storage.local.set({ [STORAGE_KEYS.LAST_WEB_URL]: webUrl });
   },
 
   async getLanguage(): Promise<"en" | "vi"> {

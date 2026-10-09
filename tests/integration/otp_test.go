@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tiendang/deal-hunter/internal/notification"
+	"github.com/tiendang/deal-hunter/internal/notification/zalo"
 	"github.com/tiendang/deal-hunter/tests/fakezalo"
 )
 
@@ -86,16 +87,44 @@ func TestPhoneVerifier_Concurrency(t *testing.T) {
 		}
 	})
 
-	t.Run("a failed send gives the quota back", func(t *testing.T) {
+	t.Run("a send that may have reached the phone keeps the quota", func(t *testing.T) {
 		user, number := uuid.New(), phone()
-		sender.ShouldFail, sender.FailError = true, errors.New("zns down")
+		// A timeout or dropped connection: Zalo may well have delivered the message
+		sender.ShouldFail, sender.FailError = true, errors.New("zns: context deadline exceeded")
+		_, err := v.Request(ctx, user, number)
+		sender.ShouldFail, sender.FailError = false, nil
+		if err == nil {
+			t.Fatal("expected the send error")
+		}
+		var limited *notification.OTPRateLimitedError
+		if _, err := v.Request(ctx, user, number); !errors.As(err, &limited) {
+			t.Fatalf("a possibly delivered code must keep the cooldown and quota, got %v", err)
+		}
+	})
+
+	t.Run("a send Zalo definitely rejected gives the quota back", func(t *testing.T) {
+		user, number := uuid.New(), phone()
+		sender.ShouldFail, sender.FailError = true, fmt.Errorf("zalo business error -124: %w", zalo.ErrNotSent)
 		_, err := v.Request(ctx, user, number)
 		sender.ShouldFail, sender.FailError = false, nil
 		if err == nil {
 			t.Fatal("expected the send error")
 		}
 		if _, err := v.Request(ctx, user, number); err != nil {
-			t.Fatalf("after a failed send the member may retry at once, got %v", err)
+			t.Fatalf("after a definite rejection the member may retry at once, got %v", err)
+		}
+	})
+
+	t.Run("a client hanging up does not abort the send", func(t *testing.T) {
+		slow := &slowSender{delay: 150 * time.Millisecond}
+		vs := notification.NewPhoneVerifier(rdb, slow, "otp-template")
+		reqCtx, cancel := context.WithCancel(ctx)
+		go func() { time.Sleep(30 * time.Millisecond); cancel() }()
+		if _, err := vs.Request(reqCtx, uuid.New(), phone()); err != nil {
+			t.Fatalf("the send must complete although the client went away, got %v", err)
+		}
+		if slow.sawCancel {
+			t.Fatal("the sender must not see the request's cancellation")
 		}
 	})
 
@@ -117,4 +146,20 @@ func TestPhoneVerifier_Concurrency(t *testing.T) {
 			t.Fatalf("the owner must still be able to request a code, got %v", err)
 		}
 	})
+}
+
+// slowSender takes `delay` to send and fails if its context is cancelled meanwhile, like an HTTP call.
+type slowSender struct {
+	delay     time.Duration
+	sawCancel bool
+}
+
+func (s *slowSender) SendMessage(ctx context.Context, _, _ string, _ map[string]string) (string, error) {
+	select {
+	case <-time.After(s.delay):
+		return "msg-1", nil
+	case <-ctx.Done():
+		s.sawCancel = true
+		return "", ctx.Err()
+	}
 }
