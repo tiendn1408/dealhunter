@@ -435,6 +435,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const handleSelectTarget = () => {
     if (picking) {
       cleanupPickerRef.current?.();
+      setStatus({ text: t.initialHUDPrompt, tone: "idle" });
       return;
     }
 
@@ -462,6 +463,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("pointerdown", onPick, true);
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("contextmenu", onContextMenu);
       cleanupPickerRef.current = null;
     };
     cleanupPickerRef.current = cleanup;
@@ -510,8 +512,18 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       e.stopPropagation();
 
       const rawTarget = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-      const el = rawTarget ? elementResolver.normalizeTarget(rawTarget) : null;
-      if (!el || isOwnElement(el)) return;
+      if (!rawTarget || isOwnElement(rawTarget) || rawTarget === document.body || rawTarget === document.documentElement) {
+        cleanup();
+        setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+        return;
+      }
+
+      const el = elementResolver.normalizeTarget(rawTarget);
+      if (!el || isOwnElement(el) || el === document.body || el === document.documentElement) {
+        cleanup();
+        setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+        return;
+      }
 
       lockTarget(el);
       cleanup();
@@ -536,9 +548,16 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       }
     };
 
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      cleanup();
+      setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+    };
+
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("pointerdown", onPick, true);
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("contextmenu", onContextMenu);
   };
 
   useEffect(() => {
@@ -552,6 +571,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   // Auto-detect collect buttons
   const handleAutoDetect = () => {
+    if (picking) {
+      cleanupPickerRef.current?.();
+    }
     const buttons = elementResolver.findCollectButtons();
     if (buttons.length > 0) {
       lockTarget(buttons[0]);
@@ -877,11 +899,25 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             <button
               type="button"
               onClick={handleSelectTarget}
-              disabled={isArmed || picking}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-white/5 py-2 text-[11px] font-semibold text-slate-100 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
+              disabled={isArmed}
+              className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-semibold transition disabled:opacity-40 ${
+                picking
+                  ? "bg-rose-500/20 text-rose-200 ring-1 ring-rose-500/40 hover:bg-rose-500/30"
+                  : "bg-white/5 text-slate-100 ring-1 ring-white/10 hover:bg-white/10"
+              }`}
+              title={picking ? t.cancelPickTooltip : t.pickButton}
             >
-              <Crosshair className="h-3.5 w-3.5 text-emerald-300" />
-              {picking ? t.pickingButton : t.pickButton}
+              {picking ? (
+                <>
+                  <X className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+                  <span>{t.cancelPick}</span>
+                </>
+              ) : (
+                <>
+                  <Crosshair className="h-3.5 w-3.5 text-emerald-300" />
+                  <span>{t.pickButton}</span>
+                </>
+              )}
             </button>
             <button
               type="button"
