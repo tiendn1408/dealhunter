@@ -9,11 +9,15 @@ export function nextDropAt(hour: number, minute: number, nowMs: number, graceMs 
   return candidate >= nowMs - graceMs ? candidate : candidate + 24 * 60 * 60 * 1000;
 }
 
-/** "HH:mm:ss.SSS" in Vietnam time. */
-export function formatVN(ms: number): string {
+/** "HH:mm:ss.SS" in Vietnam time (standard 2 digits per unit: HH, mm, ss, SS). */
+export function formatVN(ms: number, msDigits = 2): string {
   const d = new Date(ms + VN_OFFSET_MS);
   const p = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${p(d.getUTCMilliseconds(), 3)}`;
+  if (msDigits === 3) {
+    return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${p(d.getUTCMilliseconds(), 3)}`;
+  }
+  const hundredths = Math.floor(d.getUTCMilliseconds() / 10);
+  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}.${p(hundredths, 2)}`;
 }
 
 /** Next flash slot among `hours` (Vietnam time). */

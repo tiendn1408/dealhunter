@@ -16,8 +16,9 @@ describe("drop time (Vietnam GMT+7)", () => {
   it("next flash slot after 21:00 is midnight", () => {
     expect(nextFlashDrop([0, 9, 12, 15, 18, 21], vn("2026-10-07T21:00:30"))).toEqual({ at: vn("2026-10-08T00:00:00"), hour: 0 });
   });
-  it("formats Vietnam wall clock", () => {
-    expect(formatVN(vn("2026-10-07T20:59:59.900"))).toBe("20:59:59.900");
+  it("formats Vietnam wall clock with standard 2 digits per unit", () => {
+    expect(formatVN(vn("2026-10-07T20:59:59.900"))).toBe("20:59:59.90");
+    expect(formatVN(vn("2026-10-07T20:59:59.900"), 3)).toBe("20:59:59.900");
   });
   it("calculates next exact second in Vietnam time", () => {
     expect(nextExactDropAt(18, 30, 45, vn("2026-10-07T18:20:00"))).toBe(vn("2026-10-07T18:30:45"));
