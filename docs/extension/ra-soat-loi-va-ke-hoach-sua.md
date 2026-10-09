@@ -32,11 +32,14 @@
 - Bước query `[data-testid|name|aria-label]` lấy phần tử đầu tiên, không kiểm tra duy nhất.
 - Node còn `isConnected` được dùng lại không xác minh nội dung (React list key theo index tái dùng node cho sản phẩm khác).
 - Fallback theo tag + toạ độ (bán kính 150px) với `containerText.includes("")` luôn đúng ⇒ khớp sang banner cookie.
+- Bước 6 (`element_resolver.ts:536-548`) trả phần tử **đầu tiên** có card cùng bộ `valueTokens` ⇒ hai voucher cùng mệnh giá (vd. "Giảm 50k" của 2 shop) thì bấm cái đứng trước.
 - Hướng sửa: mọi ứng viên relocate phải khớp **chữ ký nội dung** (chữ nút + chữ card/giá trị voucher); không khớp ⇒ không bấm (báo `not_found`), tuyệt đối không fallback theo vị trí.
 
 ### C3. Chế độ "unlocked" bấm bất kỳ nút nào [R]
 - Vị trí: `FloatingHUD.tsx:1029-1031` (nút Arm luôn bấm được), `armHunt:619-646`, `ScheduleForm.tsx:185-186`, `hunt_coordinator.ts:197-210`, `hunt_engine.ts:111-155`, `element_resolver.ts:103-146`.
 - Không có danh sách cấm Mua/Thanh toán/Checkout/Đặt; tái hiện: bấm "Mua ngay" trong card flash-sale 4 lần. `findCollectButtons` trả cả nút của chính HUD (HUD ở light DOM). Auto-detect / Test click khi chưa có target khoá `buttons[0]` của trang.
+- Bộ lọc "voucher đã mở trước giờ G" (`hunt_engine.ts:111-112, 143, 174`) lấy khoá là `cardText` ⇒ card có đồng hồ đếm ngược/số lượt còn lại đổi chữ mỗi giây ⇒ khoá khác ⇒ bộ lọc vô hiệu, voucher mở sẵn vẫn bị coi là "mới mở".
+- Task Custom URL không có target vẫn được tạo và săn ở chế độ unlocked.
 - Hướng sửa (theo quyết định §0): khoá Arm/Schedule khi chưa có target; Auto-detect chỉ gợi ý; loại trừ `#dealhunter-hud-root` và phần tử ẩn; thêm danh sách cấm nút mua/thanh toán cho mọi đường tự chọn.
 
 ### C4. XSS khi chọn nút
@@ -160,7 +163,7 @@
 | `docs/plans/chrome-extension-assistant-and-fast-clicker.md` | Cũ | Sơ đồ HUD gọi `/vouchers` (thực tế badge gọi `/tracked-products` và `/comparison`); "35ms/click" (thực tế adaptive 60/95/140ms); form cũ; "giá đáy 30 ngày" (badge chỉ có giá hiện tại và chênh so best deal); "Biometric Mode", "ClickProfile", "Pro Gamer mặc định" đã bỏ; "119/119". |
 | Kết nối extension ↔ web | **Chưa có tài liệu** | Cần ghi: `NEXT_PUBLIC_EXTENSION_ID` (web, `.env.example`) / `EXTENSION_ID` (`docker-compose.prod.yml`), danh sách origin trong `externally_connectable` + `DEALHUNTER_WEB_ORIGINS` (thêm www), API URL hợp lệ (`endpoints.ts:41-48`), token chỉ gửi tới `apiUrl` đi kèm. |
 
-**i18n**: EN/VI cùng 202 khoá, không thiếu. **59 khoá không dùng** (popup: `accountConnected`, `signInSuffix`, `footerSafety`, `liveSniperBadge`, `shopeeTabActive`, `notOnShopeeTab`, `clockLatency`; form cũ: `dropTimeLabel`, `voucherHub`, `superSale1010`, `cartPage`, `customUrl`, `useCurrentTabUrl`, `targetMidnight`, `keyword*`, `recommended`, `nextSalePreset`, `noSavedTargetsFound`, `targetModeSaved`, `targetModeUrl`, `preWarm*`, `scheduleButton`; HUD: `shopeeServerTime`, `serverClockTitle`, `nextFlashSale`, `customTimePlaceholder`, `invalidTimeFormat`, `targetTimeLabel`, `targetDropLabel`, `targetPrefix`, `standbyReady`, `quick10sStandby`, `quick30sStandby`, `notPickedText`, `pickingButton`, `lockedButtonDefault`; đã gỡ khỏi UI: `diagnostics*`, `dualDefense*`, `analyzingTarget`, `standbyStateBadge`, `adaptiveEngine*`, `clickProfile*`). Chuỗi hardcode: "Member:", "Universal Web" (`App.tsx:324, 342`), "Full-Auto"/"Semi-Auto" (`TaskList.tsx:63`), "+1p"/"+1m", "Tự chọn"/"Custom" (`FloatingHUD.tsx:864-865`, khác `t.customTime` = "Tùy chỉnh"), "clicks", "Minimize", "Close". Ngữ cảnh còn "Shopee voucher sniper" (`appSubtitle`) dù sản phẩm là sniper đa trang. Chính tả: "Chuẩn đoán" → "Chẩn đoán" (`i18n.ts:387`). `I18N` khai báo `as const` không ràng buộc kiểu giữa 2 ngôn ngữ ⇒ thiếu khoá không bị `tsc` bắt.
+**i18n**: EN/VI cùng 202 khoá, không thiếu. **59 khoá không dùng** (popup: `accountConnected`, `signInSuffix`, `footerSafety`, `liveSniperBadge`, `shopeeTabActive`, `notOnShopeeTab`, `clockLatency`; form cũ: `dropTimeLabel`, `voucherHub`, `superSale1010`, `cartPage`, `customUrl`, `useCurrentTabUrl`, `targetMidnight`, `keyword*`, `recommended`, `nextSalePreset`, `noSavedTargetsFound`, `targetModeSaved`, `targetModeUrl`, `preWarm*`, `scheduleButton`; HUD: `shopeeServerTime`, `serverClockTitle`, `nextFlashSale`, `customTimePlaceholder`, `invalidTimeFormat`, `targetTimeLabel`, `targetDropLabel`, `targetPrefix`, `standbyReady`, `quick10sStandby`, `quick30sStandby`, `notPickedText`, `pickingButton`, `lockedButtonDefault`; đã gỡ khỏi UI: `diagnostics*`, `dualDefense*`, `analyzingTarget`, `standbyStateBadge`, `adaptiveEngine*`, `clickProfile*`). Chuỗi hardcode: "Member:", "Universal Web" (`App.tsx:324, 342`), "Full-Auto"/"Semi-Auto" (`TaskList.tsx:63`), "+1p"/"+1m", "Tự chọn"/"Custom" (`FloatingHUD.tsx:864-865`, khác `t.customTime` = "Tùy chỉnh"), "clicks", "Minimize", "Close". Ngữ cảnh còn "Shopee voucher sniper" (`appSubtitle`) dù sản phẩm là sniper đa trang. Chính tả: "Chuẩn đoán" → "Chẩn đoán" (`i18n.ts:387`). `I18N` khai báo `as const` không ràng buộc kiểu giữa 2 ngôn ngữ ⇒ thiếu khoá không bị `tsc` bắt. Sửa: khai báo `vi: Record<keyof typeof en, string>` (hoặc `satisfies`) để `tsc` báo khi lệch khoá.
 
 ---
 
@@ -184,3 +187,5 @@
 | **3** | §6 tài liệu, §7 test, sửa script E2E | Viết lại 3 tài liệu extension + README theo code thật; thêm tài liệu kết nối web; xoá 59 khoá i18n thừa. |
 
 Quy trình mỗi lỗi: viết test tái hiện → xác nhận fail trên code cũ → sửa → pass; chạy `npx tsc --noEmit -p .`, `npx vitest run`, `npm run build`.
+
+Theo dõi: khi sửa xong mục nào, ghi `✅ đã sửa (YYYY-MM-DD, test: <tên test>)` ngay dưới mục đó trong file này, và dùng mã mục (C1, H2, M7…) trong commit message để tra ngược.
