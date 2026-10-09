@@ -2,7 +2,7 @@
 
 Tai lieu nay mo ta chi tiet kien truc ky thuat, thuat toan loi, va luong xu ly dong bo cua he thong **DealHunter Universal Sniper** tren Chrome Extension (Manifest V3).
 
-Cap nhat: 2026-10-09 · Dong bo voi ban build production va 151 unit tests.
+Cap nhat: 2026-10-09 · Dong bo voi ban build production va 165 unit tests.
 
 ---
 
@@ -183,7 +183,7 @@ Hai che do "Arm Sniper" (kich hoat truc tiep tren Floating HUD) va "Schedule" (h
 
 ## 7. Quy Chuan Chat Luong va Kiem Thu
 
-- **Unit Tests**: 151/151 tests pass tren 15 test suites (`npx vitest run`).
+- **Unit Tests**: 165/165 tests pass tren 17 test suites (`npx vitest run`).
 - **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.
 - **Production Build**: Bien dich hoan tat sach se `popup.js`, `background.js`, `content.js` va `content.css`.
 - **Zero-Emoji**: Tuyet doi khong su dung emoji trong ma nguon, log, test va tai lieu.

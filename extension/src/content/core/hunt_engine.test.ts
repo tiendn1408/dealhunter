@@ -53,6 +53,7 @@ function setup(keyword?: string, locked?: HTMLElement | null) {
 describe("startHunt", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    sessionStorage.clear();
     giveLayout();
   });
 

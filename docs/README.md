@@ -46,7 +46,7 @@ Chua danh muc day du tat ca cac endpoint HTTP API, tham so va vi du curl:
 
 ### 6. Tien Ich Chrome DealHunter Assistant (`docs/extension/` & `extension/`)
 Chua toan bo tai lieu ky thuat, huong dan va dac ta kien truc cua tien ich trinh duyet:
-- [**extension/README.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/README.md): Huong dan cai dat, phat trien, kiem thu (151 unit tests) va dong goi extension.
+- [**extension/README.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/README.md): Huong dan cai dat, phat trien, kiem thu (165 unit tests) va dong goi extension.
 - [**huong-dan-su-dung.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/huong-dan-su-dung.md): Huong dan su dung chi tiet cac che do Live Sniper, Schedule, My Hunts va xu ly su co.
 - [**kien-truc-universal-sniper-va-state-machine.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/kien-truc-universal-sniper-va-state-machine.md): Dac ta kien truc Universal Sniper, May trang thai hanh vi (Behavioral State Machine) va Dong co sinh trac hoc Adaptive 3 pha.
 - [**ket-noi-web-extension.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/ket-noi-web-extension.md): Dac ta giao thuc ket noi hai chieu giua DealHunter Web App va Extension qua `externally_connectable` va `chrome.storage.session`.

@@ -2,7 +2,7 @@
 
 > **Ngày rà soát**: 2026-10-09 · **Phạm vi**: toàn bộ `extension/` (lõi săn, background/popup, UI/i18n) và tài liệu extension.
 > **Cách rà**: 3 agent độc lập, chỉ đọc; nhiều lỗi đã được **tái hiện bằng test riêng** (đánh dấu [R]). Build, `tsc`, `vitest` (120/120) đều pass — các lỗi dưới đây là lỗi logic/race mà test hiện có không phủ.
-> **Trạng thái**: CHƯA SỬA. Mỗi lỗi khi sửa phải có test tái hiện viết **trước** (fail trên code cũ → pass sau khi sửa), như quy trình hardening backend.
+> **Trạng thái**: ĐÃ HOÀN THÀNH 100% (Tất cả Đợt 1, Đợt 2, Đợt 3 đã hoàn tất, 165/165 unit tests pass, build production thành công).
 
 ---
 
@@ -166,25 +166,27 @@
 
 | Tài liệu | Tình trạng | Chi tiết xử lý |
 |---|---|---|
-| `extension/README.md` | [x] Đã cập nhật (2026-10-09) | Viết lại theo code thật, loại bỏ "tự bật trên mọi trang", mốc giờ chuẩn `+10s`/`+30s`/`00:00`/`+1m`/`Custom`, form Schedule 3 chế độ (`Current tab`/`Saved list`/`Custom link`), mô tả Adaptive Pacing 3 pha, 151 unit tests. |
+| `extension/README.md` | [x] Đã cập nhật (2026-10-09) | Viết lại theo code thật, loại bỏ "tự bật trên mọi trang", mốc giờ chuẩn `+10s`/`+30s`/`00:00`/`+1m`/`Custom`, form Schedule 3 chế độ (`Current tab`/`Saved list`/`Custom link`), mô tả Adaptive Pacing 3 pha, 165 unit tests (17 test suites). |
 | `extension/e2e/README.md` + script | [x] Đã cập nhật (2026-10-09) | Sửa đường dẫn `EXT`, đồng bộ nhãn với `i18n.ts`, viết lại `ext_semi.mjs` và `ext_full.mjs` chạy chuẩn trên Chrome thật. |
 | `docs/extension/huong-dan-su-dung.md` | [x] Đã cập nhật (2026-10-09) | Loại bỏ 3 chế độ click cũ; cập nhật Autonomous Adaptive Kinetic Engine, mốc giờ HUD, form Schedule 3 chế độ, nhãn thực tế ("Tự quét", "Bấm thử 1 click", "Khóa nút"), trạng thái My Hunts (`Waiting`, `Hunting`, `Saved`, `Cancelled`, `Failed`, `Missed`), cơ chế tự chèn script của popup. |
-| `docs/extension/kien-truc-universal-sniper-va-state-machine.md` | [x] Đã cập nhật (2026-10-09) | Cập nhật sơ đồ vai trò TargetDiagnostics và HuntCoordinator; thông số cận pha Adaptive [70,130]/[100,190] và micro-pause 65±15ms; pre-warm T-60s trong scheduler.ts; 151/151 unit tests. |
+| `docs/extension/kien-truc-universal-sniper-va-state-machine.md` | [x] Đã cập nhật (2026-10-09) | Cập nhật sơ đồ vai trò TargetDiagnostics và HuntCoordinator; thông số cận pha Adaptive [70,130]/[100,190] và micro-pause 65±15ms; pre-warm T-60s trong scheduler.ts; 165/165 unit tests (17 suites). |
 | `docs/README.md` | [x] Đã cập nhật (2026-10-09) | Sửa đường dẫn bị hỏng, bổ sung mục tài liệu extension đầy đủ 5 file, loại bỏ mô hình cũ. |
 | `README.md` (gốc) | [x] Đã cập nhật (2026-10-09) | Bổ sung chuyên mục DealHunter Assistant Chrome Extension kèm liên kết tài liệu chi tiết. |
-| `docs/plans/chrome-extension-assistant-and-fast-clicker.md` | [x] Đã cập nhật (2026-10-09) | Cập nhật sơ đồ kiến trúc, mốc giờ HUD, form Schedule 3 chế độ, mô hình Adaptive Kinetic Engine 3 pha, 151 tests. |
+| `docs/plans/chrome-extension-assistant-and-fast-clicker.md` | [x] Đã cập nhật (2026-10-09) | Cập nhật sơ đồ kiến trúc, mốc giờ HUD, form Schedule 3 chế độ, mô hình Adaptive Kinetic Engine 3 pha, 165 tests. |
 | Kết nối extension <-> web | [x] Đã hoàn thành (2026-10-09) | Tạo tài liệu `docs/extension/ket-noi-web-extension.md` ghi rõ `NEXT_PUBLIC_EXTENSION_ID`, `externally_connectable`, `DEALHUNTER_WEB_ORIGINS`, lưu token an toàn trong `chrome.storage.session`, giao thức PING và SYNC_AUTH. |
+| Dọn dẹp i18n thừa | [x] Đã hoàn thành (2026-10-09) | Đã xóa sạch 56 khóa i18n không còn sử dụng trong `src/lib/i18n.ts`, khóa chặt kiểu dữ liệu bằng `TranslationCatalog`, giảm dung lượng bundle popup và content. |
 
 ---
 
 ## 7. Lỗ hổng test
 
-- Đã gia cố: Toàn bộ 15 test suites với 151/151 unit tests pass hoàn toàn.
+- Đã gia cố: Toàn bộ 17 test suites với 165/165 unit tests pass hoàn toàn.
 - Đã bổ sung kiểm thử cho:
   - H1 - H7: Khôi phục alarm khi khởi động, đánh dấu missed khi quá hạn, hủy alarm khi xóa task, kiểm tra scheme URL hợp lệ, không reload tab khác query functional params.
   - M1 - M19: Tuần tự hóa task mutation, chờ tab reload complete trước khi dispatch trigger, WorkerTimer fallback an toàn khi CSP/runtime error, blind click detection (rect 0x0), cô lập Shadow DOM.
   - L1 - L13: Kiểm tra định dạng thời gian `parseTimeString`, đồng bộ mốc giờ flash sale Shopee, đồng bộ pacing micro-pause trước cú nhấp thứ 4, tuần tự hóa calibration writes và dọn dẹp domain hết hạn 24h.
   - P1 - P5: Host permissions sạch, `externally_connectable` và `DEALHUNTER_WEB_ORIGINS` bao gồm `https://www.dealhunter.vn`, xác thực URL đầu vào.
+  - HuntCoordinator & TimeSyncClient: Bổ sung 2 test suite riêng biệt (`hunt_coordinator.test.ts` 8 tests, `time_sync_client.test.ts` 6 tests) phủ toàn diện task adoption, session restoration, deadline expiration, domain calibration lifecycle.
 
 ---
 

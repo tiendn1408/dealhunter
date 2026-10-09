@@ -918,8 +918,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 ["quick_10s", "+10s", t.quickTest10s || "+10s"],
                 ["quick_30s", "+30s", t.quickTest30s || "+30s"],
                 ["00:00", "00:00", "00:00:00"],
-                ["next_minute", lang === "vi" ? "+1p" : "+1m", t.nextMinute || "Next min"],
-                ["custom", lang === "vi" ? "Tự chọn" : "Custom", t.customTime || "Custom"],
+                ["next_minute", t.slotNextMinute, t.nextMinute || "Next min"],
+                ["custom", t.slotCustom, t.customTime || "Custom"],
               ] as const
             ).map(([slotKey, shortLabel, fullTitle]) => {
               const actualSlot: TargetSlot =

@@ -99,14 +99,14 @@ go run cmd/notifier/main.go
 - [x] Pre-warm T-60s & Dual-Defense Reload: Pre-warm tab o T-60s boi Background Scheduler; emergency reload ngam o T+250ms tren trang tinh.
 - [x] In-Page Price Intelligence: Huy hieu Price History Tracker Badge tren trang san pham Shopee.
 - [x] Two-Way Auth & Session Sync: Dong bo xac thuc tu Web App Next.js qua `externally_connectable` va `chrome.storage.session`.
-- [x] Test Coverage & Build: 151/151 unit tests pass (`extension/`), build production hoan tat (`extension/dist`).
+- [x] Test Coverage & Build: 165/165 unit tests pass (`extension/`), build production hoan tat (`extension/dist`).
 
 ## Documentation
 Chi tiet tai lieu he thong duoc quan ly trong thu muc [`docs/`](docs/README.md):
 - [**DealHunter Assistant Extension Guide**](docs/extension/huong-dan-su-dung.md): Huong dan su dung tien ich Chrome (Live Sniper, Schedule, My Hunts).
 - [**Kien truc Universal Sniper & State Machine**](docs/extension/kien-truc-universal-sniper-va-state-machine.md): Dac ta kien truc loi, dong co adaptive pacing va may trang thai DOM.
 - [**Ket noi Web App & Extension**](docs/extension/ket-noi-web-extension.md): Giao thuc ket noi hai chieu, sync auth session va bao mat.
-- [**Extension Source & Build Guide**](extension/README.md): Huong dan phat trien, kiem thu 151 unit tests va dong goi extension.
+- [**Extension Source & Build Guide**](extension/README.md): Huong dan phat trien, kiem thu 165 unit tests va dong goi extension.
 - [**Ra soat loi & Ke hoach sua Extension**](docs/extension/ra-soat-loi-va-ke-hoach-sua.md): Bien ban ra soat toan dien, theo doi Dot 1 -> Dot 3 va danh gia ky thuat.
 - [**Cam nang Trien khai San xuat**](docs/deployment/production-deployment-guide.md): Huong dan trien khai Production (Docker Compose Prod, Systemd, Nginx SSL, Backup).
 - [**Dac ta REST API Toan Dien**](docs/api/rest-api-reference.md): Danh muc 24+ HTTP endpoints, payload, auth va curl examples.

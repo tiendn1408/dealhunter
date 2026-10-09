@@ -87,7 +87,7 @@ Chay toan bo test suite:
 ```bash
 npm test
 ```
-Bao gom **151 unit tests (15 test suites)** pass 100%:
+Bao gom **165 unit tests (17 test suites)** pass 100%:
 - `hunt_engine.test.ts` (21 tests): May trang thai san ma, relocate nut theo chu ky noi dung, bao cao ket qua xac nhan thuc te (saved, exhausted, not_found, timeout, cancelled), huy an toan khi chuyen trang SPA, va pacing adaptive.
 - `web_session.test.ts` (19 tests): Giao tiep session token voi Web app DealHunter qua externally_connectable, xac thuc domain va luu tru phien trong chrome.storage.session.
 - `endpoints.test.ts` (21 tests) va `api_client.test.ts` (12 tests): Xac thuc va phan giai URL API, validate origin DealHunter hop le.
@@ -95,11 +95,13 @@ Bao gom **151 unit tests (15 test suites)** pass 100%:
 - `human_biometrics.test.ts` (11 tests): Thuat toan Box-Muller Gaussian, toa do Gauss 2 chieu, quy dao tiep can Cubic Bezier theo Fitts's Law, va dong co dong hoc 3 pha.
 - `storage.test.ts` (10 tests): Hang doi tuan tu hoa write mutations tranh race condition (M1), luu va phuc hoi muc tieu, TTL 24h tu dong don dep domain calibrations (P2, L11).
 - `drop_time.test.ts` (9 tests): Tinh toan moc gio Viet Nam (GMT+7), dinh dang dem nguoc chuan HH:mm:ss.SS, va xac thuc chuoi gio nhap parseTimeString (L1).
+- `hunt_coordinator.test.ts` (8 tests): Dieu phoi phien san, task adoption hop nhat phien thu cong va tu dong (M3), danh dau missed khi qua han grace (H2), gui cancelled khi disarm (H4), va phuc hoi phien tu sessionStorage.
 - `url.test.ts` (7 tests): Chuan hoa URL bo tham so tracking utm_*, fbclid giu nguyen hash route va query chuc nang (H7), xac thuc URL scheme hop le (L2).
 - `scheduler.test.ts` (7 tests): Chrome alarm lifecycle, phuc hoi alarm khi startup (H1), danh dau task missed khi tre gio (H2), huy task sach se (H4), cho reload hoan tat truoc khi trigger (M2).
 - `target_diagnostics.test.ts` (7 tests): Nhan dien framework SPA dong va chien luoc phong thu kep.
 - `human_clicker.test.ts` (6 tests): Chuoi su kien chuot chuan W3C Pointer Events, chan click xuyen modal/overlay qua elementFromPoint (M8).
 - `time_calibrator.test.ts` (6 tests): Do do tre mang RTT, ngan chan spam request va loai bo fallback Shopee ngam (H5, M9).
+- `time_sync_client.test.ts` (6 tests): Client dong bo gio miligiay in-page, nhan dien domain chuan hoa, cap nhat offset va phat su kien thay doi dong bo.
 - `timer_worker.test.ts` (2 tests): Web Worker ticker doc lap va co che fallback window interval khi gap loi hoac chan CSP (M5).
 - `isolation.test.ts` (2 tests): Kiem tra an toan XSS khi chon nut (C4) va pham vi cach ly CSS khong ro ri sang trang web khac (C5).
 

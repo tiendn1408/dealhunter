@@ -107,6 +107,7 @@ export class HuntCoordinator {
         Math.abs(this.currentSession.targetTimestamp - params.targetTimestamp) <= 1000
       ) {
         this.currentSession.taskId = params.taskId;
+        this.setState({ taskId: params.taskId });
         if (typeof window !== "undefined") {
           try {
             sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify(this.currentSession));
