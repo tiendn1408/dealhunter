@@ -254,6 +254,8 @@ export class HuntCoordinator {
       customTime: `${String(task.targetHour).padStart(2, "0")}:${String(task.targetMinute).padStart(2, "0")}:${String(second).padStart(2, "0")}`,
       keyword: task.keyword,
       clickProfileMode: task.clickProfileMode,
+      dualDefenseReload: task.dualDefenseReload,
+      diagnostics: task.diagnostics,
     });
   }
 
@@ -283,6 +285,8 @@ export class HuntCoordinator {
           customTime: session.customTime,
           keyword: session.keyword,
           clickProfileMode: session.clickProfileMode,
+          dualDefenseReload: session.dualDefenseReload,
+          diagnostics: session.diagnostics,
         });
         return true;
       } else {

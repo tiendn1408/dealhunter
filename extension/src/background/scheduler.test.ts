@@ -9,6 +9,7 @@ let createdTabs: { id: number; url: string; active?: boolean }[];
 let updatedTabs: { tabId: number; props: unknown }[];
 let sentMessages: { tabId: number; msg: unknown }[];
 let onUpdatedListeners: ((tabId: number, changeInfo: { status?: string }) => void)[];
+let onRemovedListeners: ((tabId: number) => void)[];
 
 beforeEach(() => {
   alarms = {};
@@ -17,6 +18,7 @@ beforeEach(() => {
   updatedTabs = [];
   sentMessages = [];
   onUpdatedListeners = [];
+  onRemovedListeners = [];
 
   vi.spyOn(timeCalibrator, "calibrate").mockResolvedValue({
     offsetMs: 0,
@@ -70,11 +72,19 @@ beforeEach(() => {
           onUpdatedListeners = onUpdatedListeners.filter((l) => l !== fn);
         }),
       },
+      onRemoved: {
+        addListener: vi.fn((fn: any) => onRemovedListeners.push(fn)),
+        removeListener: vi.fn((fn: any) => {
+          onRemovedListeners = onRemovedListeners.filter((l) => l !== fn);
+        }),
+      },
     },
     windows: {
       update: vi.fn(async () => ({})),
     },
   });
+
+  taskScheduler.setupTabRemovedListener();
 });
 
 describe("taskScheduler", () => {
@@ -355,6 +365,40 @@ describe("taskScheduler", () => {
       (m) => m.tabId === 888 && (m.msg as any)?.action === "TRIGGER_FULL_AUTO"
     );
     expect(triggerMsgAfter).toBeDefined();
+  });
+
+  it("marks running task as failed if its target tab is closed before drop", async () => {
+    const task: ScheduledTask = {
+      id: "task-tab-close",
+      targetHour: 0,
+      targetMinute: 0,
+      targetSecond: 0,
+      targetUrl: "https://shopee.vn/flash_sale",
+      label: "Flash Sale",
+      mode: "full_auto",
+      status: "pending",
+      createdAt: Date.now(),
+    };
+
+    await taskScheduler.scheduleTask(task);
+    await taskScheduler.handleAlarm({
+      name: "dh_task_task-tab-close",
+      scheduledTime: Date.now(),
+    });
+
+    const tasksAfterAlarm = await chrome.storage.local.get("dh_scheduled_tasks");
+    const activeTask = (tasksAfterAlarm.dh_scheduled_tasks as ScheduledTask[]).find((t) => t.id === "task-tab-close");
+    expect(activeTask?.status).toBe("running");
+
+    // Close the created tab 101
+    for (const listener of onRemovedListeners) {
+      await listener(101);
+    }
+
+    const tasksAfterClose = await chrome.storage.local.get("dh_scheduled_tasks");
+    const closedTask = (tasksAfterClose.dh_scheduled_tasks as ScheduledTask[]).find((t) => t.id === "task-tab-close");
+    expect(closedTask?.status).toBe("failed");
+    expect(closedTask?.lastResult?.detail).toBe("Target tab was closed before drop");
   });
 });
 

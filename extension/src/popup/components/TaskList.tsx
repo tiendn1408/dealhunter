@@ -80,6 +80,8 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
                       ? "text-emerald-400"
                       : task.status === "failed"
                       ? "text-rose-400"
+                      : task.status === "cancelled" || task.status === "missed"
+                      ? "text-slate-400"
                       : "text-amber-400"
                   }`}
                 >

@@ -13,10 +13,14 @@ import { storage } from "../lib/storage";
 import { isSamePageUrl } from "../lib/url";
 import "./ui/style.css";
 
-console.log("[DealHunter Assistant] Content script injected on", window.location.href);
-
-// 1. Initialize clock calibration
-timeSyncClient.init();
+function isTopWindow(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.top === window;
+  } catch {
+    return false;
+  }
+}
 
 let hudRoot: ReactDOM.Root | null = null;
 let badgeRoot: ReactDOM.Root | null = null;
@@ -71,7 +75,12 @@ async function injectFloatingHUD(force = false, autoPick = false) {
   }
 
   if (!force && !isVoucherPage && !hasSavedTarget && !hasScheduledTask && !hasArmedSession) return;
-  if (document.getElementById("dealhunter-hud-root")) return;
+  if (document.getElementById("dealhunter-hud-root")) {
+    if (autoPick) {
+      window.dispatchEvent(new CustomEvent("dealhunter:activate-pick"));
+    }
+    return;
+  }
 
   const container = document.createElement("div");
   container.id = "dealhunter-hud-root";
@@ -113,17 +122,27 @@ function injectPriceHistoryBadge() {
   badgeRoot.render(<PriceHistoryBadge />);
 }
 
-// Initialize injections and auto-resume scheduled tasks
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
+function initContentScript() {
+  console.log("[DealHunter Assistant] Content script injected on", window.location.href);
+
+  // 1. Initialize clock calibration
+  timeSyncClient.init();
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      injectFloatingHUD();
+      injectPriceHistoryBadge();
+      checkAndResumeScheduledTasks();
+    });
+  } else {
     injectFloatingHUD();
     injectPriceHistoryBadge();
     checkAndResumeScheduledTasks();
-  });
-} else {
-  injectFloatingHUD();
-  injectPriceHistoryBadge();
-  checkAndResumeScheduledTasks();
+  }
+}
+
+if (isTopWindow()) {
+  initContentScript();
 }
 
 /** Why this tab cannot hunt, if Shopee redirected it away from the voucher page. */
@@ -191,32 +210,34 @@ async function checkAndResumeScheduledTasks() {
 }
 
 // 4. Handle messages from background or popup
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.action === MESSAGE_ACTIONS.ACTIVATE_HUD) {
-    injectFloatingHUD(true, Boolean(message.pickTarget));
-    sendResponse({ success: true });
-    return false;
-  }
-
-  if (message.action === MESSAGE_ACTIONS.TRIGGER_FULL_AUTO) {
-    const task: ScheduledTask = message.task;
-    console.log("[DealHunter] Full-Auto trigger message received for task:", task);
-    sendResponse({ received: true });
-    executeFullAutoTask(task);
-    return false;
-  }
-
-  if (message.action === MESSAGE_ACTIONS.CANCEL_TASK) {
-    // H4: Disarm active hunt on this tab and clean session
-    huntCoordinator.disarm(false);
-    try {
-      sessionStorage.removeItem(ARMED_SESSION_KEY);
-    } catch {
-      // ignore
+if (isTopWindow() && typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message.action === MESSAGE_ACTIONS.ACTIVATE_HUD) {
+      injectFloatingHUD(true, Boolean(message.pickTarget));
+      sendResponse({ success: true });
+      return false;
     }
-    sendResponse({ success: true, cancelled: true });
-    return false;
-  }
 
-  return false;
-});
+    if (message.action === MESSAGE_ACTIONS.TRIGGER_FULL_AUTO) {
+      const task: ScheduledTask = message.task;
+      console.log("[DealHunter] Full-Auto trigger message received for task:", task);
+      sendResponse({ received: true });
+      executeFullAutoTask(task);
+      return false;
+    }
+
+    if (message.action === MESSAGE_ACTIONS.CANCEL_TASK) {
+      // H4: Disarm active hunt on this tab and clean session
+      huntCoordinator.disarm(false);
+      try {
+        sessionStorage.removeItem(ARMED_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+      sendResponse({ success: true, cancelled: true });
+      return false;
+    }
+
+    return false;
+  });
+}

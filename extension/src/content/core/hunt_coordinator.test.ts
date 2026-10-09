@@ -190,4 +190,73 @@ describe("HuntCoordinator", () => {
     expect(coordinator.isArmed()).toBe(false);
     expect(sessionStorage.getItem(ARMED_SESSION_KEY)).toBeNull();
   });
+
+  it("armFromTask propagates dualDefenseReload and diagnostics into arm session", async () => {
+    const task: ScheduledTask = {
+      id: "task-diag-preserve",
+      targetHour: 0,
+      targetMinute: 0,
+      targetSecond: 0,
+      targetAt: 1_020_000,
+      targetUrl: window.location.href,
+      label: "Preserve Diag Test",
+      mode: "full_auto",
+      status: "pending",
+      dualDefenseReload: false,
+      diagnostics: {
+        strategy: "reactive_no_reload",
+        framework: "react",
+        hasCountdownTimer: true,
+        isTicking: true,
+        isStandby: true,
+        confidence: 0.95,
+      },
+      descriptor: {
+        id: "btn-target",
+        uniqueSelector: "#btn-target",
+        tagName: "BUTTON",
+        attributes: {},
+        initialText: "Lưu",
+      },
+      createdAt: 1_000_000,
+    };
+
+    await coordinator.armFromTask(task);
+
+    expect(coordinator.isArmed()).toBe(true);
+    const session = JSON.parse(sessionStorage.getItem(ARMED_SESSION_KEY) || "{}");
+    expect(session.dualDefenseReload).toBe(false);
+    expect(session.diagnostics?.strategy).toBe("reactive_no_reload");
+  });
+
+  it("checkAndResumeArmedSession preserves dualDefenseReload and diagnostics across reload", () => {
+    sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify({
+      targetTimestamp: 1_050_000,
+      label: "Restored Session",
+      url: window.location.href,
+      armedAt: 1_000_000,
+      dualDefenseReload: false,
+      diagnostics: {
+        strategy: "reactive_no_reload",
+        framework: "react",
+        hasCountdownTimer: true,
+        isTicking: true,
+        isStandby: true,
+        confidence: 0.95,
+      },
+      descriptor: {
+        id: "btn-target",
+        uniqueSelector: "#btn-target",
+        tagName: "BUTTON",
+        initialText: "Lưu",
+      },
+    }));
+
+    const restored = coordinator.checkAndResumeArmedSession();
+    expect(restored).toBe(true);
+    expect(coordinator.isArmed()).toBe(true);
+    const session = JSON.parse(sessionStorage.getItem(ARMED_SESSION_KEY) || "{}");
+    expect(session.dualDefenseReload).toBe(false);
+    expect(session.diagnostics?.strategy).toBe("reactive_no_reload");
+  });
 });

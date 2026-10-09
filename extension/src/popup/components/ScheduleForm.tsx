@@ -187,7 +187,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         mode: "full_auto",
         savedTargetId: targetSnapshot?.id,
         descriptor: targetSnapshot?.descriptor,
-        dualDefenseReload: true,
+        dualDefenseReload: targetSnapshot?.dualDefenseReload ?? true,
         diagnostics: targetSnapshot?.diagnostics,
         clickProfileMode,
         preWarmSeconds: 60, // Optimal autonomous pre-warm lead time

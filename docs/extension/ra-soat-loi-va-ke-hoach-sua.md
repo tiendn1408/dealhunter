@@ -197,7 +197,25 @@
 | **1 (bắt buộc trước khi dùng thật)** | C1–C5; H1–H7 | [x] Đã hoàn thành 100% (An toàn khi bấm, không chạy script trang, không phá CSS trang, lịch hẹn đúng ngày/đúng trang, hủy đúng, đo giờ Date/RTT). |
 | **2** | M1–M19, L1–L13, P1–P5 | [x] Đã hoàn thành 100% (Race lưu task, rò rỉ HUD, i18n trạng thái, quyền tối thiểu, dọn dẹp domain calibration 24h, bảo vệ origins). |
 | **3** | Tài liệu, E2E scripts, PRD, Kết nối web | [x] Đã hoàn thành 100% (Viết lại 4 tài liệu extension + README gốc + E2E scripts theo code thật; bổ sung tài liệu kết nối web). |
+| **4 (Rà soát góc khuất bổ sung)** | E1–E8 (Corner Cases) | [x] Đã hoàn thành 100% (Kích hoạt Pick Mode trên HUD đã mount, bảo vệ Top-level Frame, SPA navigation watcher, dọn sạch DOM khi đóng HUD, cố định timestamp pre-warm, theo dõi đóng tab, bảo toàn reload diagnostics). |
 
 Quy trình mỗi lỗi: viết test tái hiện -> xác nhận fail trên code cũ -> sửa -> pass; chạy `npx tsc --noEmit -p .`, `npx vitest run`, `npm run build`.
 
-Toàn bộ 3 đợt rà soát và sửa lỗi đã hoàn tất sạch sẽ 100%. Mọi tiêu chuẩn an toàn, kiểm thử và tài liệu đã được đồng bộ.
+---
+
+## 9. Rà soát góc khuất bổ sung (Edge Cases & Corners E1–E8)
+
+Trong đợt rà soát mở rộng toàn diện sau khi hoàn thành kế hoạch ban đầu, đã phát hiện và xử lý triệt để 8 góc khuất tiềm ẩn:
+
+| Mã | Góc khuất phát hiện | Rủi ro thực tế | Giải pháp triển khai |
+|---|---|---|---|
+| **E1** | Nhận message `ACTIVATE_HUD` với `pickTarget: true` khi Floating HUD đã mount sẵn từ trước | HUD bị chặn bởi `if (document.getElementById("dealhunter-hud-root")) return;`, bỏ qua lệnh chọn nút từ popup ScheduleForm | Nếu container đã tồn tại, phát CustomEvent `dealhunter:activate-pick`. Floating HUD lắng nghe, tự động mở rộng (un-minimize) và kích hoạt `handleSelectTarget()`. |
+| **E2** | Content script bị chèn vào các iframes lồng nhau (iframes quảng cáo, tracking, captcha bên thứ ba) | Tốn bộ nhớ, xung đột time sync và lắng nghe message không cần thiết trong các khung phụ | Bổ sung hàm guard `isTopWindow()` (`window.top === window`) bọc toàn bộ khởi tạo và message listener của content script. |
+| **E3** | Người dùng điều hướng trang nội bộ SPA (HTML5 History `pushState`/`replaceState`, `popstate`, `hashchange`) mà không tải lại trang | Target cũ vẫn bị giữ lại trên trang mới, có thể gây click nhầm phần tử trên URL mới hoặc sai lệch domain đo giờ | Floating HUD tích hợp bộ theo dõi SPA qua `popstate`, `hashchange` và poll URL. Khi phát hiện URL thay đổi, tự động hủy phiên săn đang chờ, xóa highlight DOM cũ, nạp target của URL mới và cập nhật domain calibration. |
+| **E4** | Đóng Floating HUD (`X`) để lại dấu vết trên DOM | Class `dh-target-highlight` vẫn nằm trên phần tử trang và phiên Armed trong `sessionStorage` không được dọn | Bổ sung hàm `handleClose` và hook cleanup unmount: tự động disarm an toàn, xóa highlight khỏi target element và dọn dẹp picker overlay. |
+| **E5** | Tính lại `nextExactDropAt` trong bước pre-warm reload tab | Nếu thời gian thực sát mốc drop hoặc trễ một phần nhỏ mili-giây, `nextExactDropAt` sẽ tính sang ngày hôm sau (+24h), khiến `untilDrop` trở thành giá trị dương rất lớn và kích hoạt reload ngoài ý muốn ngay giờ săn | Sử dụng trực tiếp `targetTimestamp` đã được khóa tuyệt đối tại đầu hàm `handleAlarm` thay vì gọi lại `nextExactDropAt`. |
+| **E6** | Tab đang chạy nhiệm vụ bị người dùng đóng trước giờ drop | Nhiệm vụ bị treo vĩnh viễn ở trạng thái `running` trong danh sách nhiệm vụ của popup | Thêm bảng theo dõi `runningTabTasks` trong `TaskScheduler` và lắng nghe sự kiện `chrome.tabs.onRemoved`. Nếu tab bị đóng khi task đang running, lập tức cập nhật trạng thái `failed` với chi tiết "Target tab was closed before drop". |
+| **E7** | Rơi rụng thuộc tính `dualDefenseReload` và `diagnostics` trong `armFromTask` và `checkAndResumeArmedSession` | Các voucher dạng SPA có chiến lược `reactive_no_reload` bị mất cấu hình, rơi về mặc định reload trang lúc 00:00 | Truyền đầy đủ `dualDefenseReload` và `diagnostics` từ `task` và `session` vào hàm `arm()`, đảm bảo chiến lược nhận diện DOM luôn được tôn trọng. |
+| **E8** | Phân biệt trực quan trạng thái nhiệm vụ `cancelled` và `missed` trong popup TaskList | Trước đây cả `pending`, `running`, `cancelled`, `missed` đều dùng màu chữ vàng `text-amber-400` gây khó nhìn | Cập nhật style màu chữ `text-slate-400` cho nhiệm vụ đã hủy (`cancelled`) hoặc quá hạn (`missed`), nổi bật so với `completed` (xanh lá) và `failed` (đỏ). |
+
+Toàn bộ 17 test suites với 168/168 tests (100% pass) và build production sạch sẽ không lỗi. Toàn bộ hệ thống extension đạt độ hoàn thiện cao nhất.

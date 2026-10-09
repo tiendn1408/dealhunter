@@ -6,8 +6,45 @@ import { nextExactDropAt } from "../lib/drop_time";
 import { isSamePageUrl } from "../lib/url";
 
 export class TaskScheduler {
+  private runningTabTasks: Map<number, string> = new Map();
+
   constructor() {
     this.setupTabReloadListener();
+    this.setupTabRemovedListener();
+  }
+
+  setupTabRemovedListener(): void {
+    if (typeof chrome === "undefined" || !chrome.tabs?.onRemoved) return;
+
+    chrome.tabs.onRemoved.addListener(async (tabId) => {
+      const taskId = this.runningTabTasks.get(tabId);
+      if (!taskId) return;
+      this.runningTabTasks.delete(tabId);
+
+      try {
+        const tasks = await storage.getTasks();
+        const task = tasks.find((t) => t.id === taskId);
+        if (task && task.status === "running") {
+          console.warn(`[TaskScheduler] Tab ${tabId} closed while task ${taskId} was active. Marking failed!`);
+          await storage.updateTaskStatus(taskId, "failed", {
+            result: "not_found",
+            clicks: 0,
+            detail: "Target tab was closed before drop",
+            finishedAt: Date.now(),
+          });
+        }
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+  clearRunningTab(taskId: string): void {
+    for (const [tabId, id] of this.runningTabTasks.entries()) {
+      if (id === taskId) {
+        this.runningTabTasks.delete(tabId);
+      }
+    }
   }
 
   private setupTabReloadListener(): void {
@@ -180,8 +217,6 @@ export class TaskScheduler {
         }
       }
 
-      const second = task.targetSecond ?? 0;
-      const targetTimestamp = nextExactDropAt(task.targetHour, task.targetMinute, second, Date.now());
       const untilDrop = targetTimestamp - Date.now();
 
       // If existing tab was already open and we have plenty of lead time (>= 20s), reload it to clear stale session/DOM
@@ -227,6 +262,7 @@ export class TaskScheduler {
     }
 
     await storage.updateTaskStatus(taskId, "running");
+    this.runningTabTasks.set(tabId, taskId);
 
     // 4. Send trigger message with full descriptor snapshot
     const dispatchTrigger = () => {
@@ -268,6 +304,7 @@ export class TaskScheduler {
   }
 
   async cancelTask(taskId: string): Promise<void> {
+    this.clearRunningTab(taskId);
     await chrome.alarms.clear(`dh_task_${taskId}`);
     const tasks = await storage.getTasks();
     const task = tasks.find((t) => t.id === taskId);

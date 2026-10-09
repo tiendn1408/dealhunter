@@ -11,6 +11,7 @@ import { storage } from "../../lib/storage";
 import { Language, getTranslation } from "../../lib/i18n";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TargetDiagnosticsSummary } from "../../lib/types";
+import { isSamePageUrl } from "../../lib/url";
 import {
   Crosshair,
   Zap,
@@ -125,10 +126,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     return unsubscribe;
   }, [currentHost]);
 
-  // Restore saved target for this page URL on mount (M15: run once on mount, do not wipe parameters on lang change)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    storage.getSavedTargetForUrl(window.location.href).then((saved) => {
+  // Helper to restore saved target for a specific URL
+  const restoreTargetForUrl = (url: string) => {
+    storage.getSavedTargetForUrl(url).then((saved) => {
       if (saved) {
         universalDescRef.current = saved.descriptor;
         savedTargetNameRef.current = saved.name;
@@ -136,22 +136,77 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         setTargetSlot(saved.targetSlot);
         if (saved.customTime) setCustomTime(saved.customTime);
 
-        // Try relocating on the current DOM
         const el = elementResolver.relocateUniversal(saved.descriptor);
         if (el) {
           targetElementRef.current = el;
           el.classList.add("dh-target-highlight");
           setTargetSummary(saved.name);
         } else {
-          // Target is saved, but currently in standby / completed state
           setTargetSummary(`${t.standbyPrefix}${saved.name}`);
         }
         if (!huntCoordinator.getState().isArmed) {
           setStatus({ text: getTranslation(lang).savedTargetRestored, tone: "idle" });
         }
+      } else {
+        if (!huntCoordinator.getState().isArmed) {
+          setStatus({ text: getTranslation(lang).initialHUDPrompt, tone: "idle" });
+        }
       }
     });
+  };
+
+  // Restore saved target for this page URL on mount (M15: run once on mount, do not wipe parameters on lang change)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    restoreTargetForUrl(window.location.href);
   }, []);
+
+  // Watch for SPA URL navigation (popstate, hashchange, or History pushState/replaceState)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let currentUrl = window.location.href;
+
+    const checkSpaNavigation = () => {
+      const nextUrl = window.location.href;
+      if (nextUrl === currentUrl) return;
+
+      const prevUrl = currentUrl;
+      currentUrl = nextUrl;
+
+      if (!isSamePageUrl(prevUrl, nextUrl)) {
+        if (huntCoordinator.getState().isArmed) {
+          huntCoordinator.disarm(false);
+          setStatus({ text: t.disarmedStatus, tone: "warning" });
+        }
+
+        if (targetElementRef.current) {
+          targetElementRef.current.classList.remove("dh-target-highlight");
+          targetElementRef.current = null;
+        }
+        universalDescRef.current = null;
+        savedTargetNameRef.current = null;
+        setTargetSummary(null);
+        setIsTargetSaved(false);
+        setDiagnostics(null);
+
+        restoreTargetForUrl(nextUrl);
+
+        const newHost = window.location.hostname.replace(/^www\./, "");
+        setServerDomain(newHost || "shopee.vn");
+      }
+    };
+
+    window.addEventListener("popstate", checkSpaNavigation);
+    window.addEventListener("hashchange", checkSpaNavigation);
+    const pollInterval = setInterval(checkSpaNavigation, 300);
+
+    return () => {
+      window.removeEventListener("popstate", checkSpaNavigation);
+      window.removeEventListener("hashchange", checkSpaNavigation);
+      clearInterval(pollInterval);
+    };
+  }, [lang, t]);
 
   // Load saved click profile from settings on mount
   useEffect(() => {
@@ -373,8 +428,23 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   useEffect(() => {
     return () => {
       cleanupPickerRef.current?.();
+      if (targetElementRef.current) {
+        targetElementRef.current.classList.remove("dh-target-highlight");
+      }
     };
   }, []);
+
+  const handleClose = () => {
+    if (isArmed) {
+      huntCoordinator.disarm(true);
+    }
+    if (targetElementRef.current) {
+      targetElementRef.current.classList.remove("dh-target-highlight");
+      targetElementRef.current = null;
+    }
+    cleanupPickerRef.current?.();
+    onClose?.();
+  };
 
   const isOwnElement = (el: HTMLElement | null) => !!hostElement && (hostElement === el || hostElement.contains(el));
   const isOwnEvent = (e: Event) => !!hostElement && e.composedPath().includes(hostElement);
@@ -634,6 +704,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     window.addEventListener("contextmenu", onContextMenu);
   };
 
+  const pickingRef = useRef(picking);
+  pickingRef.current = picking;
+
   useEffect(() => {
     if (autoPick) {
       const timer = setTimeout(() => {
@@ -642,6 +715,19 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       return () => clearTimeout(timer);
     }
   }, [autoPick]);
+
+  useEffect(() => {
+    const onActivatePick = () => {
+      if (minimized) {
+        setMinimized(false);
+      }
+      if (!pickingRef.current) {
+        handleSelectTarget();
+      }
+    };
+    window.addEventListener("dealhunter:activate-pick", onActivatePick);
+    return () => window.removeEventListener("dealhunter:activate-pick", onActivatePick);
+  }, [minimized]);
 
   // Auto-detect collect buttons
   const handleAutoDetect = () => {
@@ -851,7 +937,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           {onClose && (
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="dh-header-btn dh-header-btn-square dh-header-btn-close"
               title={t.close}
               aria-label={t.close}
