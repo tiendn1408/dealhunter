@@ -67,8 +67,10 @@ export interface HuntOptions {
 export const HUNT_DEFAULTS = {
   leadMs: 150,
   windowMs: 8000,
+  speedPriorityWindowMs: 2000,
   defaultProfileMode: "adaptive" as ClickProfileMode,
   maxClicks: Infinity,
+  speedPriorityMaxClicks: 6,
   tickMs: 10,
   speedPriorityPreFireLeadMs: 28,
 };
@@ -80,7 +82,10 @@ export const HUNT_DEFAULTS = {
  */
 export function startHunt(opts: HuntOptions): () => void {
   const effectiveTier: PlatformTier =
-    opts.platformTier ?? (isMajorMarketplace() ? "major_marketplace" : "speed_priority");
+    opts.platformTier ??
+    (typeof window !== "undefined" && window.location?.hostname && window.location.hostname !== "localhost" && !isMajorMarketplace()
+      ? "speed_priority"
+      : "major_marketplace");
   const preFireLeadMs =
     opts.preFireLeadMs ?? (effectiveTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityPreFireLeadMs : 0);
   const leadMs = opts.leadMs ?? HUNT_DEFAULTS.leadMs;
@@ -90,13 +95,18 @@ export function startHunt(opts: HuntOptions): () => void {
     typeof sessionStorage !== "undefined" &&
     (Boolean(sessionStorage.getItem(`dh_emergency_reloaded_${opts.targetTimestamp}`)) ||
       Boolean(sessionStorage.getItem(`dh_reload_count_${opts.targetTimestamp}`)));
-  const baseWindowMs = opts.windowMs ?? HUNT_DEFAULTS.windowMs;
-  let windowMs = isEmergencyReloaded ? Math.max(baseWindowMs, 10_000) : baseWindowMs;
+  const defaultWindowMs =
+    effectiveTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityWindowMs : HUNT_DEFAULTS.windowMs;
+  const baseWindowMs = opts.windowMs ?? defaultWindowMs;
+  let windowMs = isEmergencyReloaded
+    ? Math.max(baseWindowMs, effectiveTier === "speed_priority" ? 2_500 : 10_000)
+    : baseWindowMs;
 
-  // Guarantee that after a reload or late resume, there is at least 8,000ms of active hunting time
+  // Guarantee that after a reload or late resume, there is sufficient active hunting time
   if (isResumedAfterDrop) {
     const elapsedSinceDrop = nowAtStart - opts.targetTimestamp;
-    windowMs = Math.max(windowMs, elapsedSinceDrop + 8_000);
+    const postDropBuffer = effectiveTier === "speed_priority" ? 2_000 : 8_000;
+    windowMs = Math.max(windowMs, elapsedSinceDrop + postDropBuffer);
   }
   const defaultProfile: ClickProfileMode =
     effectiveTier === "speed_priority" ? "hyper" : HUNT_DEFAULTS.defaultProfileMode;
@@ -106,7 +116,9 @@ export function startHunt(opts: HuntOptions): () => void {
     opts.clickIntervalMs !== undefined
       ? opts.clickIntervalMs
       : computeNextInterval(profile, 1).intervalMs;
-  const maxClicks = opts.maxClicks ?? HUNT_DEFAULTS.maxClicks;
+  const defaultMaxClicks =
+    effectiveTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityMaxClicks : HUNT_DEFAULTS.maxClicks;
+  const maxClicks = opts.maxClicks ?? defaultMaxClicks;
   const ticker = opts.ticker ?? new WorkerTimer();
 
   let universalDesc: UniversalTargetDescriptor | null =
@@ -287,8 +299,15 @@ export function startHunt(opts: HuntOptions): () => void {
       }
 
       if (t > opts.targetTimestamp + windowMs) {
-        if (clicks === 0) finish("not_found", "No matching target button appeared in time");
-        else finish("timeout", `Clicked ${clicks} times but target completion was not confirmed`);
+        if (clicks === 0) {
+          finish("not_found", "No matching target button appeared in time");
+        } else {
+          const detail =
+            effectiveTier === "speed_priority"
+              ? `Hyper burst dispatched (${clicks} clicks), but page never confirmed completion`
+              : `Clicked ${clicks} times but target completion was not confirmed`;
+          finish("timeout", detail);
+        }
         return;
       }
 
@@ -456,7 +475,14 @@ export function startHunt(opts: HuntOptions): () => void {
           }
         }
       }
-      status(t, clicks > 0 ? `Target active · ${clicks} clicks` : "Waiting for target button...");
+      status(
+        t,
+        clicks > 0
+          ? clicks >= maxClicks
+            ? `Burst complete (${clicks} clicks) · Awaiting server update...`
+            : `Target active · ${clicks} clicks`
+          : "Waiting for target button..."
+      );
   } catch (err) {
     // M6: Catch uncaught errors in tick to avoid hung loop/UI
     finish("not_found", "Runtime error during hunt: " + (err as Error).message);

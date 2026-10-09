@@ -143,6 +143,20 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
     ".tiki-toast",
     ".ant-message",
     ".ant-notification",
+    ".ant-modal-content",
+    ".ant-modal-body",
+    // SweetAlert & SweetAlert2 (widely used in Vietnamese web apps / caffiliate)
+    ".swal2-container",
+    ".swal2-popup",
+    ".swal2-html-container",
+    ".swal2-title",
+    ".swal-modal",
+    ".swal-text",
+    // Generic dialogs & modals
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+    ".modal-content",
+    ".modal-body",
     // Global & generic framework notification containers
     'div[class*="toast" i]',
     'div[class*="snackbar" i]',
@@ -151,6 +165,7 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
     'div[class*="notification" i]',
     'div[class*="feedback" i]',
     'div[class*="notice" i]',
+    'div[class*="popup" i]',
   ];
 
   let elements: HTMLElement[] = [];
@@ -180,39 +195,54 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
     const rawCls = (typeof el.className === "string" ? el.className : "").toLowerCase();
     const dataType = (el.getAttribute("data-type") || el.getAttribute("data-status") || "").toLowerCase();
     const role = (el.getAttribute("role") || "").toLowerCase();
+    const elText = (el.innerText || el.textContent || "").toLowerCase().trim();
 
-    // 1. Success confirmation: Structural SVG checkmark/success icon, or HTML5/CSS code contracts
-    const hasSuccessIcon = hasCompletionIcon(el);
-    const hasSuccessCode =
-      /^(success|positive|completed|saved|done)$/i.test(dataType) ||
-      /(?:^|[\s_-])(success|is-success|positive|completed|toast-success|alert-success)(?:$|[\s_-])/i.test(rawCls);
-
-    if (hasSuccessIcon || hasSuccessCode) {
-      return {
-        completed: true,
-        state: "saved",
-        reason: "Page notification confirmed success via structural icon or data contract",
-      };
-    }
-
-    // 2. Exhaustion / Error confirmation: Warning/error icons, or error/exhausted code tokens
+    // 1. Exhaustion / Error confirmation: Warning/error icons, error/exhausted code tokens, or error notification text
     const hasErrorIcon = Boolean(
       el.querySelector("svg[class*='warning' i], svg[class*='error' i], i[class*='warning' i], i[class*='error' i], [role='img'][class*='warning' i]")
     );
     const hasErrorCode =
       /^(error|warning|exhausted|depleted)$/i.test(dataType) ||
       /(?:^|[\s_-])(error|is-error|warning|is-warning|danger|toast-error|alert-error|exhausted|depleted)(?:$|[\s_-])/i.test(rawCls);
+    const hasExhaustedText =
+      /(?:thất bại|đã hết lượt|đã điểm danh hôm nay|hôm nay bạn đã điểm danh|đã nhận rồi|hết hạn|không thành công|failed|already claimed|limit reached)/i.test(
+        elText
+      );
 
-    if (hasErrorIcon || hasErrorCode) {
+    if (hasErrorIcon || hasErrorCode || hasExhaustedText) {
       return {
         completed: true,
         state: "exhausted",
-        reason: "Page notification confirmed exhausted/error via structural icon or data contract",
+        reason:
+          hasErrorIcon || hasErrorCode
+            ? "Page notification confirmed exhausted/error via structural icon or data contract"
+            : `Page notification confirmed exhausted/error via message text: "${elText.slice(0, 50)}"`,
+      };
+    }
+
+    // 2. Success confirmation: Structural SVG checkmark/success icon, HTML5/CSS code contracts, or success notification text
+    const hasSuccessIcon = hasCompletionIcon(el);
+    const hasSuccessCode =
+      /^(success|positive|completed|saved|done)$/i.test(dataType) ||
+      /(?:^|[\s_-])(success|is-success|positive|completed|toast-success|alert-success)(?:$|[\s_-])/i.test(rawCls);
+    const hasSuccessText =
+      /(?:thành công|chúc mừng|điểm danh thành công|nhận thưởng thành công|nhận quà thành công|lưu thành công|successfully|congratulations|reward claimed)/i.test(
+        elText
+      );
+
+    if (hasSuccessIcon || hasSuccessCode || hasSuccessText) {
+      return {
+        completed: true,
+        state: "saved",
+        reason:
+          hasSuccessIcon || hasSuccessCode
+            ? "Page notification confirmed success via structural icon or data contract"
+            : `Page notification confirmed success via message text: "${elText.slice(0, 50)}"`,
       };
     }
 
     // 3. W3C ARIA Live Region role="status" announcing post-click update
-    if (role === "status" && el.textContent?.trim()) {
+    if (role === "status" && elText) {
       return {
         completed: true,
         state: "saved",

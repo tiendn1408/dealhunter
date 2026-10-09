@@ -340,4 +340,37 @@ describe("ElementResolver", () => {
     const desc = resolver.describeUniversal(btn);
     expect(typeof desc.documentTop).toBe("number");
   });
+
+  it("detects SweetAlert2 or modal popup with Vietnamese success text 'Điểm danh thành công'", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Điểm danh";
+    document.body.appendChild(btn);
+
+    // Simulate SweetAlert modal appearing on caffiliate
+    const swal = document.createElement("div");
+    swal.className = "swal2-container";
+    swal.innerHTML = '<div class="swal2-popup"><div class="swal2-title">Chúc mừng bạn đã điểm danh thành công!</div></div>';
+    document.body.appendChild(swal);
+
+    const check = resolver.isTargetCompleted(btn, "Điểm danh", 1);
+    expect(check.completed).toBe(true);
+    expect(check.state).toBe("saved");
+    expect(check.reason).toContain("Page notification confirmed success via message text");
+  });
+
+  it("detects modal dialog with Vietnamese error text 'Đã hết lượt' as exhausted", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Điểm danh";
+    document.body.appendChild(btn);
+
+    const modal = document.createElement("div");
+    modal.className = "modal-content";
+    modal.innerHTML = '<div class="modal-body">Hôm nay bạn đã điểm danh hoặc đã hết lượt.</div>';
+    document.body.appendChild(modal);
+
+    const check = resolver.isTargetCompleted(btn, "Điểm danh", 1);
+    expect(check.completed).toBe(true);
+    expect(check.state).toBe("exhausted");
+    expect(check.reason).toContain("Page notification confirmed exhausted/error via message text");
+  });
 });

@@ -684,6 +684,42 @@ describe("startHunt", () => {
 
     sessionStorage.clear();
   });
+
+  it("speed_priority caps clicks to speedPriorityMaxClicks (6) and closes within 2000ms window without spamming", () => {
+    let now = DROP - 28;
+    const ticker = new ManualTicker();
+    const btn = document.createElement("button");
+    btn.textContent = "Điểm danh";
+    document.body.appendChild(btn);
+
+    let clickCount = 0;
+    btn.addEventListener("click", () => {
+      clickCount++;
+    });
+
+    let outcome: HuntOutcome | null = null;
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      platformTier: "speed_priority",
+      ticker,
+      onDone: (o) => (outcome = o),
+    });
+
+    // Advance 3000ms (beyond 2000ms window) with 10ms ticks
+    for (let i = 0; i < 300; i++) {
+      now += 10;
+      ticker.tick();
+    }
+
+    // Must cap at exactly 6 clicks and never spam up to 66 clicks!
+    expect(clickCount).toBe(6);
+    const finalOutcome = outcome as HuntOutcome | null;
+    expect(finalOutcome?.result).toBe("timeout");
+    expect(finalOutcome?.clicks).toBe(6);
+    expect(finalOutcome?.detail).toContain("Hyper burst dispatched (6 clicks)");
+  });
 });
 
 

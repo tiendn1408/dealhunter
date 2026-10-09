@@ -1,4 +1,4 @@
-import { startHunt, HuntOutcome } from "./hunt_engine";
+import { startHunt, HuntOutcome, HUNT_DEFAULTS } from "./hunt_engine";
 import { elementResolver, UniversalTargetDescriptor } from "./element_resolver";
 import { timeSyncClient } from "./time_sync_client";
 import { targetDiagnostics } from "./target_diagnostics";
@@ -200,7 +200,12 @@ export class HuntCoordinator {
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
       platformTier: diag?.platformTier,
-      windowMs: (params as any).windowMs ?? 8000,
+      windowMs:
+        (params as any).windowMs ??
+        (diag?.platformTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityWindowMs : HUNT_DEFAULTS.windowMs),
+      maxClicks:
+        (params as any).maxClicks ??
+        (diag?.platformTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityMaxClicks : undefined),
       onStatus: (msg) => {
         const isFiring = msg.includes("active") || msg.startsWith("Saving");
         this.setState({
