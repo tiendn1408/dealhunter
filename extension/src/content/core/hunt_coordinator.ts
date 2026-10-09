@@ -332,6 +332,51 @@ export class HuntCoordinator {
     });
   }
 
+  /**
+   * Resets coordinator target, outcome and status completely when user forgets/clears target.
+   * Cancels active hunt, removes sessionStorage and notifies listeners.
+   */
+  clearTargetAndOutcome(): void {
+    if (this.activeCancel) {
+      this.activeCancel();
+      this.activeCancel = null;
+    }
+    this.currentSession = null;
+
+    if (typeof sessionStorage !== "undefined") {
+      try {
+        sessionStorage.removeItem(ARMED_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+    }
+
+    this.setState({
+      isArmed: false,
+      targetTimestamp: null,
+      targetSummary: null,
+      statusText: "",
+      tone: "idle",
+      clicks: 0,
+      taskId: undefined,
+      outcome: undefined,
+    });
+  }
+
+  /**
+   * Resets finished outcome and status so that stale hunt results are not re-surfaced.
+   */
+  resetOutcome(): void {
+    if (!this.state.isArmed) {
+      this.setState({
+        outcome: undefined,
+        statusText: "",
+        clicks: 0,
+        tone: "idle",
+      });
+    }
+  }
+
   private handleDone(outcome: HuntOutcome): void {
     this.activeCancel = null;
     const taskId = this.currentSession?.taskId;

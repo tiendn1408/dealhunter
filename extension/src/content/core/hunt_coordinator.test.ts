@@ -259,4 +259,76 @@ describe("HuntCoordinator", () => {
     expect(session.dualDefenseReload).toBe(false);
     expect(session.diagnostics?.strategy).toBe("reactive_no_reload");
   });
+
+  it("clearTargetAndOutcome resets targetSummary, outcome, clicks, and session cleanly", () => {
+    coordinator.arm({
+      targetTimestamp: 1_010_000,
+      targetElement: testBtn,
+      label: "Sniper · Target Button",
+    });
+
+    expect(coordinator.getState().targetSummary).toBe("Target Button");
+    expect(sessionStorage.getItem(ARMED_SESSION_KEY)).not.toBeNull();
+
+    const listenerSnaps: Array<{ summary: string | null; outcome: any; isArmed: boolean }> = [];
+    coordinator.subscribe((s) =>
+      listenerSnaps.push({ summary: s.targetSummary, outcome: s.outcome, isArmed: s.isArmed })
+    );
+
+    coordinator.clearTargetAndOutcome();
+
+    const latest = coordinator.getState();
+    expect(latest.targetSummary).toBeNull();
+    expect(latest.outcome).toBeUndefined();
+    expect(latest.isArmed).toBe(false);
+    expect(latest.clicks).toBe(0);
+    expect(latest.statusText).toBe("");
+    expect(latest.tone).toBe("idle");
+    expect(sessionStorage.getItem(ARMED_SESSION_KEY)).toBeNull();
+
+    const lastSnap = listenerSnaps[listenerSnaps.length - 1];
+    expect(lastSnap.summary).toBeNull();
+    expect(lastSnap.outcome).toBeUndefined();
+    expect(lastSnap.isArmed).toBe(false);
+
+    // Any new subscriber after clear must receive clean null target and undefined outcome
+    let subscriberInitial: any = null;
+    const unsub = coordinator.subscribe((s) => {
+      subscriberInitial = s;
+    });
+    unsub();
+    expect(subscriberInitial.targetSummary).toBeNull();
+    expect(subscriberInitial.outcome).toBeUndefined();
+  });
+
+  it("resetOutcome clears outcome and clicks while preserving targetSummary when unarmed", () => {
+    coordinator.arm({
+      targetTimestamp: 1_010_000,
+      targetElement: testBtn,
+      label: "Sniper · Test Button",
+    });
+
+    coordinator.disarm();
+    expect(coordinator.getState().targetSummary).toBe("Test Button");
+
+    // Manually simulate a finished outcome via private method / state
+    (coordinator as any).handleDone({
+      result: "timeout",
+      clicks: 24,
+      detail: "Clicked but unconfirmed",
+    });
+
+    expect(coordinator.getState().outcome).toBeDefined();
+    expect(coordinator.getState().clicks).toBe(24);
+    expect(coordinator.getState().targetSummary).toBe("Test Button");
+
+    coordinator.resetOutcome();
+
+    const state = coordinator.getState();
+    expect(state.outcome).toBeUndefined();
+    expect(state.clicks).toBe(0);
+    expect(state.tone).toBe("idle");
+    expect(state.statusText).toBe("");
+    expect(state.targetSummary).toBe("Test Button");
+  });
 });

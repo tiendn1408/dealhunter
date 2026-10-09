@@ -4,7 +4,7 @@ import { humanClicker } from "../core/human_clicker";
 import { ClickProfileMode } from "../core/human_biometrics";
 import { elementResolver, UniversalTargetDescriptor } from "../core/element_resolver";
 import { HuntOutcome } from "../core/hunt_engine";
-import { huntCoordinator } from "../core/hunt_coordinator";
+import { huntCoordinator, ARMED_SESSION_KEY } from "../core/hunt_coordinator";
 import { targetDiagnostics } from "../core/target_diagnostics";
 import { formatVN, nextDropAt, nextExactDropAt, formatCountdown, parseTimeString } from "../../lib/drop_time";
 import { storage } from "../../lib/storage";
@@ -70,6 +70,12 @@ const formatElementIdentifier = (el: HTMLElement, desc?: UniversalTargetDescript
   return `<${tag}>`;
 };
 
+type StatusState = {
+  render?: (t: ReturnType<typeof getTranslation>, lang: Language) => string;
+  text?: string;
+  tone: Tone;
+};
+
 export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, autoPick }) => {
   const [lang, setLang] = useState<Language>("en");
   const [minimized, setMinimized] = useState(false);
@@ -79,10 +85,22 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const [errorMs, setErrorMs] = useState(1000);
   const [calibrated, setCalibrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [status, setStatus] = useState<{ text: string; tone: Tone }>({
-    text: "",
+  const [status, setStatus] = useState<StatusState>({
+    render: (t) => t.initialHUDPrompt,
     tone: "idle",
   });
+
+  const setStatusMsg = (
+    msg:
+      | { text: string; tone: Tone }
+      | { render: (t: ReturnType<typeof getTranslation>, lang: Language) => string; tone: Tone }
+  ) => {
+    setStatus({
+      render: "render" in msg ? msg.render : undefined,
+      text: "text" in msg ? msg.text : undefined,
+      tone: msg.tone,
+    });
+  };
 
   const [targetSlot, setTargetSlot] = useState<TargetSlot>("quick_10s");
   const [customTime, setCustomTime] = useState("00:00:00");
@@ -143,14 +161,14 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           el.classList.add("dh-target-highlight");
           setTargetSummary(saved.name);
         } else {
-          setTargetSummary(`${t.standbyPrefix}${saved.name}`);
+          setTargetSummary(saved.name);
         }
         if (!huntCoordinator.getState().isArmed) {
-          setStatus({ text: getTranslation(lang).savedTargetRestored, tone: "idle" });
+          setStatusMsg({ render: (trans) => trans.savedTargetRestored, tone: "idle" });
         }
       } else {
         if (!huntCoordinator.getState().isArmed) {
-          setStatus({ text: getTranslation(lang).initialHUDPrompt, tone: "idle" });
+          setStatusMsg({ render: (trans) => trans.initialHUDPrompt, tone: "idle" });
         }
       }
     });
@@ -178,7 +196,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       if (!isSamePageUrl(prevUrl, nextUrl)) {
         if (huntCoordinator.getState().isArmed) {
           huntCoordinator.disarm(false);
-          setStatus({ text: t.disarmedStatus, tone: "warning" });
+          setStatusMsg({ render: (trans) => trans.disarmedStatus, tone: "warning" });
         }
 
         if (targetElementRef.current) {
@@ -289,44 +307,53 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       }
       if (coordState.targetSummary) {
         setTargetSummary(coordState.targetSummary);
+      } else if (!coordState.isArmed && !universalDescRef.current && !targetElementRef.current) {
+        setTargetSummary(null);
       }
       if (coordState.outcome) {
-        const view = getResultView(coordState.outcome.result);
-        const clicks = coordState.outcome.clicks;
-        setStatus({ text: `${view.text} · ${t.clicksLabel(clicks)}`, tone: view.tone });
+        const outcome = coordState.outcome;
+        const view = getResultView(outcome.result);
+        setStatusMsg({
+          render: (trans) => `${trans.outcome[outcome.result]} · ${trans.clicksLabel(outcome.clicks)}`,
+          tone: view.tone,
+        });
       } else if (coordState.statusText) {
         if (coordState.statusText === "Disarmed") {
-          setStatus({ text: t.disarmedStatus, tone: "idle" });
+          setStatusMsg({ render: (trans) => trans.disarmedStatus, tone: "idle" });
         } else if (coordState.statusText.startsWith("Armed · ")) {
           const summary = coordState.statusText.slice("Armed · ".length);
-          setStatus({
-            text: lang === "vi" ? `Đã đặt mục tiêu · ${summary}` : `Armed · ${summary}`,
+          setStatusMsg({
+            render: (_trans, currentLang) =>
+              currentLang === "vi" ? `Đã đặt mục tiêu · ${summary}` : `Armed · ${summary}`,
             tone: coordState.tone,
           });
         } else if (coordState.statusText.startsWith("Target active · ")) {
           const countNum =
             parseInt(coordState.statusText.replace("Target active · ", "").replace(/[^0-9]/g, ""), 10) || 0;
-          setStatus({
-            text: lang === "vi" ? `Đang săn · ${t.clicksLabel(countNum)}` : `Target active · ${t.clicksLabel(countNum)}`,
+          setStatusMsg({
+            render: (trans, currentLang) =>
+              currentLang === "vi"
+                ? `Đang săn · ${trans.clicksLabel(countNum)}`
+                : `Target active · ${trans.clicksLabel(countNum)}`,
             tone: coordState.tone,
           });
         } else if (coordState.statusText === "Waiting for target button...") {
-          setStatus({
-            text: lang === "vi" ? "Đang chờ nút xuất hiện..." : "Waiting for target button...",
+          setStatusMsg({
+            render: (_trans, currentLang) =>
+              currentLang === "vi" ? "Đang chờ nút xuất hiện..." : "Waiting for target button...",
             tone: coordState.tone,
           });
         } else {
-          setStatus({ text: coordState.statusText, tone: coordState.tone });
+          setStatusMsg({ text: coordState.statusText, tone: coordState.tone });
         }
       }
     });
-  }, [lang, t.disarmedStatus, t.outcome, t.clicksLabel]);
+  }, []);
 
   // Initialize language from settings & listen for changes
   useEffect(() => {
     storage.getLanguage().then((storedLang) => {
       setLang(storedLang);
-      setStatus({ text: getTranslation(storedLang).initialHUDPrompt, tone: "idle" });
     });
 
     const onChange = (changes: Record<string, chrome.storage.StorageChange>) => {
@@ -460,6 +487,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     setTargetSummary(formatElementIdentifier(el, desc));
     setIsTargetSaved(false);
 
+    // Reset previous hunt outcome in coordinator so old outcome won't linger
+    huntCoordinator.resetOutcome();
+
     // Fast synchronous inspection
     const instant = targetDiagnostics.inspect(el);
     setDiagnostics(instant);
@@ -488,7 +518,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       updatedAt: Date.now(),
     });
     setIsTargetSaved(true);
-    setStatus({ text: t.targetSavedSuccess, tone: "success" });
+    setStatusMsg({ render: (trans) => trans.targetSavedSuccess, tone: "success" });
   };
 
   const handleForgetSavedTarget = async () => {
@@ -506,6 +536,17 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     setTargetSummary(null);
     setDiagnostics(null);
 
+    // Clear hunt coordinator state so stale target or outcome are never resurrected
+    huntCoordinator.clearTargetAndOutcome();
+
+    if (typeof sessionStorage !== "undefined") {
+      try {
+        sessionStorage.removeItem(ARMED_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+    }
+
     try {
       const existing = await storage.getSavedTargetForUrl(window.location.href);
       if (existing) {
@@ -516,7 +557,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     }
 
     setIsTargetSaved(false);
-    setStatus({ text: t.targetForgotten, tone: "idle" });
+    setStatusMsg({ render: (trans) => trans.targetForgotten, tone: "idle" });
   };
 
   const handleScheduleFromHUD = async () => {
@@ -557,11 +598,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         action: MESSAGE_ACTIONS.SCHEDULE_TASK,
         task,
       });
-      setStatus({ text: t.quickScheduleSuccess, tone: "success" });
+      setStatusMsg({ render: (trans) => trans.quickScheduleSuccess, tone: "success" });
     } catch (err) {
       console.warn("Schedule from HUD failed:", err);
       // L4: Show error in status instead of console only
-      setStatus({ text: (err as Error).message || "Scheduling failed", tone: "error" });
+      setStatusMsg({ text: (err as Error).message || "Scheduling failed", tone: "error" });
     }
   };
 
@@ -571,14 +612,17 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const handleSelectTarget = () => {
     if (picking) {
       cleanupPickerRef.current?.();
-      setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+      setStatusMsg({
+        render: (trans) => (universalDescRef.current ? trans.targetLockedInstruction : trans.initialHUDPrompt),
+        tone: "idle",
+      });
       return;
     }
 
     setPicking(true);
     document.body.classList.add("dh-picking-active");
-    setStatus({
-      text: t.pickInstruction,
+    setStatusMsg({
+      render: (trans) => trans.pickInstruction,
       tone: "armed",
     });
 
@@ -645,8 +689,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       badge.textContent = `${t.pickerBadgePrefix} · ${tag} "${displayLabel}"`;
       overlayEl.appendChild(badge);
 
-      setStatus({
-        text: t.targetingBadge(tag, displayLabel),
+      setStatusMsg({
+        render: (trans) => trans.targetingBadge(tag, displayLabel),
         tone: "armed",
       });
     };
@@ -659,20 +703,26 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       const rawTarget = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
       if (!rawTarget || isOwnElement(rawTarget) || rawTarget === document.body || rawTarget === document.documentElement) {
         cleanup();
-        setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+        setStatusMsg({
+          render: (trans) => (universalDescRef.current ? trans.targetLockedInstruction : trans.initialHUDPrompt),
+          tone: "idle",
+        });
         return;
       }
 
       const el = elementResolver.normalizeTarget(rawTarget);
       if (!el || isOwnElement(el) || el === document.body || el === document.documentElement) {
         cleanup();
-        setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+        setStatusMsg({
+          render: (trans) => (universalDescRef.current ? trans.targetLockedInstruction : trans.initialHUDPrompt),
+          tone: "idle",
+        });
         return;
       }
 
       lockTarget(el);
       cleanup();
-      setStatus({ text: t.targetLockedInstruction, tone: "idle" });
+      setStatusMsg({ render: (trans) => trans.targetLockedInstruction, tone: "idle" });
 
       // Swallow the click event following pointerdown to prevent accidental early triggering
       const swallow = (ev: MouseEvent) => {
@@ -689,14 +739,20 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       if (e.key === "Escape") {
         e.preventDefault();
         cleanup();
-        setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+        setStatusMsg({
+          render: (trans) => (universalDescRef.current ? trans.targetLockedInstruction : trans.initialHUDPrompt),
+          tone: "idle",
+        });
       }
     };
 
     const onContextMenu = (e: MouseEvent) => {
       e.preventDefault();
       cleanup();
-      setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+      setStatusMsg({
+        render: (trans) => (universalDescRef.current ? trans.targetLockedInstruction : trans.initialHUDPrompt),
+        tone: "idle",
+      });
     };
 
     window.addEventListener("mousemove", onMouseMove);
@@ -738,24 +794,24 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     const buttons = elementResolver.findCollectButtons();
     if (buttons.length > 0) {
       lockTarget(buttons[0]);
-      setStatus({
-        text: t.foundButtonsCount(buttons.length),
+      setStatusMsg({
+        render: (trans) => trans.foundButtonsCount(buttons.length),
         tone: "idle",
       });
     } else {
-      setStatus({ text: t.noButtonFound, tone: "error" });
+      setStatusMsg({ render: (trans) => trans.noButtonFound, tone: "error" });
     }
   };
   const armHunt = (overrideTimestamp?: number) => {
     if (!targetElementRef.current && !universalDescRef.current) {
-      setStatus({ text: t.noTargetSelected || "Please pick a target button first", tone: "error" });
+      setStatusMsg({ render: (trans) => trans.noTargetSelected, tone: "error" });
       return;
     }
 
     if (targetSlot === "custom" && !overrideTimestamp) {
       const parsed = parseTimeString(customTime);
       if (!parsed.valid) {
-        setStatus({ text: t.invalidTimeFormat, tone: "error" });
+        setStatusMsg({ render: (trans) => trans.invalidTimeFormat, tone: "error" });
         return;
       }
     }
@@ -775,7 +831,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
     armedTargetTimestampRef.current = timestamp;
     setIsArmed(true);
-    setStatus({ text: t.armedWaitingDrop, tone: "armed" });
+    setStatusMsg({ render: (trans) => trans.armedWaitingDrop, tone: "armed" });
 
     huntCoordinator.arm({
       targetTimestamp: timestamp,
@@ -792,13 +848,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     huntCoordinator.disarm();
     armedTargetTimestampRef.current = null;
     setIsArmed(false);
-    setStatus({ text: t.disarmedStatus, tone: "idle" });
+    setStatusMsg({ render: (trans) => trans.disarmedStatus, tone: "idle" });
   };
 
   const handleManualTestClick = () => {
     if (targetElementRef.current) {
       humanClicker.dispatchClick(targetElementRef.current, { profileMode: clickProfile, approach: true });
-      setStatus({ text: t.testClickSuccess, tone: "idle" });
+      setStatusMsg({ render: (trans) => trans.testClickSuccess, tone: "idle" });
     } else {
       handleAutoDetect();
     }
@@ -806,11 +862,12 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   const handleRecalibrate = async () => {
     setSyncing(true);
-    setStatus({ text: t.syncingClock, tone: "idle" });
+    setStatusMsg({ render: (trans) => trans.syncingClock, tone: "idle" });
     await timeSyncClient.calibrate();
     setSyncing(false);
-    setStatus({
-      text: timeSyncClient.getIsCalibrated() ? t.syncedClockSuccess : t.syncedClockFailed,
+    setStatusMsg({
+      render: (trans) =>
+        timeSyncClient.getIsCalibrated() ? trans.syncedClockSuccess : trans.syncedClockFailed,
       tone: timeSyncClient.getIsCalibrated() ? "success" : "error",
     });
   };
@@ -866,6 +923,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   };
 
   const tone = TONE_STYLES[status.tone];
+  const statusDisplayText = status.render ? status.render(t, lang) : (status.text || "");
   const StatusIcon =
     status.tone === "success" ? CircleCheck : status.tone === "error" ? CircleX : status.tone === "warning" ? CircleAlert : null;
   const hasTarget = Boolean(targetSummary || targetElementRef.current || universalDescRef.current);
@@ -1214,7 +1272,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           ) : (
             <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
           )}
-          <span className={`flex-1 min-w-0 text-[11px] leading-snug line-clamp-2 break-words ${tone.text}`}>{status.text}</span>
+          <span className={`flex-1 min-w-0 text-[11px] leading-snug line-clamp-2 break-words ${tone.text}`}>{statusDisplayText}</span>
         </div>
       </div>
     </div>
