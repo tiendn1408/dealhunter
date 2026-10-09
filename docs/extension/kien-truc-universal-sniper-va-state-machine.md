@@ -116,14 +116,39 @@ De loai bo triet de cac dau vet tu dong hoa (automation signatures) ma cac he th
 ### 3.6. Co che moi co va ngat nhip sinh hoc (Neuromuscular Fatigue & Burst Cadency)
 - Cu sau moi chuoi $N$ lan click lien tuc ($N \in [4, 7]$), he thong tu dong chen mot vi nghi sinh hoc (micro-pause) khoang $40\text{ms} - 80\text{ms}$, pha vo hoan toan bat ky thuat toan phan tich chu ky tuan hoan (Autocorrelation) nao cua bot detector.
 
-### 3.7. Ba che do click thich ung (Adaptive Click Profiles)
-He thong cung cap 3 profile duoc thiet ke chuan xac:
+### 3.7. Thuat toan dinh hinh dong hoc tu thich ung (Autonomous Adaptive Kinetic Shaping Engine)
 
-| Profile | Toc do trung binh | Chu ky $\Delta t$ ($\mu \pm \sigma$) | Dwell Time | Ung dung |
+De loai bo hoan toan ganh nang lua chon che do cho nguoi dung cuoi (khong bat nguoi dung phai do doan giua toc do va an toan), DealHunter trien khai **Dong co dinh hinh dong hoc tu dong 3 pha (3-Phase Biological Kinetic Envelope)** lam thuat toan chuan mac dinh:
+
+```
+[Gio G] ───────────────────────────────────────────────────────────────►
+├── Pha 1: But toc gio G (Clicks 1-3)
+│   μ = 60ms, σ = 10ms (~14-16 CPS) -> Giat deal trong cua so vang mili-giay
+├── Pha 2: Gian nhip thich ung (Clicks 4-8)
+│   μ = 95ms, σ = 16ms + Vi nghi phuc hoi co (50ms ± 12ms) -> Chong WAF rate-limit
+└── Pha 3: On dinh dai han (Clicks 9+)
+    μ = 140ms, σ = 22ms + Vi nghi dinh ky moi 5 clicks -> Bao ve tai khoan tuyet doi
+```
+
+#### Chi tiet 3 pha sinh hoc:
+1. **Pha 1 — Surge (But toc gio G, Clicks 1 – 3)**:
+   - Thoi gian phan xa ban tay o trang thai tap trung cao do: $\mu = 60\text{ms}, \sigma = 10\text{ms}$ (gioi han $[42\text{ms}, 80\text{ms}]$).
+   - Dat toc do cuc dai ~14 – 16 CPS ngay tai thoi diem mo deal de tranh tinh trang het suat vi cham chan vai chuc mili-giay.
+2. **Pha 2 — Adaptation (Gian nhip thich ung, Clicks 4 – 8)**:
+   - Khi server chua tra ket qua sau 3 click dau, thuat toan tu dong nhan dien nguy co va mo rong chu ky: $\mu = 95\text{ms}, \sigma = 16\text{ms}$ (gioi han $[65\text{ms}, 130\text{ms}]$).
+   - Chen mot vi nghi phuc hoi co $50\text{ms} \pm 12\text{ms}$ ngay tai click thu 4, pha vo hoan toan pho tu tuong quan (Autocorrelation) cua bo loc bot.
+3. **Pha 3 — Steady (On dinh dai han, Clicks > 8)**:
+   - Chuyen ve chu ky on dinh cua nguoi that: $\mu = 140\text{ms}, \sigma = 22\text{ms}$ (gioi han $[95\text{ms}, 180\text{ms}]$).
+   - Chen vi nghi phuc hoi dinh ky sau moi 5 click. Bao ve tai khoan an toan tuyet doi trong cac dot xep hang cho dai hoi cua trang thanh toan.
+
+#### Bang thong so cac profile ho tro trong loi dong co:
+
+| Profile | Toc do trung binh | Chu ky $\Delta t$ ($\mu \pm \sigma$) | Dwell Time | Co che hoat dong |
 |---|---|---|---|---|
-| **Stealth Human** | **~6 – 8 CPS** | $\mu = 140\text{ms}, \sigma = 25\text{ms}$ | $55\text{ms} \pm 12\text{ms}$ | 100% tu nhien nhu nguoi that click chuot thu cong. Danh cho cac trang web co he thong chan bot gay gat (Cloudflare Turnstile, DataDome, Akamai). |
-| **Pro Gamer (Mac dinh)** | **~12 – 15 CPS** | $\mu = 72\text{ms}, \sigma = 14\text{ms}$ | $32\text{ms} \pm 8\text{ms}$ | Mo phong ky thuat thi dau **Jitter Clicking** co kiem soat. Toi uu toc do giat deal nhung van nam trong gioi han sinh hoc cua con nguoi. |
-| **Turbo Blitz** | **~20 – 25 CPS** | $\mu = 40\text{ms}, \sigma = 8\text{ms}$ | $18\text{ms} \pm 5\text{ms}$ | Danh cho cuoc dua chop nhoang duoi 1 giay. Van duoc trang bi Gaussian jitter de tranh bi block vi $\sigma = 0$. |
+| **Adaptive (Mac dinh)** | **Tu dong 3 pha** | Clicks 1-3: $60\text{ms} \pm 10\text{ms}$<br>Clicks 4-8: $95\text{ms} \pm 16\text{ms}$<br>Clicks > 8: $140\text{ms} \pm 22\text{ms}$ | $30\text{ms} \pm 8\text{ms}$ | **Tu dong thich ung 100%**: But toc cao do luc dau deal, tu gian nhip va chen vi nghi khi can keo dai thoi gian san. |
+| **Stealth Human** | ~6 – 8 CPS | $\mu = 140\text{ms}, \sigma = 25\text{ms}$ | $55\text{ms} \pm 12\text{ms}$ | 100% toc do sinh hoc binh thuong cua nguoi dung thu cong khong voi va. |
+| **Pro Gamer** | ~12 – 15 CPS | $\mu = 72\text{ms}, \sigma = 14\text{ms}$ | $32\text{ms} \pm 8\text{ms}$ | Mo phong ky thuat jitter clicking thi dau co phuong sai. |
+| **Turbo Blitz** | ~20 – 25 CPS | $\mu = 40\text{ms}, \sigma = 8\text{ms}$ | $18\text{ms} \pm 5\text{ms}$ | Dua mili-giay toc do cao kem Gaussian jitter. |
 
 ---
 

@@ -31,7 +31,6 @@ import {
   Trash2,
   CalendarClock,
   Cpu,
-  ShieldCheck,
 } from "lucide-react";
 
 interface FloatingHUDProps {
@@ -70,7 +69,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   const [targetSlot, setTargetSlot] = useState<TargetSlot>("quick_10s");
   const [customTime, setCustomTime] = useState("00:00:00");
-  const [clickProfile, setClickProfile] = useState<ClickProfileMode>("pro_gamer");
+  const [clickProfile, setClickProfile] = useState<ClickProfileMode>("adaptive");
   const armedTargetTimestampRef = useRef<number | null>(null);
   const [countdownStr, setCountdownStr] = useState("--:--:--.-");
   const [targetLabel, setTargetLabel] = useState("--:--:--");
@@ -144,11 +143,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       if (s.clickProfileMode) setClickProfile(s.clickProfileMode);
     });
   }, []);
-
-  const handleSelectProfile = (mode: ClickProfileMode) => {
-    setClickProfile(mode);
-    storage.saveSettings({ clickProfileMode: mode });
-  };
 
   // Continuous target locator: observes DOM mutations & polls to ensure target highlight is NEVER lost on reload/SPAs
   useEffect(() => {
@@ -941,75 +935,22 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           )}
         </div>
 
-        {/* Biometric Click Mode */}
+        {/* Autonomous Adaptive Kinetic Engine */}
         <div className="rounded-2xl bg-white/[0.03] p-2.5 ring-1 ring-white/5">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              {t.clickProfileTitle}
-            </span>
-            <span className="font-mono text-[9px] text-emerald-400 font-medium">
-              {clickProfile === "stealth"
-                ? "~7 CPS · Stealth"
-                : clickProfile === "pro_gamer"
-                ? "~14 CPS · Human"
-                : "~23 CPS · Blitz"}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-300">
+                {t.adaptiveEngineTitle}
+              </span>
+            </div>
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-mono text-[9px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
+              {t.adaptiveEngineStatus}
             </span>
           </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            <button
-              type="button"
-              disabled={isArmed}
-              onClick={() => handleSelectProfile("stealth")}
-              className={`flex flex-col items-center justify-center rounded-xl py-1.5 px-1 text-center transition ${
-                clickProfile === "stealth"
-                  ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
-                  : "bg-white/[0.02] text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              }`}
-              title={t.clickProfileStealthDesc}
-            >
-              <div className="flex items-center gap-1 text-[11px] font-semibold">
-                <ShieldCheck className="h-3 w-3" />
-                <span>{t.clickProfileStealth}</span>
-              </div>
-              <span className="text-[9px] text-slate-500 font-mono">140ms</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isArmed}
-              onClick={() => handleSelectProfile("pro_gamer")}
-              className={`flex flex-col items-center justify-center rounded-xl py-1.5 px-1 text-center transition ${
-                clickProfile === "pro_gamer"
-                  ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
-                  : "bg-white/[0.02] text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              }`}
-              title={t.clickProfileProGamerDesc}
-            >
-              <div className="flex items-center gap-1 text-[11px] font-semibold">
-                <MousePointerClick className="h-3 w-3" />
-                <span>{t.clickProfileProGamer}</span>
-              </div>
-              <span className="text-[9px] text-slate-500 font-mono">72ms</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isArmed}
-              onClick={() => handleSelectProfile("turbo")}
-              className={`flex flex-col items-center justify-center rounded-xl py-1.5 px-1 text-center transition ${
-                clickProfile === "turbo"
-                  ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
-                  : "bg-white/[0.02] text-slate-400 hover:bg-white/5 hover:text-slate-200"
-              }`}
-              title={t.clickProfileTurboDesc}
-            >
-              <div className="flex items-center gap-1 text-[11px] font-semibold">
-                <Zap className="h-3 w-3" />
-                <span>{t.clickProfileTurbo}</span>
-              </div>
-              <span className="text-[9px] text-slate-500 font-mono">40ms</span>
-            </button>
-          </div>
+          <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
+            {t.adaptiveEngineDesc}
+          </p>
         </div>
 
         {/* Arm / Disarm */}

@@ -10,7 +10,7 @@
  * 5. W3C Pointer Events Level 3 hardware realism (pointerId, pointerType, pressure, buttons).
  */
 
-export type ClickProfileMode = "stealth" | "pro_gamer" | "turbo";
+export type ClickProfileMode = "adaptive" | "stealth" | "pro_gamer" | "turbo";
 
 export interface ClickProfile {
   mode: ClickProfileMode;
@@ -28,6 +28,20 @@ export interface ClickProfile {
 }
 
 export const CLICK_PROFILES: Record<ClickProfileMode, ClickProfile> = {
+  adaptive: {
+    mode: "adaptive",
+    name: "Autonomous Adaptive",
+    description: "Self-tuning kinetic envelope: surge at drop, adaptive cadence expansion, and micro-pauses",
+    meanIntervalMs: 60,
+    stdDevIntervalMs: 12,
+    minIntervalMs: 42,
+    maxIntervalMs: 180,
+    dwellMeanMs: 30,
+    dwellStdDevMs: 8,
+    microPauseAfterClicks: 4,
+    microPauseDurationMeanMs: 50,
+    microPauseDurationStdDevMs: 15,
+  },
   stealth: {
     mode: "stealth",
     name: "Stealth Human",
@@ -121,13 +135,72 @@ export function calculateHumanClickCoordinates(rect: DOMRect): { clientX: number
 }
 
 /**
+ * Autonomous Kinetic Shaping Algorithm
+ *
+ * Automatically shapes the click cadency across three biological phases:
+ * Phase 1 (Surge): Golden drop window (first 1-3 clicks) firing with competitive reflex (~14-16 CPS)
+ * Phase 2 (Adaptation): Cadence expansion (clicks 4-8) with micro-pauses to prevent WAF rate-limits
+ * Phase 3 (Steady): Sustainable steady state (~7 CPS) for extended network queues
+ */
+export function computeAdaptiveInterval(
+  clickCount: number,
+  _elapsedMs = 0
+): { intervalMs: number; phase: "surge" | "adaptation" | "steady"; isMicroPause: boolean } {
+  if (clickCount <= 3) {
+    // Phase 1: High-speed surge at drop moment to win the voucher before stock depletes
+    const interval = sampleGaussian(60, 10, 42, 80);
+    return {
+      intervalMs: Math.round(interval),
+      phase: "surge",
+      isMicroPause: false,
+    };
+  }
+
+  if (clickCount <= 8) {
+    // Phase 2: Neuromuscular cadence expansion + micro-pause to avoid bot rate-limits
+    const isMicroPause = clickCount === 4;
+    let interval = sampleGaussian(95, 16, 70, 130);
+    if (isMicroPause) {
+      interval += sampleGaussian(50, 12, 35, 75);
+    }
+    return {
+      intervalMs: Math.round(interval),
+      phase: "adaptation",
+      isMicroPause,
+    };
+  }
+
+  // Phase 3: Steady natural human rate for long-tail response
+  const isMicroPause = clickCount % 5 === 0;
+  let interval = sampleGaussian(140, 22, 100, 190);
+  if (isMicroPause) {
+    interval += sampleGaussian(65, 15, 40, 100);
+  }
+  return {
+    intervalMs: Math.round(interval),
+    phase: "steady",
+    isMicroPause,
+  };
+}
+
+/**
  * Computes the time interval until the next click based on the active profile,
  * incorporating Gaussian temporal variance and biological micro-pauses.
  */
 export function computeNextInterval(
   profile: ClickProfile,
-  clickCount: number
-): { intervalMs: number; isMicroPause: boolean } {
+  clickCount: number,
+  elapsedMs = 0
+): { intervalMs: number; isMicroPause: boolean; phase?: "surge" | "adaptation" | "steady" } {
+  if (profile.mode === "adaptive") {
+    const res = computeAdaptiveInterval(clickCount, elapsedMs);
+    return {
+      intervalMs: res.intervalMs,
+      isMicroPause: res.isMicroPause,
+      phase: res.phase,
+    };
+  }
+
   let interval = sampleGaussian(
     profile.meanIntervalMs,
     profile.stdDevIntervalMs,

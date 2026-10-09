@@ -99,10 +99,11 @@ Dung khi ban dang ngoi truoc may tinh va can bam mot nut vao dung gio G (vi du: 
 3. **Kiem tra dong bo dong ho**:
    - Bang HUD hien thi thoi gian may chu chuan xac den tung miligiay.
    - Neu can dong bo lai, bam nut lam moi ben canh do lech mili-giay.
-4. **Chon che do click sinh hoc (Biometric Click Mode)**:
-   - **`Stealth Human`** (**`Nguoi that`**): Toc do ~7 CPS (140ms/click). Mo phong 100% toc do sinh hoc nguoi that, khuyen dung cho cac trang co Cloudflare Turnstile, DataDome hoac anti-bot gat gao.
-   - **`Pro Gamer`** (**`Game thu`** - Mac dinh): Toc do ~14 CPS (72ms/click). Mo phong ky thuat jitter clicking thi dau co phuong sai Gauss va ngat nhip phuc hoi co, vua toc do cao de giat deal vua nam trong bien do vat ly cua ban tay.
-   - **`Turbo Blitz`** (**`Sieu toc`**): Toc do ~23 CPS (40ms/click). Bup click sieu toc dua mili-giay cho deal cuc nong, van giu do lech chuan thoi gian de tranh chu ky phang.
+4. **Dinh hinh sinh hoc tu dong (Autonomous Adaptive Kinetic Engine)**:
+   - Tien ich su dung **thuat toan tu dong dinh hinh nhip do co hoc** ma khong bat nguoi dung phai phan van lua chon giua cac che do.
+   - **Giai doan 1 (But toc gio G)**: 1-3 click dau tien kich hoat phan xa thi dau dinh cao (~14-16 CPS, khoang cach ~60ms) de giat deal trong cua so vang miligiay truoc khi het suat.
+   - **Giai doan 2 (Gian nhip thich ung)**: Tu click thu 4-8, he thong tu dong gian nhip (~95ms) va chen vi nghi phuc hoi co (~50ms) de tranh bi WAF/bot detector danh gia la spam may moc.
+   - **Giai doan 3 (On dinh dai han)**: Tu click thu 9 tro di, duy tri nhip deu dan an toan (~140ms, tuong duong ~7 CPS) kem vi nghi co hoc moi 5 click de cho hang doi may chu xu ly ma khong gay khoa tai khoan.
 5. **Bam thu nghiem (Tuy chon)**:
    - Bam **`Send one test click`** (**`Bam thu 1 phat click`**) de kiem tra xem click va quy dao co truyen dung vao nut hay khong.
 
@@ -110,7 +111,7 @@ Dung khi ban dang ngoi truoc may tinh va can bam mot nut vao dung gio G (vi du: 
 - Bam nut lon: **`Arm sniper`** (**`Kich hoat san`**).
 - Nut chuyen sang mau do cam **`Disarm`** (**`Huy kich hoat`**) va he thong vao trang thai truc chien dem nguoc miligiay.
 - Ban co the thu nho HUD (nut dau tru `-`) thanh mot vien thu gon nho gon.
-- Dung moc gio da dinh, he thong se tu dong ban chuoi click theo dung che do sinh hoc da chon cho den khi trang xac nhan hoan tat.
+- Dung moc gio da dinh, he thong se tu dong ban chuoi click theo dung thuat toan sinh hoc tu thich ung cho den khi trang xac nhan hoan tat.
 
 ---
 

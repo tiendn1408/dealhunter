@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Plus, Bookmark, Globe, Crosshair, Sparkles, CheckCircle2, ChevronDown } from "lucide-react";
-import { ScheduledTask, SavedPageTarget } from "../../lib/types";
+import { ScheduledTask, SavedPageTarget, ClickProfileMode } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { nextExactDropAt, formatVN } from "../../lib/drop_time";
 import { taskScheduler } from "../../background/scheduler";
@@ -53,7 +53,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
   // Target time state
   const nextSale = useMemo(() => getNextSaleDrop(Date.now()), []);
   const [timeInput, setTimeInput] = useState<string>(nextSale.timeStr);
-  const [clickProfileMode, setClickProfileMode] = useState<"stealth" | "pro_gamer" | "turbo">("pro_gamer");
+  const [clickProfileMode, setClickProfileMode] = useState<ClickProfileMode>("adaptive");
   const [submitting, setSubmitting] = useState(false);
   const t = getTranslation(lang);
 

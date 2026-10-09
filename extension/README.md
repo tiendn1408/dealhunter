@@ -18,7 +18,7 @@ Tien ich mo rong trinh duyet (Chrome Extension) theo chuan **Manifest V3**, chuy
    - Tranh tinh trang trinh duyet Chrome bop nghet hieu nang tab nen (bypass background tab throttling), duy tri nhip tick 10ms on dinh.
 4. **Mo phong chuot nguoi that sinh trac hoc (Anti-Bot Human Biometrics)**:
    - Tich hop bo thuat toan sinh trac hoc toan dien: bien doi Box-Muller Gaussian cho thoi gian, toa do Gauss 2 chieu tap trung trong tam nut, quy dao tiep can Cubic Bezier theo Dinh luat Fitts, chuan hoa phan cung W3C Pointer Events Level 3, va thoi gian giu nut vat ly (dwell time).
-   - 3 Che do click thich ung (Click Profiles): Stealth Human (~7 CPS), Pro Gamer Jitter (~14 CPS), va Turbo Blitz (~23 CPS) voi ngat nhip sinh hoc (micro-pauses) loai bo hoan toan dau vet bot.
+   - **Dong co dinh hinh dong hoc tu dong (Autonomous Adaptive Kinetic Engine)**: Tu dong thich ung 3 pha sinh hoc (But toc gio G -> Gian nhip thich ung -> On dinh dai han kem vi nghi phuc hoi co), loai bo 100% dau vet bot ma nguoi dung khong can phan van chon che do.
 5. **Giao dien Dark Cyber-Tactical & Song ngu (EN / VI)**:
    - Thiet ke 3 tab hien dai: `[Live Sniper]`, `[Schedule]`, `[My Hunts]`.
    - Ngon ngu Tieng Anh mac dinh, ho tro Tieng Viet co dau 1-click toggle.
@@ -62,7 +62,7 @@ Thu muc build se duoc tao tai: `dist/`.
    - Chon moc gio: `[00:00]` (nua dem), `[Next flash]`, hoac `[Next min]`.
    - Bam **`Pick button`** va click vao nut can bam tren man hinh de khoa muc tieu.
    - Bam **`Arm sniper`** de he thong vao trang thai truc chien dem nguoc miligiay.
-   - Dung gio G, he thong se tu dong bam click lien tuc voi toc do 35ms/click.
+    - Dung gio G, he thong se tu dong bam click theo thuat toan sinh hoc tu thich ung 3 pha.
 
 ### 3.2. Che do Schedule (Hen gio tu dong 100%)
 1. Mo popup DealHunter, chuyen sang the **`Schedule`** (**`Dat lich`**).
@@ -79,9 +79,9 @@ Chay toan bo test suite:
 ```bash
 npm test
 ```
-Bao gom toan bo **119 unit tests** (13 suites) kiem tra toan dien:
+Bao gom toan bo **120 unit tests** (13 suites) kiem tra toan dien:
 - `hunt_coordinator.ts`: Kiem tra quan ly phien san tap trung, dong bo giua HUD va Schedule.
-- `human_biometrics.test.ts` (10 tests): Kiem tra thuat toan Box-Muller Gaussian sampling, toa do 2D Gauss, quy dao Cubic Bezier Fitts's Law, W3C Level 3 pointer event dispatching, va biological micro-pauses.
+- `human_biometrics.test.ts` (11 tests): Kiem tra thuat toan Box-Muller Gaussian sampling, toa do 2D Gauss, quy dao Cubic Bezier Fitts's Law, W3C Level 3 pointer event dispatching, co che tu dong dinh hinh dong hoc 3 pha (Adaptive Kinetic Envelope), va biological micro-pauses.
 - `hunt_engine.test.ts` (17 tests): Kiem tra co che san, relocate nut khi re-render, click burst theo profile (Stealth, Pro Gamer, Turbo), fallback reload tai T+250ms, graceful timeout khi khong co nut.
 - `element_resolver.test.ts` (6 tests): Kiem tra may trang thai hanh vi (W3C ARIA, data attributes, disabled transition, text mutation, icon injection) loai bo 100% hardcoded text.
 - `target_diagnostics.test.ts` (7 tests): Kiem tra nhan dien framework SPA (React/Vue/Angular), dem nguoc toan hoc va chien luoc phong thu kep.

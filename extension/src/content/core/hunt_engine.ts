@@ -61,7 +61,7 @@ export const HUNT_DEFAULTS = {
   leadMs: 150,
   windowMs: 3000,
   clickIntervalMs: 35,
-  defaultProfileMode: "pro_gamer" as ClickProfileMode,
+  defaultProfileMode: "adaptive" as ClickProfileMode,
   maxClicks: 80,
   tickMs: 10,
 };
@@ -79,7 +79,7 @@ export function startHunt(opts: HuntOptions): () => void {
   const baseWindowMs = opts.windowMs ?? HUNT_DEFAULTS.windowMs;
   const windowMs = isEmergencyReloaded ? Math.max(baseWindowMs, 10_000) : baseWindowMs;
   const profileMode = opts.clickProfileMode ?? HUNT_DEFAULTS.defaultProfileMode;
-  const profile = CLICK_PROFILES[profileMode] ?? CLICK_PROFILES.pro_gamer;
+  const profile = CLICK_PROFILES[profileMode] ?? CLICK_PROFILES.adaptive;
   let currentIntervalMs =
     opts.clickIntervalMs !== undefined
       ? opts.clickIntervalMs

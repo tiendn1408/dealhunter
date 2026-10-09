@@ -1,3 +1,5 @@
+export type ClickProfileMode = "adaptive" | "stealth" | "pro_gamer" | "turbo";
+
 export interface ScheduledTask {
   id: string;
   targetHour: number; // 0..23
@@ -22,7 +24,7 @@ export interface ScheduledTask {
   };
   preWarmSeconds?: number; // lead time before target to open/focus tab (default: 60)
   dualDefenseReload?: boolean; // automatically executes pre-warm reload & emergency fallback if static
-  clickProfileMode?: "stealth" | "pro_gamer" | "turbo"; // default: "pro_gamer"
+  clickProfileMode?: ClickProfileMode; // default: "adaptive"
   diagnostics?: TargetDiagnosticsSummary;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: number;
@@ -48,7 +50,7 @@ export interface ExtensionSettings {
   language: "en" | "vi"; // default: 'en'
   burstIntervalMs: number; // default: 35ms
   burstDurationMs: number; // default: 2000ms
-  clickProfileMode?: "stealth" | "pro_gamer" | "turbo"; // default: "pro_gamer"
+  clickProfileMode?: ClickProfileMode; // default: "adaptive"
   preWarmSeconds: number; // default: 60s
   soundEnabled: boolean;
   autoCheckoutReady: boolean;

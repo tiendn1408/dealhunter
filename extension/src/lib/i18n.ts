@@ -176,7 +176,11 @@ export const I18N = {
     analyzingTarget: "Analyzing page reactivity...",
     standbyStateBadge: "Standby",
 
-    // Click Profiles & Biometrics
+    // Adaptive Kinetic Engine
+    adaptiveEngineTitle: "Autonomous Kinetic Engine",
+    adaptiveEngineStatus: "Auto-Tuned · Anti-Bot",
+    adaptiveEngineDesc:
+      "Auto-shapes click velocity: competitive surge at drop moment with adaptive cadence expansion to win deals safely.",
     clickProfileTitle: "Biometric Click Mode",
     clickProfileStealth: "Stealth Human",
     clickProfileStealthDesc: "~7 CPS · 100% human motor speed & variance",
@@ -373,7 +377,11 @@ export const I18N = {
     analyzingTarget: "Đang phân tích phản hồi trang...",
     standbyStateBadge: "Chờ giờ G",
 
-    // Click Profiles & Biometrics
+    // Adaptive Kinetic Engine
+    adaptiveEngineTitle: "Định hình sinh học tự động",
+    adaptiveEngineStatus: "Chuẩn xác 100% · Tự thích ứng",
+    adaptiveEngineDesc:
+      "Tự động tối ưu vận tốc: bứt tốc mili-giây lúc mở mã, tự giãn nhịp sinh học và ngắt nghỉ chống hệ thống chặn bot.",
     clickProfileTitle: "Chế độ click sinh học",
     clickProfileStealth: "Người thật",
     clickProfileStealthDesc: "~7 CPS · Tốc độ cơ học người thật & phương sai tự nhiên",

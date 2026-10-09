@@ -91,6 +91,29 @@ describe("human_biometrics", () => {
       // Micro-pause duration increases the interval noticeably
       expect(microPaused.intervalMs).toBeGreaterThan(profile.meanIntervalMs);
     });
+
+    it("shapes the kinetic envelope autonomously in adaptive profile", () => {
+      const profile = CLICK_PROFILES.adaptive;
+
+      // Phase 1: Surge (first 1-3 clicks)
+      const click1 = computeNextInterval(profile, 1);
+      expect(click1.phase).toBe("surge");
+      expect(click1.intervalMs).toBeLessThanOrEqual(85);
+
+      // Phase 2: Adaptation (clicks 4-8) with micro-pause at click 4
+      const click4 = computeNextInterval(profile, 4);
+      expect(click4.phase).toBe("adaptation");
+      expect(click4.isMicroPause).toBe(true);
+
+      const click5 = computeNextInterval(profile, 5);
+      expect(click5.phase).toBe("adaptation");
+      expect(click5.isMicroPause).toBe(false);
+
+      // Phase 3: Steady (clicks > 8)
+      const click9 = computeNextInterval(profile, 9);
+      expect(click9.phase).toBe("steady");
+      expect(click9.intervalMs).toBeGreaterThanOrEqual(95);
+    });
   });
 
   describe("generateBezierTrajectory", () => {
