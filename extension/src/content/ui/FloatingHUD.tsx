@@ -792,17 +792,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 : t.notSyncedRetry}
             </button>
           </div>
-          <div className="my-1.5 text-center font-mono text-[28px] font-bold tracking-tight tabular-nums">
-            {(() => {
-              const dotIdx = serverTimeStr.lastIndexOf(".");
-              if (dotIdx === -1) return <span className="text-white">{serverTimeStr}</span>;
-              return (
-                <>
-                  <span className="text-white">{serverTimeStr.slice(0, dotIdx)}</span>
-                  <span className="text-emerald-400">{serverTimeStr.slice(dotIdx)}</span>
-                </>
-              );
-            })()}
+          <div className="my-1.5 text-center font-mono text-[28px] font-bold tracking-tight text-emerald-400 tabular-nums">
+            {serverTimeStr}
           </div>
         </div>
 
@@ -813,16 +804,12 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
               {t.timingAndCountdown || "Timing & Countdown"}
             </span>
-            <span
-              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                isArmed
-                  ? "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
-                  : "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20"
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${isArmed ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
-              <span>{isArmed ? t.armedCountdown : t.standbyReady}</span>
-            </span>
+            {isArmed && (
+              <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-ping" />
+                <span>{t.armedCountdown}</span>
+              </span>
+            )}
           </div>
 
           {/* Slot selector grid */}
@@ -876,23 +863,18 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           {/* Balanced 2-Column Info Display (Equal 2 lines on each side) */}
           <div className="mt-2.5 grid grid-cols-2 gap-2 rounded-xl bg-black/40 p-2.5 ring-1 ring-white/5">
             <div className="flex flex-col justify-center border-r border-white/10 pr-2">
-              <div className="flex items-center gap-1 text-[10px] font-medium text-slate-400">
-                <span>{t.dropAtLabel || "Drop time"}</span>
-                {(targetSlot === "quick_10s" || targetSlot === "quick_30s") && (
-                  <span className="rounded bg-emerald-500/10 px-1 text-[9px] font-bold text-emerald-400 ring-1 ring-emerald-500/20">
-                    {targetLabel}
-                  </span>
-                )}
-              </div>
-              <div className="mt-0.5 font-mono text-[15px] font-bold text-white tabular-nums">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                {t.dropAtLabel || "Target time"}
+              </span>
+              <div className="mt-0.5 font-mono text-base font-bold text-slate-100 tabular-nums">
                 {targetWallClock}
               </div>
             </div>
             <div className="flex flex-col justify-center pl-2">
-              <span className="text-[10px] font-medium text-slate-400">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 {t.countdownLabel || "Countdown"}
               </span>
-              <div className={`mt-0.5 font-mono text-[15px] font-bold tabular-nums ${isArmed ? "text-amber-300 animate-pulse" : "text-emerald-400"}`}>
+              <div className={`mt-0.5 font-mono text-base font-bold tabular-nums ${isArmed ? "text-amber-300 animate-pulse" : "text-emerald-400"}`}>
                 {countdownStr}
               </div>
             </div>
@@ -903,28 +885,29 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         <div className="dh-inner-card rounded-2xl p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t.targetVoucher}</span>
-            <div className="flex items-center gap-1.5">
-              {isTargetSaved ? (
-                <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-                  <BookmarkCheck className="h-2.5 w-2.5" />
-                  {t.savedTarget}
-                </span>
-              ) : targetSummary ? (
-                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-                  {t.locked}
-                </span>
-              ) : (
-                <span className="text-[10px] font-medium text-slate-500">
-                  {t.standbyReady || "Ready"}
-                </span>
-              )}
-            </div>
+            {isTargetSaved ? (
+              <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
+                <BookmarkCheck className="h-2.5 w-2.5" />
+                {t.savedTarget}
+              </span>
+            ) : targetSummary ? (
+              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
+                {t.locked}
+              </span>
+            ) : null}
           </div>
-          {targetSummary && (
+          {targetSummary ? (
             <div className="mb-2.5 flex items-center gap-2 rounded-xl bg-emerald-500/10 px-2.5 py-1.5 ring-1 ring-emerald-500/20">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
               <span className="truncate font-mono text-xs font-semibold text-emerald-300" title={targetSummary}>
                 {targetSummary}
+              </span>
+            </div>
+          ) : (
+            <div className="mb-2.5 flex items-center gap-2 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/5">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-500" />
+              <span className="truncate text-[11px] font-medium text-slate-400">
+                {t.notPickedText}
               </span>
             </div>
           )}
@@ -957,14 +940,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               className="dh-action-btn flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-semibold transition disabled:opacity-40"
             >
               <ScanSearch className="h-3.5 w-3.5 text-emerald-300" />
-              {t.autoDetect}
+              <span>{t.autoDetect}</span>
             </button>
           </div>
-          {!targetSummary && (
-            <p className="mt-2 text-center text-[10px] text-slate-400">
-              {t.notPickedText}
-            </p>
-          )}
           {targetSummary && (
             <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-2">
               <div className="flex items-center gap-1.5">
