@@ -910,19 +910,23 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               </span>
             ) : null}
           </div>
-          {targetSummary ? (
-            <div className="mb-2.5 flex items-center gap-2 rounded-xl bg-emerald-500/10 px-2.5 py-1.5 ring-1 ring-emerald-500/20">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
-              <span className="truncate font-mono text-xs font-semibold text-emerald-300" title={targetSummary}>
-                {targetSummary}
-              </span>
-            </div>
-          ) : (
-            <div className="mb-2.5 flex items-center gap-2 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/5">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-500" />
-              <span className="truncate text-[11px] font-medium text-slate-400">
-                {t.notPickedText}
-              </span>
+          {targetSummary && (
+            <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl bg-emerald-500/10 px-2.5 py-1.5 ring-1 ring-emerald-500/20">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+                <span className="truncate font-mono text-xs font-semibold text-emerald-300" title={targetSummary}>
+                  {targetSummary}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleForgetSavedTarget}
+                disabled={isArmed}
+                className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-white/10 hover:text-rose-400 disabled:opacity-40"
+                title={t.forgetTarget}
+              >
+                <X className="h-3 w-3" />
+              </button>
             </div>
           )}
           <div className="grid grid-cols-2 gap-2">
@@ -930,20 +934,20 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               type="button"
               onClick={handleSelectTarget}
               disabled={isArmed}
-              className={`dh-action-btn flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-semibold transition disabled:opacity-40 ${
+              className={`dh-action-btn flex items-center justify-center gap-1.5 rounded-xl text-[11px] font-semibold transition disabled:opacity-40 ${
                 picking ? "dh-action-btn-cancelling" : ""
               }`}
-              title={picking ? t.cancelPickTooltip : t.pickButton}
+              title={picking ? t.cancelPickTooltip : targetSummary ? t.changeButton : t.pickButton}
             >
               {picking ? (
                 <>
-                  <X className="h-3.5 w-3.5 text-rose-400 animate-pulse" />
+                  <X className="h-3.5 w-3.5 text-rose-400 animate-pulse stroke-[2]" />
                   <span>{t.cancelPick}</span>
                 </>
               ) : (
                 <>
-                  <Crosshair className="h-3.5 w-3.5 text-emerald-300" />
-                  <span>{t.pickButton}</span>
+                  <Crosshair className="h-3.5 w-3.5 text-emerald-300 stroke-[1.75]" />
+                  <span>{targetSummary ? t.changeButton : t.pickButton}</span>
                 </>
               )}
             </button>
@@ -951,9 +955,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               type="button"
               onClick={handleAutoDetect}
               disabled={isArmed}
-              className="dh-action-btn flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-semibold transition disabled:opacity-40"
+              className="dh-action-btn flex items-center justify-center gap-1.5 rounded-xl text-[11px] font-semibold transition disabled:opacity-40"
             >
-              <ScanSearch className="h-3.5 w-3.5 text-emerald-300" />
+              <ScanSearch className="h-3.5 w-3.5 text-emerald-300 stroke-[1.75]" />
               <span>{t.autoDetect}</span>
             </button>
           </div>
@@ -998,34 +1002,35 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           )}
         </div>
 
-        {/* Arm / Disarm */}
-        <button
-          type="button"
-          onClick={() => (isArmed ? disarmHunt() : armHunt())}
-          className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold text-white shadow-lg transition ${
-            isArmed
-              ? "dh-arm-btn-rose bg-gradient-to-r from-rose-500 to-rose-600 shadow-rose-950/50 hover:from-rose-400 hover:to-rose-500"
-              : "dh-arm-btn-emerald bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-950/50 hover:from-emerald-400 hover:to-teal-400"
-          }`}
-        >
-          <Zap className="h-4 w-4" />
-          {isArmed ? t.disarm : t.armSniper}
-        </button>
+        {/* Action Group: Primary CTA & Secondary Test Click */}
+        <div className="space-y-1.5 pt-0.5">
+          <button
+            type="button"
+            onClick={() => (isArmed ? disarmHunt() : armHunt())}
+            className={`dh-arm-btn flex w-full items-center justify-center gap-2 rounded-xl text-xs font-bold uppercase tracking-wider text-white shadow-lg transition ${
+              isArmed
+                ? "dh-arm-btn-rose bg-gradient-to-r from-rose-500 to-rose-600 shadow-rose-950/50 hover:from-rose-400 hover:to-rose-500"
+                : "dh-arm-btn-emerald bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-950/50 hover:from-emerald-400 hover:to-teal-400"
+            }`}
+          >
+            <Zap className="h-4 w-4" />
+            <span>{isArmed ? t.disarm : t.armSniper}</span>
+          </button>
 
-        {/* Manual Test Click */}
-        <button
-          type="button"
-          onClick={handleManualTestClick}
-          disabled={isArmed}
-          className="dh-test-click-btn flex w-full items-center justify-center gap-1.5 text-[11px] font-medium text-slate-400 transition hover:text-slate-200 disabled:opacity-40"
-          title={t.testClickTooltip}
-        >
-          <MousePointerClick className="h-3.5 w-3.5" />
-          {t.testClick}
-        </button>
+          <button
+            type="button"
+            onClick={handleManualTestClick}
+            disabled={isArmed}
+            className="dh-test-click-btn flex w-full items-center justify-center gap-1.5 rounded-xl text-[11px] font-medium transition disabled:opacity-40"
+            title={t.testClickTooltip}
+          >
+            <MousePointerClick className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <span>{t.testClick}</span>
+          </button>
+        </div>
 
-        {/* Status */}
-        <div className={`flex min-h-[38px] items-center gap-2 rounded-xl bg-black/30 px-3 py-1.5 ring-1 ${tone.ring}`}>
+        {/* Status Bar */}
+        <div className={`dh-status-bar flex min-h-[36px] items-center gap-2 rounded-xl bg-black/40 px-3 py-2 ring-1 ${tone.ring}`}>
           {StatusIcon ? (
             <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
           ) : (

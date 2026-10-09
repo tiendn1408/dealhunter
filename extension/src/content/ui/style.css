@@ -315,17 +315,22 @@
 
 /* Target Action buttons (Pick button / Auto-detect) */
 #dealhunter-hud-root .dh-action-btn {
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   gap: 6px !important;
   width: 100% !important;
-  border-radius: 12px !important;
-  padding: 8px 12px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  box-sizing: border-box !important;
+  border-radius: 10px !important;
+  padding: 0 10px !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
   font-size: 11px !important;
   font-weight: 600 !important;
-  line-height: normal !important;
+  line-height: 1 !important;
+  letter-spacing: normal !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   background-color: rgba(255, 255, 255, 0.05) !important;
   color: #f1f5f9 !important;
@@ -338,13 +343,15 @@
   font-family: inherit !important;
   font-size: 11px !important;
   font-weight: 600 !important;
-  line-height: normal !important;
+  line-height: 1 !important;
   letter-spacing: normal !important;
   color: inherit !important;
 }
 
 #dealhunter-hud-root .dh-action-btn:hover {
   background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
 }
 
 #dealhunter-hud-root .dh-action-btn-cancelling {
@@ -403,23 +410,32 @@
 }
 
 /* Arm sniper action button: Guaranteed gradient & text color on all websites */
-#dealhunter-hud-root .dh-arm-btn-emerald {
+#dealhunter-hud-root .dh-arm-btn {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   gap: 8px !important;
   width: 100% !important;
-  border-radius: 16px !important;
-  padding: 12px 16px !important;
-  font-size: 14px !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  max-height: 42px !important;
+  box-sizing: border-box !important;
+  border-radius: 12px !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  font-size: 13px !important;
   font-weight: 700 !important;
-  line-height: 1.2 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.02em !important;
+  padding: 0 16px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+#dealhunter-hud-root .dh-arm-btn-emerald {
   background-color: #10b981 !important;
   background-image: linear-gradient(to right, #10b981, #14b8a6) !important;
   color: #ffffff !important;
-  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4) !important;
-  cursor: pointer !important;
-  transition: all 0.15s ease !important;
+  box-shadow: 0 8px 20px -4px rgba(16, 185, 129, 0.45) !important;
 }
 
 #dealhunter-hud-root .dh-arm-btn-emerald:hover {
@@ -428,22 +444,10 @@
 }
 
 #dealhunter-hud-root .dh-arm-btn-rose {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 8px !important;
-  width: 100% !important;
-  border-radius: 16px !important;
-  padding: 12px 16px !important;
-  font-size: 14px !important;
-  font-weight: 700 !important;
-  line-height: 1.2 !important;
   background-color: #f43f5e !important;
   background-image: linear-gradient(to right, #f43f5e, #e11d48) !important;
   color: #ffffff !important;
-  box-shadow: 0 10px 25px -5px rgba(244, 63, 94, 0.4) !important;
-  cursor: pointer !important;
-  transition: all 0.15s ease !important;
+  box-shadow: 0 8px 20px -4px rgba(244, 63, 94, 0.45) !important;
 }
 
 #dealhunter-hud-root .dh-arm-btn-rose:hover {
@@ -451,34 +455,74 @@
   background-image: linear-gradient(to right, #fb7185, #f43f5e) !important;
 }
 
-/* Manual Test Click button: Guaranteed transparent background & slate color */
+/* Secondary Manual Test Click button: sleek ghost button */
 #dealhunter-hud-root .dh-test-click-btn {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   gap: 6px !important;
   width: 100% !important;
-  background-color: transparent !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  max-height: 30px !important;
+  box-sizing: border-box !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(255, 255, 255, 0.03) !important;
   background-image: none !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
   color: #94a3b8 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
   font-size: 11px !important;
   font-weight: 500 !important;
-  padding: 6px 0 !important;
+  line-height: 1 !important;
+  letter-spacing: normal !important;
+  padding: 0 10px !important;
   cursor: pointer !important;
-  transition: color 0.15s ease !important;
+  transition: all 0.15s ease !important;
+}
+
+#dealhunter-hud-root .dh-test-click-btn *,
+#dealhunter-hud-root .dh-test-click-btn span {
+  font-family: inherit !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  letter-spacing: normal !important;
+  color: inherit !important;
 }
 
 #dealhunter-hud-root .dh-test-click-btn:hover {
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
   color: #f1f5f9 !important;
-  background-color: transparent !important;
 }
 
 #dealhunter-hud-root .dh-test-click-btn:disabled {
   opacity: 0.4 !important;
   cursor: not-allowed !important;
+}
+
+/* Status Bar */
+#dealhunter-hud-root .dh-status-bar {
+  display: flex !important;
+  align-items: center !important;
+  min-height: 36px !important;
+  box-sizing: border-box !important;
+  border-radius: 12px !important;
+  padding: 6px 12px !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  line-height: 1.35 !important;
+  letter-spacing: normal !important;
+}
+
+#dealhunter-hud-root .dh-status-bar *,
+#dealhunter-hud-root .dh-status-bar span {
+  font-family: inherit !important;
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+  letter-spacing: normal !important;
 }
 
 .dh-target-highlight {
