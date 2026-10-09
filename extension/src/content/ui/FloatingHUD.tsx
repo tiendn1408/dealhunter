@@ -647,30 +647,47 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   // Draggable header handler
   const handleHeaderMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("input")) return;
-    e.preventDefault();
 
-    const hudCard = (e.currentTarget as HTMLElement).closest(".dh-floating-card") as HTMLElement | null;
-    const rect = hudCard?.getBoundingClientRect() || (hostElement?.getBoundingClientRect());
-    if (!rect) return;
+    const rootEl =
+      hostElement ||
+      (typeof document !== "undefined" ? document.getElementById("dealhunter-hud-root") : null) ||
+      ((e.currentTarget as HTMLElement).closest(".dh-floating-card") as HTMLElement | null);
+    if (!rootEl) return;
 
-    dragStartRef.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      startX: rect.left,
-      startY: rect.top,
-    };
+    const rect = rootEl.getBoundingClientRect();
+    const startMouseX = e.clientX;
+    const startMouseY = e.clientY;
+    const startX = rect.left;
+    const startY = rect.top;
+
+    let hasDragged = false;
 
     const onMouseMove = (ev: MouseEvent) => {
-      if (!dragStartRef.current) return;
-      const dx = ev.clientX - dragStartRef.current.mouseX;
-      const dy = ev.clientY - dragStartRef.current.mouseY;
-      const newX = Math.max(12, Math.min(window.innerWidth - 352, dragStartRef.current.startX + dx));
-      const newY = Math.max(12, Math.min(window.innerHeight - 100, dragStartRef.current.startY + dy));
+      const dx = ev.clientX - startMouseX;
+      const dy = ev.clientY - startMouseY;
+
+      // 4px threshold prevents accidental tiny mouse twitches during normal clicks
+      if (!hasDragged) {
+        if (Math.hypot(dx, dy) < 4) return;
+        hasDragged = true;
+      }
+
+      ev.preventDefault();
+
+      const elWidth = rootEl.offsetWidth || 356;
+      const elHeight = rootEl.offsetHeight || 480;
+      const newX = Math.max(8, Math.min(window.innerWidth - elWidth - 8, startX + dx));
+      const newY = Math.max(8, Math.min(window.innerHeight - elHeight - 8, startY + dy));
+
+      rootEl.style.setProperty("left", `${newX}px`, "important");
+      rootEl.style.setProperty("top", `${newY}px`, "important");
+      rootEl.style.setProperty("right", "auto", "important");
+      rootEl.style.setProperty("bottom", "auto", "important");
+
       setHudPos({ x: newX, y: newY });
     };
 
     const onMouseUp = () => {
-      dragStartRef.current = null;
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
@@ -689,7 +706,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         type="button"
         onClick={() => setMinimized(false)}
         className="dh-minimized-pill flex items-center gap-2.5 rounded-full px-4 py-2 text-white shadow-2xl ring-1 ring-white/10 transition hover:ring-emerald-400/50"
-        style={hudPos ? { position: "fixed", left: `${hudPos.x}px`, top: `${hudPos.y}px` } : { position: "fixed", right: "24px", bottom: "24px" }}
       >
         <span className={`h-2 w-2 rounded-full ${isArmed ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
         <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">{serverTimeStr}</span>
@@ -700,15 +716,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   }
 
   return (
-    <div
-      className="dh-floating-card w-[356px] select-none overflow-hidden rounded-3xl text-slate-100 ring-1 ring-white/10"
-      style={hudPos ? { position: "fixed", left: `${hudPos.x}px`, top: `${hudPos.y}px`, bottom: "auto", right: "auto" } : { position: "fixed", right: "24px", bottom: "24px" }}
-    >
+    <div className="dh-floating-card w-[356px] select-none overflow-hidden rounded-3xl text-slate-100 ring-1 ring-white/10">
       {/* Draggable Header */}
       <div
         onMouseDown={handleHeaderMouseDown}
         className="dh-header flex cursor-grab items-center justify-between gap-2 px-3.5 py-2.5 active:cursor-grabbing select-none"
-        title={t.dragHudTooltip}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {typeof chrome !== "undefined" && chrome.runtime?.getURL ? (
@@ -725,13 +737,21 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           <div className="min-w-0 flex-1 leading-tight">
             <div className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-white">
               <span className="shrink-0">DealHunter</span>
-              <GripHorizontal className="h-3 w-3 shrink-0 text-slate-500 opacity-60" />
+              <span title={t.dragHudTooltip} className="cursor-grab">
+                <GripHorizontal className="h-3 w-3 shrink-0 text-slate-500 opacity-60" />
+              </span>
             </div>
-            <div
-              className="truncate text-[10px] font-medium text-slate-400"
-              title={typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
-            >
-              {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
+            <div className="group relative min-w-0">
+              <div
+                className="truncate text-[10px] font-medium text-slate-400 cursor-help"
+                title={typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
+              >
+                {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
+              </div>
+              {/* Instant high-contrast tooltip on hover */}
+              <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden whitespace-nowrap rounded-lg bg-slate-900/95 px-2.5 py-1 text-[10px] font-semibold text-emerald-300 shadow-2xl ring-1 ring-white/15 backdrop-blur-md group-hover:flex">
+                {currentHost ? `Host: ${currentHost}` : "Shopee Sniper"}
+              </div>
             </div>
           </div>
         </div>
