@@ -30,7 +30,6 @@ import {
   BookmarkCheck,
   Trash2,
   CalendarClock,
-  Cpu,
 } from "lucide-react";
 
 interface FloatingHUDProps {
@@ -933,24 +932,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               </button>
             </div>
           )}
-        </div>
-
-        {/* Autonomous Adaptive Kinetic Engine */}
-        <div className="rounded-2xl bg-white/[0.03] p-2.5 ring-1 ring-white/5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-300">
-                {t.adaptiveEngineTitle}
-              </span>
-            </div>
-            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-mono text-[9px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-              {t.adaptiveEngineStatus}
-            </span>
-          </div>
-          <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
-            {t.adaptiveEngineDesc}
-          </p>
         </div>
 
         {/* Arm / Disarm */}
