@@ -60,10 +60,7 @@
         "icons/*.png"
       ],
       "matches": [
-        "http://localhost:3000/*",
-        "http://localhost:3100/*",
-        "https://dealhunter.vn/*",
-        "https://www.dealhunter.vn/*"
+        "<all_urls>"
       ]
     }
   ]

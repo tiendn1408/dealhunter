@@ -12,6 +12,7 @@ import { Language, getTranslation } from "../../lib/i18n";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TargetDiagnosticsSummary } from "../../lib/types";
 import { isSamePageUrl } from "../../lib/url";
+import { DEALHUNTER_LOGO_DATA_URI } from "./logo_data";
 import {
   Crosshair,
   Zap,
@@ -892,17 +893,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         className="dh-header flex cursor-grab items-center justify-between gap-2 px-3.5 py-2.5 active:cursor-grabbing select-none"
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          {typeof chrome !== "undefined" && chrome.runtime?.getURL ? (
-            <img
-              src={chrome.runtime.getURL("icons/icon48.png")}
-              alt="DealHunter"
-              className="h-8 w-8 shrink-0 rounded-xl object-cover shadow-lg shadow-emerald-900/50"
-            />
-          ) : (
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[11px] font-black text-white shadow-lg shadow-emerald-900/50">
-              DH
-            </div>
-          )}
+          <img
+            src={DEALHUNTER_LOGO_DATA_URI}
+            alt="DealHunter"
+            className="h-8 w-8 shrink-0 rounded-xl object-cover shadow-lg shadow-emerald-900/50"
+          />
           <div className="min-w-0 flex-1 leading-tight">
             <div className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-white">
               <span className="shrink-0">DealHunter</span>
@@ -1212,14 +1207,14 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         <div
           role="status"
           aria-live="polite"
-          className={`dh-status-bar flex min-h-[36px] items-center gap-2 rounded-xl bg-black/40 px-3 py-2 ring-1 ${tone.ring}`}
+          className={`dh-status-bar flex h-[48px] min-h-[48px] max-h-[48px] items-center gap-2 rounded-xl bg-black/40 px-3 py-1.5 ring-1 overflow-hidden ${tone.ring}`}
         >
           {StatusIcon ? (
             <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
           ) : (
             <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
           )}
-          <span className={`text-[11px] leading-snug line-clamp-2 ${tone.text}`}>{status.text}</span>
+          <span className={`flex-1 min-w-0 text-[11px] leading-snug line-clamp-2 break-words ${tone.text}`}>{status.text}</span>
         </div>
       </div>
     </div>
