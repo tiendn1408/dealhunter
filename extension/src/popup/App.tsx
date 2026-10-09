@@ -6,7 +6,7 @@ import { storage } from "../lib/storage";
 import { DEFAULT_SETTINGS, MESSAGE_ACTIONS, SHOPEE_FLASH_HOURS, SHOPEE_URLS } from "../lib/constants";
 import { ScheduledTask } from "../lib/types";
 import { Language, getTranslation } from "../lib/i18n";
-import { nextFlashDrop, formatVN, formatCountdown } from "../lib/drop_time";
+import { nextFlashDrop, formatCountdown } from "../lib/drop_time";
 import {
   Crosshair,
   CalendarClock,
@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   Languages,
   Timer,
-  CheckCircle2,
 } from "lucide-react";
 
 type TabMode = "live" | "schedule" | "tasks";
@@ -34,6 +33,7 @@ export const App: React.FC = () => {
   const [nextDropHour, setNextDropHour] = useState<number>(0);
   const [account, setAccount] = useState<{ signedIn: boolean; email?: string } | null>(null);
   const [launchedToast, setLaunchedToast] = useState(false);
+  const [clockOffsetMs, setClockOffsetMs] = useState<number>(0);
 
   const t = getTranslation(lang);
 
@@ -54,7 +54,11 @@ export const App: React.FC = () => {
             if (url.startsWith("http://") || url.startsWith("https://")) {
               setIsWebPage(true);
               try {
-                setActiveTabDomain(new URL(url).hostname.replace(/^www\./, ""));
+                const domain = new URL(url).hostname.replace(/^www\./, "");
+                setActiveTabDomain(domain);
+                storage.getCalibration(domain).then((cal) => {
+                  if (cal) setClockOffsetMs(cal.offsetMs);
+                });
               } catch {
                 setActiveTabDomain("web");
               }
@@ -76,10 +80,10 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // 2. Countdown clock to next drop
+  // 2. Countdown clock to next drop (M17: uses server clock offset)
   useEffect(() => {
     const updateCountdown = () => {
-      const now = Date.now();
+      const now = Date.now() + clockOffsetMs;
       const nextDrop = nextFlashDrop(SHOPEE_FLASH_HOURS, now);
       setNextDropHour(nextDrop.hour);
       setCountdownStr(formatCountdown(nextDrop.at - now));
@@ -88,13 +92,16 @@ export const App: React.FC = () => {
     updateCountdown();
     const timer = setInterval(updateCountdown, 100);
     return () => clearInterval(timer);
-  }, []);
+  }, [clockOffsetMs]);
 
   // 3. Settings & Web Session
   useEffect(() => {
     storage.getEndpoints().then((e) => setWebUrl(e.webUrl));
     storage.getSettings().then((s) => {
       if (s.language) setLang(s.language);
+    });
+    storage.getCalibration().then((cal) => {
+      if (cal && !clockOffsetMs) setClockOffsetMs(cal.offsetMs);
     });
     chrome.runtime
       .sendMessage({ action: MESSAGE_ACTIONS.GET_WEB_SESSION })
@@ -132,6 +139,15 @@ export const App: React.FC = () => {
         // Tab was opened before extension was loaded: inject content script via scripting API
         if (typeof chrome !== "undefined" && chrome.scripting) {
           try {
+            // M11: Inject content stylesheet first so HUD styles are loaded
+            try {
+              await chrome.scripting.insertCSS({
+                target: { tabId: activeTabId },
+                files: ["content.css"],
+              });
+            } catch {
+              // ignore
+            }
             await chrome.scripting.executeScript({
               target: { tabId: activeTabId },
               files: ["content.js"],
@@ -321,7 +337,7 @@ export const App: React.FC = () => {
           <div className="flex items-center gap-1 min-w-0">
             {account?.signedIn ? (
               <span className="truncate text-emerald-400">
-                Member: {account.email || "DealHunter"}
+                {t.memberLabel(account.email || "DealHunter")}
               </span>
             ) : (
               <span className="whitespace-nowrap">
@@ -339,7 +355,7 @@ export const App: React.FC = () => {
           </div>
           <span className="flex items-center gap-1 shrink-0 text-slate-500">
             <ShieldCheck className="h-3 w-3 text-emerald-500" />
-            Universal Web
+            {t.universalWeb}
           </span>
         </div>
       </footer>

@@ -1,7 +1,7 @@
 import React from "react";
 import { Trash2 } from "lucide-react";
 import { ScheduledTask } from "../../lib/types";
-import { taskScheduler } from "../../background/scheduler";
+import { cancelTaskViaBackground } from "../../lib/scheduler_client";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { Language, getTranslation } from "../../lib/i18n";
 
@@ -29,9 +29,9 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
 
   const handleDelete = async (id: string) => {
     try {
-      await chrome.runtime.sendMessage({ action: MESSAGE_ACTIONS.CANCEL_TASK, taskId: id });
+      await cancelTaskViaBackground(id);
     } catch {
-      await taskScheduler.cancelTask(id);
+      // ignore
     }
     onTasksChanged();
   };
@@ -60,7 +60,7 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
                       : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
                   }`}
                 >
-                  {task.mode === "full_auto" ? "Full-Auto" : "Semi-Auto"}
+                  {task.mode === "full_auto" ? t.fullyAutomatic : t.semiAuto}
                 </span>
               </div>
 

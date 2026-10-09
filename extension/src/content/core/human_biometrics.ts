@@ -10,7 +10,8 @@
  * 5. W3C Pointer Events Level 3 hardware realism (pointerId, pointerType, pressure, buttons).
  */
 
-export type ClickProfileMode = "adaptive" | "stealth" | "pro_gamer" | "turbo";
+import { ClickProfileMode } from "../../lib/types";
+export type { ClickProfileMode };
 
 export interface ClickProfile {
   mode: ClickProfileMode;

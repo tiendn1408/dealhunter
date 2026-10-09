@@ -78,6 +78,9 @@ export class TimeCalibrator {
           const last = probes[probes.length - 1];
           if (last && p.serverSecondMs === last.serverSecondMs + 1000) seen++;
           probes.push(p);
+
+          // H5: Pace probes to prevent network spamming (~15-20 friendly requests max instead of ~190)
+          await new Promise((r) => setTimeout(r, 80));
         } else {
           consecutiveFailures++;
         }
@@ -86,16 +89,9 @@ export class TimeCalibrator {
         console.warn("[TimeCalibrator] Probe failed:", err);
       }
 
-      // If custom domain fails 3 times, fallback to default target URL
-      if (consecutiveFailures >= 3 && activeUrl !== this.defaultTargetUrl) {
-        console.warn(`[TimeCalibrator] Probing ${activeUrl} failed, falling back to default ping target`);
-        activeUrl = this.defaultTargetUrl;
-        try {
-          urlHost = new URL(activeUrl).hostname.replace(/^www\./, "");
-        } catch {
-          urlHost = "server";
-        }
-        consecutiveFailures = 0;
+      // H5: If domain fails 3 times, abort probing this target (NEVER silently fall back to Shopee!)
+      if (consecutiveFailures >= 3) {
+        break;
       }
 
       if (consecutiveFailures > 0) {

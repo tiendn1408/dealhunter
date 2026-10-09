@@ -13,6 +13,8 @@ export const I18N = {
     signInLink: "Sign in",
     signInSuffix: "to view price tracking directly on Shopee.",
     footerSafety: "Runs in your browser with your own Shopee account.",
+    memberLabel: (email: string) => `Member: ${email}`,
+    universalWeb: "Universal Web",
 
     // Tabs & Navigation
     tabLiveSniper: "Live Sniper",
@@ -47,6 +49,7 @@ export const I18N = {
     scheduleTitle: "Schedule a hunt",
     scheduleSubtitle: "Opens target page 60s early & clicks at the drop",
     fullyAutomatic: "Fully auto",
+    semiAuto: "Semi-Auto",
     dropTimeLabel: "Drop time (Vietnam)",
     today: "Today",
     tomorrow: "Tomorrow",
@@ -98,6 +101,7 @@ export const I18N = {
       completed: "Voucher saved",
       failed: "Could not save",
       cancelled: "Cancelled",
+      missed: "Missed drop",
     },
 
     // Floating HUD
@@ -117,6 +121,9 @@ export const I18N = {
     customTimePlaceholder: "HH:mm:ss",
     customTargetPrompt: "Target time:",
     invalidTimeFormat: "Invalid time (HH:mm:ss)",
+    invalidUrl: "Invalid URL (http:// or https:// required)",
+    minimize: "Minimize",
+    close: "Close",
     timingAndCountdown: "Timing & Countdown",
     dropAtLabel: "Drop time",
     targetTimeLabel: "Target time",
@@ -138,6 +145,7 @@ export const I18N = {
     targetForgotten: "Saved target cleared.",
     savedTargetRestored: "Restored saved target for this page.",
     opensAtDrop: "Opens at drop",
+    noTargetSelected: "Please select a target button first",
     notPickedText: "No button selected",
     pickButton: "Pick button",
     changeButton: "Re-pick",
@@ -222,6 +230,8 @@ export const I18N = {
     signInLink: "Đăng nhập",
     signInSuffix: "để xem giá theo dõi ngay trên Shopee.",
     footerSafety: "Chạy trực tiếp trên trình duyệt bằng chính tài khoản Shopee của bạn.",
+    memberLabel: (email: string) => `Thành viên: ${email}`,
+    universalWeb: "Web Đa Nền Tảng",
 
     // Tabs & Navigation
     tabLiveSniper: "Săn trực tiếp",
@@ -256,6 +266,7 @@ export const I18N = {
     scheduleTitle: "Đặt lịch săn",
     scheduleSubtitle: "Tự mở trang trước 60s & click chuẩn xác khi đến giờ",
     fullyAutomatic: "Tự động",
+    semiAuto: "Bán tự động",
     dropTimeLabel: "Khung giờ săn (Việt Nam)",
     today: "Hôm nay",
     tomorrow: "Ngày mai",
@@ -307,6 +318,7 @@ export const I18N = {
       completed: "Đã lưu mã",
       failed: "Không lưu được",
       cancelled: "Đã hủy",
+      missed: "Đã quá giờ",
     },
 
     // Floating HUD
@@ -326,6 +338,9 @@ export const I18N = {
     customTimePlaceholder: "HH:mm:ss",
     customTargetPrompt: "Giờ bấm:",
     invalidTimeFormat: "Giờ không hợp lệ (HH:mm:ss)",
+    invalidUrl: "URL không hợp lệ (yêu cầu http:// hoặc https://)",
+    minimize: "Thu nhỏ",
+    close: "Đóng",
     timingAndCountdown: "Hẹn giờ & Đếm ngược",
     dropAtLabel: "Giờ săn",
     targetTimeLabel: "Mốc hẹn",
@@ -347,6 +362,7 @@ export const I18N = {
     targetForgotten: "Đã xóa mục tiêu đã lưu.",
     savedTargetRestored: "Đã tự khôi phục mục tiêu đã lưu cho trang này.",
     opensAtDrop: "Mở vào giờ G",
+    noTargetSelected: "Vui lòng chọn nút mục tiêu trước",
     notPickedText: "Chưa chọn nút",
     pickButton: "Chọn nút",
     changeButton: "Chọn lại",
@@ -384,7 +400,7 @@ export const I18N = {
     },
 
     // Diagnostics & Dual-Defense
-    diagnosticsTitle: "Chuẩn đoán trang",
+    diagnosticsTitle: "Chẩn đoán trang",
     diagnosticsActiveTimer: "Phát hiện bộ đếm JS · Tự làm mới (Không cần F5)",
     diagnosticsFramework: (name: string) => `Trang ${name.toUpperCase()} động · Tự đổi nút (Không cần F5)`,
     diagnosticsStatic: "Trang tĩnh / Không có bộ đếm · Khuyên dùng F5 phòng thủ kép",

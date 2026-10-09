@@ -1,6 +1,10 @@
 // Full-auto path in real Chrome: service worker -> content script hunt -> honest status stored by the worker.
 import puppeteer from "puppeteer-core";
-const EXT = "/Users/tien.dang/Workplace/reference/dealhunter/extension/dist";
+import { fileURLToPath } from "url";
+import path from "path";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const EXT = path.resolve(__dirname, "../dist");
 const BASE = "https://shopee.vn/m/dh-e2e-full";
 
 const release = Math.ceil((Date.now() + 20000) / 60000) * 60000; // a minute boundary at least 20s away
@@ -26,7 +30,26 @@ const sw = await swTarget.worker();
 
 // Vietnam wall clock of the release minute
 const vn = new Date(release + 7 * 3600 * 1000);
-const task = { id: "e2e", targetHour: vn.getUTCHours(), targetMinute: vn.getUTCMinutes(), targetUrl: BASE, label: "e2e", mode: "full_auto", keyword: "500k", status: "running", createdAt: Date.now() };
+const task = {
+  id: "e2e",
+  targetHour: vn.getUTCHours(),
+  targetMinute: vn.getUTCMinutes(),
+  targetUrl: BASE,
+  label: "e2e",
+  mode: "full_auto",
+  keyword: "500k",
+  descriptor: {
+    id: "t",
+    uniqueSelector: "#t",
+    tagName: "BUTTON",
+    attributes: { id: "t" },
+    initialText: "Lưu",
+    containerText: "Giam 500k Don toi thieu 2tr",
+    valueTokens: ["500k", "2tr"],
+  },
+  status: "running",
+  createdAt: Date.now(),
+};
 
 await sw.evaluate(async (task, base) => {
   await chrome.storage.local.set({ dh_scheduled_tasks: [task] });
@@ -41,7 +64,23 @@ const stored = await sw.evaluate(async () => (await chrome.storage.local.get("dh
 
 // Alarm path: an alarm must open the target Shopee tab and mark the task running
 await sw.evaluate(async () => {
-  const t = { id: "alarm", targetHour: 0, targetMinute: 0, targetUrl: "https://shopee.vn/m/ma-giam-gia", label: "alarm", mode: "full_auto", status: "pending", createdAt: Date.now() };
+  const t = {
+    id: "alarm",
+    targetHour: 0,
+    targetMinute: 0,
+    targetUrl: "https://shopee.vn/m/ma-giam-gia",
+    label: "alarm",
+    mode: "full_auto",
+    descriptor: {
+      id: "demo-btn",
+      uniqueSelector: "button",
+      tagName: "BUTTON",
+      attributes: {},
+      initialText: "Lưu",
+    },
+    status: "pending",
+    createdAt: Date.now(),
+  };
   const tasks = (await chrome.storage.local.get("dh_scheduled_tasks")).dh_scheduled_tasks || [];
   await chrome.storage.local.set({ dh_scheduled_tasks: [...tasks, t] });
   chrome.alarms.create("dh_task_alarm", { when: Date.now() + 300 });

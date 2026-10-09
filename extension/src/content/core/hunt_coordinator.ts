@@ -4,8 +4,9 @@ import { timeSyncClient } from "./time_sync_client";
 import { ClickProfileMode } from "./human_biometrics";
 import { storage } from "../../lib/storage";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
-import { ScheduledTask } from "../../lib/types";
+import { ScheduledTask, TaskStatus, TargetDiagnosticsSummary } from "../../lib/types";
 import { nextExactDropAt } from "../../lib/drop_time";
+import { isSamePageUrl } from "../../lib/url";
 
 export const ARMED_SESSION_KEY = "dh_armed_session";
 
@@ -18,6 +19,8 @@ export interface ArmedSession {
   descriptor?: UniversalTargetDescriptor;
   keyword?: string;
   clickProfileMode?: ClickProfileMode;
+  dualDefenseReload?: boolean;
+  diagnostics?: TargetDiagnosticsSummary;
   url: string;
   armedAt: number;
 }
@@ -33,17 +36,6 @@ export interface CoordinatorState {
   clicks: number;
   taskId?: string;
   outcome?: HuntOutcome;
-}
-
-function isSamePageUrl(u1: string, u2: string): boolean {
-  if (u1 === u2) return true;
-  try {
-    const p1 = new URL(u1);
-    const p2 = new URL(u2);
-    return p1.origin === p2.origin && p1.pathname.replace(/\/+$/, "") === p2.pathname.replace(/\/+$/, "");
-  } catch {
-    return u1 === u2;
-  }
 }
 
 export class HuntCoordinator {
@@ -100,12 +92,28 @@ export class HuntCoordinator {
     customTime?: string;
     keyword?: string;
     clickProfileMode?: ClickProfileMode;
+    dualDefenseReload?: boolean;
+    diagnostics?: TargetDiagnosticsSummary;
   }): void {
-    if (this.state.isArmed) {
-      if (params.taskId && this.currentSession?.taskId === params.taskId) {
+    if (this.state.isArmed && this.currentSession) {
+      if (params.taskId && this.currentSession.taskId === params.taskId) {
         return;
       }
-      if (!params.taskId && this.currentSession && this.currentSession.targetTimestamp === params.targetTimestamp) {
+      // M3: If an active manually armed hunt already exists for the same target time,
+      // adopt the taskId instead of cancelling and restarting the active hunt
+      if (
+        params.taskId &&
+        !this.currentSession.taskId &&
+        Math.abs(this.currentSession.targetTimestamp - params.targetTimestamp) <= 1000
+      ) {
+        this.currentSession.taskId = params.taskId;
+        if (typeof window !== "undefined") {
+          try {
+            sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify(this.currentSession));
+          } catch {
+            // ignore
+          }
+        }
         return;
       }
     }
@@ -123,6 +131,17 @@ export class HuntCoordinator {
       targetEl = elementResolver.relocateUniversal(desc);
     }
 
+    if (!targetEl && !desc && !params.keyword) {
+      console.warn("Cannot arm hunt: No target locked or specified");
+      return;
+    }
+
+    // H6: Calculate effectiveReload respecting TargetDiagnostics strategy & user configuration
+    const effectiveReload =
+      params.diagnostics?.strategy === "reactive_no_reload"
+        ? false
+        : params.dualDefenseReload ?? true;
+
     const session: ArmedSession = {
       targetTimestamp: params.targetTimestamp,
       taskId: params.taskId,
@@ -132,6 +151,8 @@ export class HuntCoordinator {
       descriptor: desc || undefined,
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
+      dualDefenseReload: effectiveReload,
+      diagnostics: params.diagnostics,
       url: typeof window !== "undefined" ? window.location.href : "",
       armedAt: Date.now(),
     };
@@ -167,7 +188,7 @@ export class HuntCoordinator {
       universalDescriptor: desc ?? undefined,
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
-      dualDefenseReload: true,
+      dualDefenseReload: effectiveReload,
       onStatus: (msg) => {
         const isFiring = msg.includes("active") || msg.startsWith("Saving");
         this.setState({
@@ -187,12 +208,25 @@ export class HuntCoordinator {
   async armFromTask(task: ScheduledTask): Promise<void> {
     await timeSyncClient.init();
     const second = task.targetSecond ?? 0;
-    const targetTimestamp = nextExactDropAt(
+    const now = timeSyncClient.getServerTime();
+    const targetTimestamp = task.targetAt ?? nextExactDropAt(
       task.targetHour,
       task.targetMinute,
       second,
-      timeSyncClient.getServerTime()
+      now
     );
+
+    // H2: If past drop deadline grace window (15s), mark missed and abort arm
+    if (now > targetTimestamp + 15_000) {
+      console.warn(`[HuntCoordinator] Task ${task.id} target time expired. Aborting arm.`);
+      await storage.updateTaskStatus(task.id, "missed", {
+        result: "timeout",
+        clicks: 0,
+        detail: "Task deadline expired before arming",
+        finishedAt: now,
+      });
+      return;
+    }
 
     let desc = task.descriptor;
     if (!desc && typeof window !== "undefined") {
@@ -263,12 +297,11 @@ export class HuntCoordinator {
    * Cancels the active hunt and optionally notifies background to cancel the task.
    */
   disarm(updateStorage = true): void {
+    const taskId = this.currentSession?.taskId;
     if (this.activeCancel) {
       this.activeCancel();
       this.activeCancel = null;
     }
-
-    const taskId = this.currentSession?.taskId;
     this.currentSession = null;
 
     if (typeof sessionStorage !== "undefined") {
@@ -312,22 +345,31 @@ export class HuntCoordinator {
         ? "success"
         : outcome.result === "exhausted" || outcome.result === "timeout"
         ? "warning"
+        : outcome.result === "cancelled"
+        ? "idle"
         : "error";
 
     this.setState({
       isArmed: false,
       targetTimestamp: null,
-      statusText: `${outcome.detail} (${outcome.clicks} clicks)`,
+      statusText: outcome.result === "cancelled" ? "Disarmed" : `${outcome.detail} (${outcome.clicks} clicks)`,
       tone,
       clicks: outcome.clicks,
       outcome,
     });
 
     if (taskId && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+      const status: TaskStatus =
+        outcome.result === "saved"
+          ? "completed"
+          : outcome.result === "cancelled"
+          ? "cancelled"
+          : "failed";
+
       chrome.runtime.sendMessage({
         action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
         taskId,
-        status: outcome.result === "saved" ? "completed" : "failed",
+        status,
         result: outcome,
       }).catch(() => {});
     }

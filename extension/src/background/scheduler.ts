@@ -3,6 +3,7 @@ import { storage } from "../lib/storage";
 import { timeCalibrator } from "./time_calibrator";
 import { MESSAGE_ACTIONS } from "../lib/constants";
 import { nextExactDropAt } from "../lib/drop_time";
+import { isSamePageUrl } from "../lib/url";
 
 export class TaskScheduler {
   constructor() {
@@ -20,15 +21,10 @@ export class TaskScheduler {
         const now = Date.now();
         const activeTask = tasks.find((t) => {
           if (t.status !== "running") return false;
-          try {
-            const u1 = new URL(t.targetUrl);
-            const u2 = new URL(tab.url!);
-            if (u1.origin !== u2.origin || u1.pathname !== u2.pathname) return false;
-          } catch {
-            if (t.targetUrl !== tab.url) return false;
-          }
+          if (!isSamePageUrl(t.targetUrl, tab.url!)) return false;
+
           const second = t.targetSecond ?? 0;
-          const targetTimestamp = nextExactDropAt(t.targetHour, t.targetMinute, second, now);
+          const targetTimestamp = t.targetAt ?? nextExactDropAt(t.targetHour, t.targetMinute, second, now);
           const untilDrop = targetTimestamp - now;
           return untilDrop <= (t.preWarmSeconds ?? 60) * 1000 && untilDrop >= -10_000;
         });
@@ -47,16 +43,50 @@ export class TaskScheduler {
   }
 
   /**
+   * Restores alarms for all pending tasks on browser startup / extension reload (H1).
+   * Expired tasks beyond grace deadline are marked missed (H2/H3).
+   */
+  async restorePendingAlarms(): Promise<void> {
+    const tasks = await storage.getTasks();
+    const now = Date.now();
+    for (const task of tasks) {
+      if (task.status === "pending" || task.status === "running") {
+        const second = task.targetSecond ?? 0;
+        const target = task.targetAt ?? nextExactDropAt(task.targetHour, task.targetMinute, second, now);
+        task.targetAt = target;
+
+        if (now > target + 15_000) {
+          console.warn(`[TaskScheduler] Task ${task.id} expired during downtime. Marking missed!`);
+          await storage.updateTaskStatus(task.id, "missed", {
+            result: "timeout",
+            clicks: 0,
+            detail: "Drop deadline expired during browser/extension downtime",
+            finishedAt: now,
+          });
+        } else {
+          const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
+          const preWarmTime = target - preWarmMs;
+          const alarmTime = Math.max(preWarmTime, now + 500);
+          const alarmName = `dh_task_${task.id}`;
+          chrome.alarms.create(alarmName, { when: alarmTime });
+          console.log(`[TaskScheduler] Restored alarm for task ${task.id} at ${new Date(alarmTime).toLocaleTimeString()}`);
+        }
+      }
+    }
+  }
+
+  /**
    * Registers a chrome alarm for a scheduled task.
    * Alarm fires before target drop time to allow pre-warming and domain calibration.
    */
   async scheduleTask(task: ScheduledTask): Promise<void> {
-    await storage.addTask(task);
-
     const now = Date.now();
     const second = task.targetSecond ?? 0;
-    // Calculate target timestamp in Vietnam wall clock (GMT+7)
-    const target = nextExactDropAt(task.targetHour, task.targetMinute, second, now);
+    // Calculate and lock absolute target drop timestamp (H2)
+    const target = task.targetAt ?? nextExactDropAt(task.targetHour, task.targetMinute, second, now);
+    task.targetAt = target;
+
+    await storage.addTask(task);
 
     const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
     const preWarmTime = target - preWarmMs;
@@ -82,7 +112,24 @@ export class TaskScheduler {
     const tasks = await storage.getTasks();
     const task = tasks.find((t) => t.id === taskId);
 
-    if (!task || task.status === "cancelled") return;
+    if (!task || task.status === "cancelled" || task.status === "completed" || task.status === "missed") return;
+
+    const now = Date.now();
+    const second = task.targetSecond ?? 0;
+    const targetTimestamp = task.targetAt ?? nextExactDropAt(task.targetHour, task.targetMinute, second, now);
+    task.targetAt = targetTimestamp;
+
+    // H2 / H3: If the alarm triggered past drop deadline grace window (15s), mark missed and abort!
+    if (now > targetTimestamp + 15_000) {
+      console.warn(`[TaskScheduler] Task ${task.id} alarm fired past drop deadline. Marking missed.`);
+      await storage.updateTaskStatus(taskId, "missed", {
+        result: "timeout",
+        clicks: 0,
+        detail: "Drop deadline expired before alarm triggered (device asleep or off)",
+        finishedAt: now,
+      });
+      return;
+    }
 
     // 1. Resolve descriptor from saved page targets if not directly set
     if (!task.descriptor) {
@@ -108,27 +155,18 @@ export class TaskScheduler {
       await timeCalibrator.calibrate(3);
     }
 
-    // 3. Check if target tab is already open — reuse and focus rather than spamming duplicate tabs
+    // 3. Check if target tab is already open — reuse and focus rather than spamming duplicate tabs (H7)
     let targetTab: chrome.tabs.Tab | null = null;
     try {
       const allTabs = await chrome.tabs.query({});
-      const targetUrlObj = new URL(task.targetUrl);
-      targetTab =
-        allTabs.find((t) => {
-          if (!t.url) return false;
-          try {
-            const u = new URL(t.url);
-            return u.origin === targetUrlObj.origin && u.pathname === targetUrlObj.pathname;
-          } catch {
-            return t.url === task.targetUrl;
-          }
-        }) || null;
+      targetTab = allTabs.find((t) => t.url && isSamePageUrl(t.url, task.targetUrl)) || null;
     } catch {
       targetTab = null;
     }
 
     let tabId: number;
     let isNewTab = false;
+    let tabReloadPromise: Promise<void> | null = null;
 
     if (targetTab?.id) {
       tabId = targetTab.id;
@@ -150,6 +188,31 @@ export class TaskScheduler {
       if (untilDrop >= 20_000) {
         console.log(`[TaskScheduler] Pre-warming existing tab ${tabId} with fresh reload (T-${Math.round(untilDrop / 1000)}s)`);
         if (typeof chrome.tabs?.reload === "function") {
+          // M2: Wait for tab reload complete via onUpdated before dispatching trigger
+          tabReloadPromise = new Promise<void>((resolve) => {
+            let done = false;
+            const finish = () => {
+              if (!done) {
+                done = true;
+                if (typeof chrome !== "undefined" && chrome.tabs?.onUpdated?.removeListener) {
+                  try {
+                    chrome.tabs.onUpdated.removeListener(listener);
+                  } catch {}
+                }
+                clearTimeout(fallbackTimer);
+                resolve();
+              }
+            };
+            const listener = (updatedId: number, info: { status?: string }) => {
+              if (updatedId === tabId && info.status === "complete") {
+                finish();
+              }
+            };
+            if (typeof chrome !== "undefined" && chrome.tabs?.onUpdated?.addListener) {
+              chrome.tabs.onUpdated.addListener(listener);
+            }
+            const fallbackTimer = setTimeout(finish, 10000);
+          });
           await chrome.tabs.reload(tabId);
         }
       }
@@ -181,7 +244,10 @@ export class TaskScheduler {
       });
     };
 
-    if (!isNewTab && targetTab?.status === "complete" && !targetTab.discarded) {
+    if (tabReloadPromise) {
+      await tabReloadPromise;
+      dispatchTrigger();
+    } else if (!isNewTab && targetTab?.status === "complete" && !targetTab.discarded) {
       // Existing tab is already active and fully rendered, dispatch immediately
       dispatchTrigger();
     } else {
@@ -203,7 +269,26 @@ export class TaskScheduler {
 
   async cancelTask(taskId: string): Promise<void> {
     await chrome.alarms.clear(`dh_task_${taskId}`);
+    const tasks = await storage.getTasks();
+    const task = tasks.find((t) => t.id === taskId);
     await storage.removeTask(taskId);
+
+    // H4: Notify matching open tabs to disarm and clear session
+    if (task && typeof chrome !== "undefined" && chrome.tabs?.query) {
+      try {
+        const allTabs = await chrome.tabs.query({});
+        for (const t of allTabs) {
+          if (t.id && t.url && isSamePageUrl(t.url, task.targetUrl)) {
+            chrome.tabs.sendMessage(t.id, {
+              action: MESSAGE_ACTIONS.CANCEL_TASK,
+              taskId,
+            }).catch(() => {});
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
   }
 }
 

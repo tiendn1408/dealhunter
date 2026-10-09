@@ -2,30 +2,37 @@
 
 > **Huong dan su dung chi tiet cho nguoi dung:** [`docs/extension/huong-dan-su-dung.md`](../docs/extension/huong-dan-su-dung.md)
 
-Tien ich mo rong trinh duyet (Chrome Extension) theo chuan **Manifest V3**, chuyen dung de san ma giam gia chop nhoang (flash sale 0h, 9h, 12h, 15h, 18h, 21h) tren **Shopee Viet Nam** va ho tro **Universal Web Sniper** de tu dong click nut tren **moi website** (san ve, dang ky hoc phan, flash drops) vao dung 00:00:00 hoac gio hen truoc.
+Tien ich mo rong trinh duyet (Chrome Extension) theo chuan **Manifest V3**, chuyen dung de san ma giam gia chop nhoang (flash sale 0h, 9h, 12h, 15h, 18h, 21h) tren **Shopee Viet Nam** va ho tro **Universal Web Sniper** de tu dong click nut tren **moi website** (san ve, dang ky su kien, flash drops) vao dung gio hen truoc hoac moc 00:00:00.
 
 ---
 
 ## 1. Tinh Nang Noi Bat
 
 1. **Universal Fast Clicker & Sniper**:
-   - Khong gioi han tren Shopee: Hoat dong tren bat ky trang web HTTP/HTTPS nao.
-   - Ho tro moc gio nua dem `00:00:00` chuyen dung cho cac su kien mo ban ve, mo cong dang ky hoac mo sale dem.
-   - Tu dong nhan dien ten mien trang web hien tai va bat HUD ngay lap tuc.
-2. **Dong bo dong ho may chu chinh xac mili-giay (NTP Time Calibration)**:
-   - Do do tre mang 2 chieu (RTT) va bat moc doi giay cua server de loai bo hoan toan sai so dong ho may tinh.
+   - Hoat dong tren bat ky trang web HTTP/HTTPS nao.
+   - Khoa nut bam bat buoc (Required Target Locking): khong bao gio click nham nut khi chua duoc chi dinh.
+   - Nhac lai nut da luu (Saved Targets): tu dong nhan dien va khoi phuc nut muc tieu theo tung URL.
+2. **Dong bo gio may chu chinh xac mili-giay (Server Time Calibration)**:
+   - Do do tre 2 chieu (RTT) va bat moc doi giay qua header Date cua file tinh nho de triet tieu sai so dong ho may tinh.
+   - Du lieu can chinh luu rieng theo tung ten mien voi co che tu dong xoa sau 24 gio (24h TTL) bao ve quyen rieng tu.
 3. **Web Worker Ticker doc lap**:
-   - Tranh tinh trang trinh duyet Chrome bop nghet hieu nang tab nen (bypass background tab throttling), duy tri nhip tick 10ms on dinh.
+   - Duy tri nhip tick 10ms on dinh, tranh tinh trang trinh duyet Chrome bop nghet hieu nang tab nen (bypass background tab throttling). Co che tu dong chuyen doi fallback an toan khi CSP chan Worker.
 4. **Mo phong chuot nguoi that sinh trac hoc (Anti-Bot Human Biometrics)**:
-   - Tich hop bo thuat toan sinh trac hoc toan dien: bien doi Box-Muller Gaussian cho thoi gian, toa do Gauss 2 chieu tap trung trong tam nut, quy dao tiep can Cubic Bezier theo Dinh luat Fitts, chuan hoa phan cung W3C Pointer Events Level 3, va thoi gian giu nut vat ly (dwell time).
-   - **Dong co dinh hinh dong hoc tu dong (Autonomous Adaptive Kinetic Engine)**: Tu dong thich ung 3 pha sinh hoc (But toc gio G -> Gian nhip thich ung -> On dinh dai han kem vi nghi phuc hoi co), loai bo 100% dau vet bot ma nguoi dung khong can phan van chon che do.
-5. **Giao dien Dark Cyber-Tactical & Song ngu (EN / VI)**:
-   - Thiet ke 3 tab hien dai: `[Live Sniper]`, `[Schedule]`, `[My Hunts]`.
-   - Ngon ngu Tieng Anh mac dinh, ho tro Tieng Viet co dau 1-click toggle.
-   - Bieu tuong thuong hieu DealHunter tich hop chuan phong cach.
+   - Bien doi Box-Muller Gaussian cho khoang cach thoi gian giua cac click.
+   - Toa do click phan bo Gauss 2 chieu tap trung trong tam nut, tranh click co dinh 1 diem.
+   - Quy dao tiep can Cubic Bezier mo phong thao tac di chuot nguoi that o click dau tien.
+   - **Dong co thich ung dong hoc (Autonomous Adaptive Kinetic Engine)**: Tu dong dieu chinh 3 pha sinh hoc (But toc gio G -> Gian nhip thich ung kem vi nghi micro-pause -> On dinh dai han) chong he thong phat hien bot tu dong.
+5. **Giao dien Dark Tactical & Song ngu (EN / VI)**:
+   - Thiet ke 3 the tien dung: `[Live Sniper]`, `[Schedule]`, `[My Hunts]`.
+   - Song ngu Tieng Anh va Tieng Viet chuyen doi tuc thi 1-click.
+   - Floating HUD linh hoat: co the keo tha, thu nho thanh thanh trang thai mini, hoac dong an toan.
 6. **Hai che do san tien tien**:
-   - **Live Sniper (Ban tu dong)**: Mo Floating HUD truc tiep tren trang, cho phep chon nut bat ky va kick hoat truc chien.
-   - **Schedule (Tu dong 100%)**: Len lich truoc voi khung gio va URL tuy chon (Custom URL), he thong tu dong mo tab truoc 60 giay va ban click dung gio G.
+   - **Live Sniper (Ban tu dong)**: Bat Floating HUD truc tiep tren trang, chon nut, chon moc gio (+10s, +30s, +1m, 00:00, hoac gio tu chon HH:mm:ss) va kich hoat trang thai truc chien.
+   - **Schedule (Tu dong 100%)**: Len lich truoc voi gio chinh xac va URL tuy chon (trang hien tai, nut da luu, hoac link tuy y). Background Service Worker tu dong danh thuc va mo tab truoc 60 giay de chuan bi san.
+7. **Bao mat va Cach ly giao dien**:
+   - CSS cua HUD va Badge duoc co lap tuyet doi voi CSS Reset `all: initial` va pham vi ID, khong anh huong den layout cua trang web goc.
+   - Khong su dung `innerHTML` voi du lieu nguoi dung hoac noi dung DOM cua website goc, triet tieu nguy co XSS.
+   - Tu dong loc cac tham so theo doi tiep thi (utm_*, fbclid) khi so khop trang, bao toan duong dan va trang thai hash route SPA.
 
 ---
 
@@ -37,39 +44,40 @@ Tai thu muc `dealhunter/extension`:
 npm install
 npm run build
 ```
-Thu muc build se duoc tao tai: `dist/`.
+Thu muc build duoc tao tai: `dist/`.
 
 ### Buoc 2: Nap tien ich vao trinh duyet (Chrome / Edge / Coc Coc / Brave)
 1. Mo trinh duyet va truy cap: `chrome://extensions/`.
 2. Bat cong tac **Developer mode** (Che do nha phat trien) o goc tren ben phai.
 3. Nhan vao nut **Load unpacked** (Tai tien ich da giai nen).
-4. Chon duong dan:
-   ```text
-   /Users/tien.dang/Workplace/reference/deal-hunter/dealhunter/extension/dist
-   ```
-5. Bieu tuong **DealHunter Assistant** se xuat hien tren thanh cong cu. Hay Ghim (Pin) tien ich de thao tac tien loi.
+4. Chon thu muc `dist/` ben trong thu muc `extension` cua du an.
+5. Bieu tuong **DealHunter Assistant** se xuat hien tren thanh cong cu. Hay Ghim (Pin) tien ich de su dung tien loi.
 
 ---
 
 ## 3. Huong Dan Su Dung Nhanh
 
-### 3.1. Che do Live Sniper (San truc tiep tren trang bat ky)
+### 3.1. Che do Live Sniper (San truc tiep tren trang)
 1. Mo trang web co nut can bam (Shopee, Ticketbox, Lazada, trang dang ky, v.v.).
 2. Bam bieu tuong DealHunter tren thanh trinh duyet.
-3. Popup tu dong nhan dien domain trang va hien nut lon:
+3. Popup nhan dien ten mien trang va hien nut:
    - **`START SNIPER ON THIS PAGE`** (hoac **`BAT DAU SAN TREN TRANG NAY`**).
-4. Bang HUD noi len tren trang:
-   - Chon moc gio: `[00:00]` (nua dem), `[Next flash]`, hoac `[Next min]`.
-   - Bam **`Pick button`** va click vao nut can bam tren man hinh de khoa muc tieu.
-   - Bam **`Arm sniper`** de he thong vao trang thai truc chien dem nguoc miligiay.
-    - Dung gio G, he thong se tu dong bam click theo thuat toan sinh hoc tu thich ung 3 pha.
+4. Bang HUD noi len tren man hinh:
+   - Chon moc gio: `[+10s]`, `[+30s]`, `[00:00]` (nua dem), `[+1m]`, hoac `[Custom]` (nhap gio HH:mm:ss).
+   - Nhan **`Pick button`** (**`Chon nut`**) va click vao nut can san de khoa muc tieu.
+   - Nhan **`Save target`** neu muon luu lai nut nay cho cac lan sau.
+   - Nhan **`Arm sniper`** (**`Bat san ma`**) de he thong vao trang thai truc chien dem nguoc.
+   - Den gio G, he thong tu dong click theo dong co sinh trac hoc adaptive.
 
 ### 3.2. Che do Schedule (Hen gio tu dong 100%)
 1. Mo popup DealHunter, chuyen sang the **`Schedule`** (**`Dat lich`**).
-2. Chon khung gio: `00:00`, `09:00`, `12:00`, `15:00`, `18:00`, `21:00`.
-3. Chon trang muc tieu: Shopee Hub, 10.10 Sale, Cart, hoac **`Custom URL`** (bam **`Use current page`** de lay link trang hien tai).
-4. Bam **`Schedule [gio]:00 hunt`** de luu lich.
-5. Truoc gio G 60 giay, tien ich tu dong mo tab, canh dung gio va click hoan toan tu dong.
+2. Chon che do muc tieu:
+   - **Current page** (Trang hien tai): dung URL cua tab dang mo.
+   - **Saved list** (Danh sach da luu): chon nut da tung luu truoc do.
+   - **Custom link** (Link tuy y): nhap duong dan HTTP/HTTPS cu the.
+3. Nhap gio san chinh xac theo dinh dang `HH:mm:ss` hoac chon nhanh cac moc sale pho bien (00:00, 09:00, 12:00, 15:00, 18:00, 21:00).
+4. Nhan **`Schedule Hunt`** de luu lich vao bo nho.
+5. Truoc gio hen 60 giay, tien ich se tu dong mo hoac focus tab, nap san script va san hoan toan tu dong.
 
 ---
 
@@ -79,23 +87,24 @@ Chay toan bo test suite:
 ```bash
 npm test
 ```
-Bao gom toan bo **120 unit tests** (13 suites) kiem tra toan dien:
-- `hunt_coordinator.ts`: Kiem tra quan ly phien san tap trung, dong bo giua HUD va Schedule.
-- `human_biometrics.test.ts` (11 tests): Kiem tra thuat toan Box-Muller Gaussian sampling, toa do 2D Gauss, quy dao Cubic Bezier Fitts's Law, W3C Level 3 pointer event dispatching, co che tu dong dinh hinh dong hoc 3 pha (Adaptive Kinetic Envelope), va biological micro-pauses.
-- `hunt_engine.test.ts` (17 tests): Kiem tra co che san, relocate nut khi re-render, click burst theo profile (Stealth, Pro Gamer, Turbo), fallback reload tai T+250ms, graceful timeout khi khong co nut.
-- `element_resolver.test.ts` (6 tests): Kiem tra may trang thai hanh vi (W3C ARIA, data attributes, disabled transition, text mutation, icon injection) loai bo 100% hardcoded text.
-- `target_diagnostics.test.ts` (7 tests): Kiem tra nhan dien framework SPA (React/Vue/Angular), dem nguoc toan hoc va chien luoc phong thu kep.
-- `scheduler.test.ts` (2 tests): Kiem tra Chrome alarm scheduler va pre-warm tab T-60s.
-- `human_clicker.test.ts` (4 tests): Kiem tra chuoi su kien chuot, approach trajectory, va async biological dwell duration.
-- `time_calibrator.test.ts` (6 tests): Kiem tra thuat toan can chinh thoi gian qua RTT.
-- `timer_worker.test.ts` (1 test): Kiem tra Web Worker ticker khong tre.
-- `drop_time.test.ts` (7 tests): Kiem tra tinh toan moc gio Viet Nam (GMT+7) va countdown formatting HH:mm:ss.S.
-- `storage.test.ts` (7 tests): Kiem tra doc ghi chrome.storage local (ghi settings dong thoi khong mat key).
-- `web_session.test.ts` (19 tests): Kiem tra giao tiep session token voi Web app; token luu cung apiUrl/webUrl trong mot ban ghi chrome.storage.session.
-- `endpoints.test.ts` (21 tests) va `api_client.test.ts` (12 tests): Kiem tra API client va endpoints.
+Bao gom **151 unit tests (15 test suites)** pass 100%:
+- `hunt_engine.test.ts` (21 tests): May trang thai san ma, relocate nut theo chu ky noi dung, bao cao ket qua xac nhan thuc te (saved, exhausted, not_found, timeout, cancelled), huy an toan khi chuyen trang SPA, va pacing adaptive.
+- `web_session.test.ts` (19 tests): Giao tiep session token voi Web app DealHunter qua externally_connectable, xac thuc domain va luu tru phien trong chrome.storage.session.
+- `endpoints.test.ts` (21 tests) va `api_client.test.ts` (12 tests): Xac thuc va phan giai URL API, validate origin DealHunter hop le.
+- `element_resolver.test.ts` (11 tests): Trich xuat chu ky nut, may trang thai hanh vi khong hardcode chuoi, loai tru phan tu noi bo HUD/Badge, phong ngua bao da luu sai.
+- `human_biometrics.test.ts` (11 tests): Thuat toan Box-Muller Gaussian, toa do Gauss 2 chieu, quy dao tiep can Cubic Bezier theo Fitts's Law, va dong co dong hoc 3 pha.
+- `storage.test.ts` (10 tests): Hang doi tuan tu hoa write mutations tranh race condition (M1), luu va phuc hoi muc tieu, TTL 24h tu dong don dep domain calibrations (P2, L11).
+- `drop_time.test.ts` (9 tests): Tinh toan moc gio Viet Nam (GMT+7), dinh dang dem nguoc chuan HH:mm:ss.SS, va xac thuc chuoi gio nhap parseTimeString (L1).
+- `url.test.ts` (7 tests): Chuan hoa URL bo tham so tracking utm_*, fbclid giu nguyen hash route va query chuc nang (H7), xac thuc URL scheme hop le (L2).
+- `scheduler.test.ts` (7 tests): Chrome alarm lifecycle, phuc hoi alarm khi startup (H1), danh dau task missed khi tre gio (H2), huy task sach se (H4), cho reload hoan tat truoc khi trigger (M2).
+- `target_diagnostics.test.ts` (7 tests): Nhan dien framework SPA dong va chien luoc phong thu kep.
+- `human_clicker.test.ts` (6 tests): Chuoi su kien chuot chuan W3C Pointer Events, chan click xuyen modal/overlay qua elementFromPoint (M8).
+- `time_calibrator.test.ts` (6 tests): Do do tre mang RTT, ngan chan spam request va loai bo fallback Shopee ngam (H5, M9).
+- `timer_worker.test.ts` (2 tests): Web Worker ticker doc lap va co che fallback window interval khi gap loi hoac chan CSP (M5).
+- `isolation.test.ts` (2 tests): Kiem tra an toan XSS khi chon nut (C4) va pham vi cach ly CSS khong ro ri sang trang web khac (C5).
 
 ---
 
 ## 5. Quy Chuan Zero-Emoji
 
-Toan bo ma nguon, giao dien, thong bao va tai lieu huong dan cua DealHunter Assistant tuan thu tuyet doi 100% quy chuan **Zero-Emoji**. Khong su dung unicode emoji o bat ky vi tri nao.
+Toan bo ma nguon, giao dien nguoi dung, log he thong, commit message va tai lieu cua DealHunter Assistant tuan thu 100% quy chuan **Zero-Emoji**. Khong su dung unicode emoji o bat ky vi tri nao.

@@ -1,12 +1,12 @@
-# E2E trên Chrome thật (extension đã build)
+# E2E tren Chrome that (Extension da build)
 
-Nạp `dist/` vào Chrome thật (Chrome 137+ bỏ cờ `--load-extension`, nên dùng `enableExtensions` của Puppeteer ≥ 25),
-chặn một URL `https://shopee.vn/m/...` và trả về trang voucher mô phỏng để content script thật chạy trên đó.
+Nap `dist/` vao Chrome that (Chrome 137+ bo co `--load-extension`, nen dung `enableExtensions` cua Puppeteer >= 25),
+chan URL `https://shopee.vn/m/...` va tra ve trang voucher mo phong de content script va background service worker that chay tren do.
 
 ```bash
 cd extension && npm run build
 cd e2e && npm init -y >/dev/null && npm install puppeteer-core@25
-node ext_semi.mjs     # Bán tự động: khóa nút đang disabled, React render lại nút lúc mở mã, mồi nhử không bị click, báo "ĐÃ LƯU" chỉ khi trang xác nhận (~60s)
-node ext_full.mjs     # Tự động 100%: service worker -> content script, lọc từ khóa "500k", trạng thái lưu thật vào storage; alarm mở tab Shopee (~90s)
-node calib_chrome.mjs # Đo lệch đồng hồ Shopee bằng phương pháp bắt mốc đổi giây (so với `sntp time.apple.com`)
+node ext_semi.mjs     # Ban tu dong: Khoa nut tren HUD, bat moc +1m, kich hoat Arm, cho gio G, bo qua nut moi nhu (decoy), bam nut target re-render boi React, bao ket qua luu voucher (~60s)
+node ext_full.mjs     # Tu dong 100%: Service worker Background dispatch TRIGGER_FULL_AUTO, bam nut dua tren target descriptor va tu khoa, cap nhat trang thai that vao storage (~90s)
+node calib_chrome.mjs # Do lech dong ho may chu Shopee bang phuong phap bat moc doi giay (so voi sntp / NTP)
 ```

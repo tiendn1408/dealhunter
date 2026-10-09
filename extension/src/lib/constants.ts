@@ -9,7 +9,12 @@ export const STORAGE_KEYS = {
 } as const;
 
 /** DealHunter web origins allowed to hand their sign-in session to the extension (externally_connectable). */
-export const DEALHUNTER_WEB_ORIGINS = ["http://localhost:3000", "http://localhost:3100", "https://dealhunter.vn"];
+export const DEALHUNTER_WEB_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:3100",
+  "https://dealhunter.vn",
+  "https://www.dealhunter.vn",
+];
 
 export const DEFAULT_SETTINGS = {
   language: "en" as const,

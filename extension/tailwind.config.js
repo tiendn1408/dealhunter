@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  important: true,
+  important: ":is(#root, #dealhunter-hud-root, #dealhunter-badge-root, .dh-root)",
   content: [
     "./src/**/*.{html,ts,tsx}",
   ],

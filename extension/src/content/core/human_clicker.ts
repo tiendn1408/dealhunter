@@ -33,16 +33,19 @@ export class HumanClicker {
 
     const rect = element.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
-      try {
-        element.click();
-        this.burstCount++;
-        return true;
-      } catch {
-        return false;
-      }
+      // M8: Never click invisible or collapsed zero-dimension elements
+      return false;
     }
 
     const coords = calculateHumanClickCoordinates(rect);
+
+    // M8: Verify element is not obscured by an overlay, modal, or captcha
+    if (typeof document !== "undefined" && typeof document.elementFromPoint === "function") {
+      const topEl = document.elementFromPoint(coords.clientX, coords.clientY);
+      if (topEl && topEl !== element && !element.contains(topEl) && !topEl.contains(element)) {
+        return false;
+      }
+    }
 
     // If approach is requested and previous cursor is away from target, simulate trajectory
     if (options?.approach && (this.lastCursorPos.x !== 0 || this.lastCursorPos.y !== 0)) {

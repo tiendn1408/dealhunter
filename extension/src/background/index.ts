@@ -5,12 +5,18 @@ import { storage } from "../lib/storage";
 import { webSession } from "./web_session";
 import { apiClient, SessionRejectedError } from "../lib/api_client";
 import { PriceContextResponse } from "../lib/types";
+import { isValidHttpUrl } from "../lib/url";
 
-// 1. Listen for extension install / update
+// 1. Listen for extension install / update and browser startup (H1)
 chrome.runtime.onInstalled.addListener(async () => {
   console.log("[DealHunter ServiceWorker] Extension installed / updated");
-  // Run initial clock calibration
+  await taskScheduler.restorePendingAlarms();
   await timeCalibrator.calibrate(3);
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  console.log("[DealHunter ServiceWorker] Browser startup");
+  await taskScheduler.restorePendingAlarms();
 });
 
 // 2. Listen for alarm triggers (Full-Auto scheduled hunts)
@@ -19,59 +25,82 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // 3. Message dispatcher across components
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // P4: Validate message sender belongs to this extension
+  if (sender.id && sender.id !== chrome.runtime.id) {
+    return false;
+  }
+
   if (message.action === MESSAGE_ACTIONS.CALIBRATE_TIME) {
-    timeCalibrator.calibrate(message.samples || 5, 6000, message.targetUrl).then((cal) => {
-      sendResponse({ success: true, calibration: cal });
-    });
+    if (message.targetUrl && !isValidHttpUrl(message.targetUrl)) {
+      sendResponse({ success: false, error: "Invalid target URL scheme. Only HTTP and HTTPS are permitted." });
+      return true;
+    }
+    timeCalibrator
+      .calibrate(message.samples || 5, 6000, message.targetUrl)
+      .then((cal) => sendResponse({ success: true, calibration: cal }))
+      .catch((err) => sendResponse({ success: false, error: (err as Error).message }));
     return true; // Keep message channel open for async response
   }
 
   if (message.action === MESSAGE_ACTIONS.GET_CALIBRATION) {
-    storage.getCalibration(message.domain).then((cal) => {
-      sendResponse({ calibration: cal });
-    });
+    storage
+      .getCalibration(message.domain)
+      .then((cal) => sendResponse({ calibration: cal }))
+      .catch((err) => sendResponse({ calibration: null, error: (err as Error).message }));
     return true;
   }
 
   if (message.action === MESSAGE_ACTIONS.TASK_STATUS_UPDATE) {
     if (message.taskId && message.status) {
       const lastResult = message.result ? { ...message.result, finishedAt: Date.now() } : undefined;
-      storage.updateTaskStatus(message.taskId, message.status, lastResult).then(() => {
-        sendResponse({ success: true });
-      });
+      storage
+        .updateTaskStatus(message.taskId, message.status, lastResult)
+        .then(() => sendResponse({ success: true }))
+        .catch((err) => sendResponse({ success: false, error: (err as Error).message }));
       return true;
     }
   }
 
   if (message.action === MESSAGE_ACTIONS.SCHEDULE_TASK) {
     if (message.task) {
-      taskScheduler.scheduleTask(message.task).then(() => {
-        sendResponse({ success: true });
-      });
+      if (!isValidHttpUrl(message.task.targetUrl)) {
+        sendResponse({ success: false, error: "Invalid task URL scheme. Only HTTP and HTTPS are permitted." });
+        return true;
+      }
+      taskScheduler
+        .scheduleTask(message.task)
+        .then(() => sendResponse({ success: true }))
+        .catch((err) => sendResponse({ success: false, error: (err as Error).message }));
       return true;
     }
   }
 
   if (message.action === MESSAGE_ACTIONS.CANCEL_TASK) {
     if (message.taskId) {
-      taskScheduler.cancelTask(message.taskId).then(() => {
-        sendResponse({ success: true });
-      });
+      taskScheduler
+        .cancelTask(message.taskId)
+        .then(() => sendResponse({ success: true }))
+        .catch((err) => sendResponse({ success: false, error: (err as Error).message }));
       return true;
     }
   }
 
   if (message.action === MESSAGE_ACTIONS.GET_PRICE_CONTEXT) {
-    getPriceContext(String(message.url || "")).then(sendResponse);
+    getPriceContext(String(message.url || ""))
+      .then(sendResponse)
+      .catch((err) => sendResponse({ signedIn: false, error: (err as Error).message }));
     return true;
   }
 
   if (message.action === MESSAGE_ACTIONS.GET_WEB_SESSION) {
-    webSession.get().then((session) => {
-      // The popup only needs who is signed in, never the token
-      sendResponse(session ? { signedIn: true, email: session.email, name: session.name } : { signedIn: false });
-    });
+    webSession
+      .get()
+      .then((session) => {
+        // The popup only needs who is signed in, never the token
+        sendResponse(session ? { signedIn: true, email: session.email, name: session.name } : { signedIn: false });
+      })
+      .catch((err) => sendResponse({ signedIn: false, error: (err as Error).message }));
     return true;
   }
 
@@ -103,22 +132,5 @@ async function getPriceContext(url: string): Promise<PriceContextResponse> {
   }
 }
 
-// 5. Track active tab switches and pre-calibrate domain clock
-if (typeof chrome !== "undefined" && chrome.tabs?.onActivated) {
-  chrome.tabs.onActivated.addListener(async (activeInfo) => {
-    try {
-      const tab = await chrome.tabs.get(activeInfo.tabId);
-      if (!tab.url || !tab.url.startsWith("http")) return;
-      const url = new URL(tab.url);
-      const domain = url.hostname.replace(/^www\./, "").toLowerCase();
-      const cal = await storage.getCalibration(domain);
-      const isDomainMatch = !!(cal && cal.serverHost && cal.serverHost.replace(/^www\./, "").toLowerCase() === domain);
-      const isFresh = !!(cal && cal.calibrated && Date.now() - cal.lastCalibratedAt < 5 * 60 * 1000);
-      if (!isDomainMatch || !isFresh) {
-        await timeCalibrator.calibrate(3, 4000, `${url.origin}/favicon.ico`);
-      }
-    } catch {
-      // Ignore restricted or closed tabs
-    }
-  });
-}
+
+

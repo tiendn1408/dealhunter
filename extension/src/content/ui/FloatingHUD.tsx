@@ -4,9 +4,9 @@ import { humanClicker } from "../core/human_clicker";
 import { ClickProfileMode } from "../core/human_biometrics";
 import { elementResolver, UniversalTargetDescriptor } from "../core/element_resolver";
 import { HuntOutcome } from "../core/hunt_engine";
-import { huntCoordinator, ARMED_SESSION_KEY } from "../core/hunt_coordinator";
+import { huntCoordinator } from "../core/hunt_coordinator";
 import { targetDiagnostics } from "../core/target_diagnostics";
-import { formatVN, nextDropAt, nextExactDropAt, formatCountdown } from "../../lib/drop_time";
+import { formatVN, nextDropAt, nextExactDropAt, formatCountdown, parseTimeString } from "../../lib/drop_time";
 import { storage } from "../../lib/storage";
 import { Language, getTranslation } from "../../lib/i18n";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
@@ -23,7 +23,6 @@ import {
   CircleCheck,
   CircleAlert,
   CircleX,
-  Timer,
   Languages,
   GripHorizontal,
   Bookmark,
@@ -94,10 +93,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const [picking, setPicking] = useState(false);
   const [isTargetSaved, setIsTargetSaved] = useState(false);
   const [diagnostics, setDiagnostics] = useState<TargetDiagnosticsSummary | null>(null);
-  const [analyzingTarget, setAnalyzingTarget] = useState(false);
 
   // Dragging state
-  const [hudPos, setHudPos] = useState<{ x: number; y: number } | null>(null);
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
 
   const targetElementRef = useRef<HTMLElement | null>(null);
@@ -128,7 +125,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     return unsubscribe;
   }, [currentHost]);
 
-  // Restore saved target for this page URL on mount
+  // Restore saved target for this page URL on mount (M15: run once on mount, do not wipe parameters on lang change)
   useEffect(() => {
     if (typeof window === "undefined") return;
     storage.getSavedTargetForUrl(window.location.href).then((saved) => {
@@ -149,10 +146,12 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           // Target is saved, but currently in standby / completed state
           setTargetSummary(`${t.standbyPrefix}${saved.name}`);
         }
-        setStatus({ text: getTranslation(lang).savedTargetRestored, tone: "idle" });
+        if (!huntCoordinator.getState().isArmed) {
+          setStatus({ text: getTranslation(lang).savedTargetRestored, tone: "idle" });
+        }
       }
     });
-  }, [lang]);
+  }, []);
 
   // Load saved click profile from settings on mount
   useEffect(() => {
@@ -161,7 +160,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     });
   }, []);
 
-  // Continuous target locator: observes DOM mutations & polls to ensure target highlight is NEVER lost on reload/SPAs
+  // Continuous target locator: observes DOM mutations & polls to ensure target highlight is NEVER lost on reload/SPAs (M7: throttled)
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -187,14 +186,24 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     attemptRelocate();
     const interval = setInterval(attemptRelocate, 350);
 
+    let relocateThrottleTimer: ReturnType<typeof setTimeout> | null = null;
+    const throttledRelocate = () => {
+      if (relocateThrottleTimer) return;
+      relocateThrottleTimer = setTimeout(() => {
+        relocateThrottleTimer = null;
+        attemptRelocate();
+      }, 150);
+    };
+
     let observer: MutationObserver | null = null;
     if (typeof MutationObserver !== "undefined" && document.body) {
-      observer = new MutationObserver(() => attemptRelocate());
+      observer = new MutationObserver(throttledRelocate);
       observer.observe(document.body, { childList: true, subtree: true });
     }
 
     return () => {
       clearInterval(interval);
+      if (relocateThrottleTimer) clearTimeout(relocateThrottleTimer);
       observer?.disconnect();
     };
   }, [t.targetButtonDefault]);
@@ -227,14 +236,22 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       }
       if (coordState.outcome) {
         const view = getResultView(coordState.outcome.result);
-        setStatus({ text: `${view.text} · ${coordState.outcome.clicks} clicks`, tone: view.tone });
+        const clicks = coordState.outcome.clicks;
+        setStatus({ text: `${view.text} · ${t.clicksLabel(clicks)}`, tone: view.tone });
       } else if (coordState.statusText) {
         if (coordState.statusText === "Disarmed") {
           setStatus({ text: t.disarmedStatus, tone: "idle" });
-        } else if (coordState.statusText.startsWith("Target active · ")) {
-          const clicks = coordState.statusText.replace("Target active · ", "").replace(" clicks", "").replace(" click", "");
+        } else if (coordState.statusText.startsWith("Armed · ")) {
+          const summary = coordState.statusText.slice("Armed · ".length);
           setStatus({
-            text: lang === "vi" ? `Đang săn · ${clicks} click` : `Target active · ${clicks} clicks`,
+            text: lang === "vi" ? `Đã đặt mục tiêu · ${summary}` : `Armed · ${summary}`,
+            tone: coordState.tone,
+          });
+        } else if (coordState.statusText.startsWith("Target active · ")) {
+          const countNum =
+            parseInt(coordState.statusText.replace("Target active · ", "").replace(/[^0-9]/g, ""), 10) || 0;
+          setStatus({
+            text: lang === "vi" ? `Đang săn · ${t.clicksLabel(countNum)}` : `Target active · ${t.clicksLabel(countNum)}`,
             tone: coordState.tone,
           });
         } else if (coordState.statusText === "Waiting for target button...") {
@@ -247,7 +264,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         }
       }
     });
-  }, [lang, t.disarmedStatus, t.outcome]);
+  }, [lang, t.disarmedStatus, t.outcome, t.clicksLabel]);
 
   // Initialize language from settings & listen for changes
   useEffect(() => {
@@ -302,12 +319,12 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       return { timestamp: at, label: "00:00:00" };
     }
     if (mode === "custom") {
-      const parts = customTime.split(":").map((p) => parseInt(p.trim(), 10));
-      const h = Number.isFinite(parts[0]) && parts[0] >= 0 && parts[0] < 24 ? parts[0] : 0;
-      const m = Number.isFinite(parts[1]) && parts[1] >= 0 && parts[1] < 60 ? parts[1] : 0;
-      const s = Number.isFinite(parts[2]) && parts[2] >= 0 && parts[2] < 60 ? parts[2] : 0;
-      const at = nextExactDropAt(h, m, s, now);
-      return { timestamp: at, label: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` };
+      const parsed = parseTimeString(customTime);
+      if (!parsed.valid) {
+        return { timestamp: 0, label: "--:--:--" };
+      }
+      const at = nextExactDropAt(parsed.h, parsed.m, parsed.s, now);
+      return { timestamp: at, label: parsed.formatted };
     }
     return { timestamp: now + 10_000, label: "--:--:--" };
   };
@@ -377,10 +394,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     setDiagnostics(instant);
 
     // Comprehensive async analysis (samples countdown ticking)
-    setAnalyzingTarget(true);
     targetDiagnostics.analyze(el).then((diag) => {
       setDiagnostics(diag);
-      setAnalyzingTarget(false);
     });
   };
 
@@ -407,12 +422,30 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   const handleForgetSavedTarget = async () => {
     if (typeof window === "undefined") return;
-    const existing = await storage.getSavedTargetForUrl(window.location.href);
-    if (existing) {
-      await storage.removePageTarget(existing.id);
-      setIsTargetSaved(false);
-      setStatus({ text: t.targetForgotten, tone: "idle" });
+
+    // M16: Clear element highlight in DOM
+    if (targetElementRef.current) {
+      targetElementRef.current.classList.remove("dh-target-highlight");
+      targetElementRef.current = null;
     }
+
+    // M16: Clear descriptor refs, name, and diagnostics so it is not used in Arm
+    universalDescRef.current = null;
+    savedTargetNameRef.current = null;
+    setTargetSummary(null);
+    setDiagnostics(null);
+
+    try {
+      const existing = await storage.getSavedTargetForUrl(window.location.href);
+      if (existing) {
+        await storage.removePageTarget(existing.id);
+      }
+    } catch {
+      // ignore
+    }
+
+    setIsTargetSaved(false);
+    setStatus({ text: t.targetForgotten, tone: "idle" });
   };
 
   const handleScheduleFromHUD = async () => {
@@ -456,6 +489,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       setStatus({ text: t.quickScheduleSuccess, tone: "success" });
     } catch (err) {
       console.warn("Schedule from HUD failed:", err);
+      // L4: Show error in status instead of console only
+      setStatus({ text: (err as Error).message || "Scheduling failed", tone: "error" });
     }
   };
 
@@ -526,9 +561,18 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       const text = elementResolver.text(target);
       const tag = target.tagName.toLowerCase();
       const displayLabel = text ? (text.length > 20 ? text.slice(0, 20) + "..." : text) : (target.id ? `#${target.id}` : tag);
-      const badgeTop = rect.top < 30 ? "bottom: -26px;" : "top: -26px;";
-
-      overlayEl.innerHTML = `<div id="dh-picker-badge" style="${badgeTop}">${t.pickerBadgePrefix} · ${tag} "${displayLabel}"</div>`;
+      while (overlayEl.firstChild) {
+        overlayEl.removeChild(overlayEl.firstChild);
+      }
+      const badge = document.createElement("div");
+      badge.id = "dh-picker-badge";
+      if (rect.top < 30) {
+        badge.style.bottom = "-26px";
+      } else {
+        badge.style.top = "-26px";
+      }
+      badge.textContent = `${t.pickerBadgePrefix} · ${tag} "${displayLabel}"`;
+      overlayEl.appendChild(badge);
 
       setStatus({
         text: t.targetingBadge(tag, displayLabel),
@@ -615,8 +659,20 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       setStatus({ text: t.noButtonFound, tone: "error" });
     }
   };
-  // Arm Sniper: delegates to unified HuntCoordinator (single engine pipeline)
   const armHunt = (overrideTimestamp?: number) => {
+    if (!targetElementRef.current && !universalDescRef.current) {
+      setStatus({ text: t.noTargetSelected || "Please pick a target button first", tone: "error" });
+      return;
+    }
+
+    if (targetSlot === "custom" && !overrideTimestamp) {
+      const parsed = parseTimeString(customTime);
+      if (!parsed.valid) {
+        setStatus({ text: t.invalidTimeFormat, tone: "error" });
+        return;
+      }
+    }
+
     const now = timeSyncClient.getServerTime();
 
     let timestamp: number;
@@ -711,8 +767,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       rootEl.style.setProperty("top", `${newY}px`, "important");
       rootEl.style.setProperty("right", "auto", "important");
       rootEl.style.setProperty("bottom", "auto", "important");
-
-      setHudPos({ x: newX, y: newY });
     };
 
     const onMouseUp = () => {
@@ -727,6 +781,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const tone = TONE_STYLES[status.tone];
   const StatusIcon =
     status.tone === "success" ? CircleCheck : status.tone === "error" ? CircleX : status.tone === "warning" ? CircleAlert : null;
+  const hasTarget = Boolean(targetSummary || targetElementRef.current || universalDescRef.current);
 
   if (minimized) {
     return (
@@ -788,7 +843,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             type="button"
             onClick={() => setMinimized(true)}
             className="dh-header-btn dh-header-btn-square"
-            title="Minimize"
+            title={t.minimize}
+            aria-label={t.minimize}
           >
             <Minus className="h-3.5 w-3.5 shrink-0" />
           </button>
@@ -797,7 +853,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               type="button"
               onClick={onClose}
               className="dh-header-btn dh-header-btn-square dh-header-btn-close"
-              title="Close"
+              title={t.close}
+              aria-label={t.close}
             >
               <X className="h-3.5 w-3.5 shrink-0" />
             </button>
@@ -889,16 +946,27 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
           {/* Custom Time input field */}
           {targetSlot === "custom" && (
-            <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/10">
-              <span className="text-[10px] font-medium text-slate-400">{t.customTargetPrompt || "Target time:"}</span>
-              <input
-                type="text"
-                disabled={isArmed}
-                value={customTime}
-                onChange={(e) => setCustomTime(e.target.value)}
-                placeholder="HH:mm:ss"
-                className="w-24 rounded-lg bg-white/10 px-2 py-0.5 text-center font-mono text-xs font-bold text-emerald-300 outline-none ring-1 ring-emerald-500/30 focus:ring-emerald-400 disabled:opacity-50"
-              />
+            <div className="mt-2 space-y-1">
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/10">
+                <span className="text-[10px] font-medium text-slate-400">{t.customTargetPrompt || "Target time:"}</span>
+                <input
+                  type="text"
+                  disabled={isArmed}
+                  value={customTime}
+                  onChange={(e) => setCustomTime(e.target.value)}
+                  placeholder="HH:mm:ss"
+                  className={`w-24 rounded-lg bg-white/10 px-2 py-0.5 text-center font-mono text-xs font-bold outline-none ring-1 disabled:opacity-50 ${
+                    !parseTimeString(customTime).valid
+                      ? "text-rose-300 ring-rose-500/50 focus:ring-rose-400"
+                      : "text-emerald-300 ring-emerald-500/30 focus:ring-emerald-400"
+                  }`}
+                />
+              </div>
+              {!parseTimeString(customTime).valid && (
+                <span className="block text-center text-[9px] font-semibold text-rose-400">
+                  {t.invalidTimeFormat}
+                </span>
+              )}
             </div>
           )}
 
@@ -1029,9 +1097,12 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           <button
             type="button"
             onClick={() => (isArmed ? disarmHunt() : armHunt())}
+            disabled={!isArmed && (!hasTarget || (targetSlot === "custom" && !parseTimeString(customTime).valid))}
             className={`dh-arm-btn flex w-full items-center justify-center gap-2 rounded-xl text-xs font-bold uppercase tracking-wider text-white shadow-lg transition ${
               isArmed
                 ? "dh-arm-btn-rose bg-gradient-to-r from-rose-500 to-rose-600 shadow-rose-950/50 hover:from-rose-400 hover:to-rose-500"
+                : !hasTarget || (targetSlot === "custom" && !parseTimeString(customTime).valid)
+                ? "opacity-40 cursor-not-allowed bg-slate-700 shadow-none hover:bg-slate-700"
                 : "dh-arm-btn-emerald bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-950/50 hover:from-emerald-400 hover:to-teal-400"
             }`}
           >
@@ -1052,7 +1123,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         </div>
 
         {/* Status Bar */}
-        <div className={`dh-status-bar flex min-h-[36px] items-center gap-2 rounded-xl bg-black/40 px-3 py-2 ring-1 ${tone.ring}`}>
+        <div
+          role="status"
+          aria-live="polite"
+          className={`dh-status-bar flex min-h-[36px] items-center gap-2 rounded-xl bg-black/40 px-3 py-2 ring-1 ${tone.ring}`}
+        >
           {StatusIcon ? (
             <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
           ) : (

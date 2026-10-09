@@ -1,10 +1,19 @@
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from "./constants";
 import { ScheduledTask, ClockCalibration, ExtensionSettings, SavedPageTarget } from "./types";
 import { DealHunterEndpoints, resolveEndpoints } from "./endpoints";
+import { isSamePageUrl } from "./url";
 
 // Settings are read-modify-written: queue the writes of this context so concurrent ones never drop each
 // other's keys. (Other contexts write only the keys they own; the web URL has its own storage key.)
 let settingsWrites: Promise<unknown> = Promise.resolve();
+let taskWrites: Promise<unknown> = Promise.resolve();
+let calibrationWrites: Promise<unknown> = Promise.resolve();
+
+function enqueueTaskMutation<T>(mutation: () => Promise<T>): Promise<T> {
+  const next = taskWrites.then(mutation, mutation);
+  taskWrites = next.catch(() => {});
+  return next;
+}
 
 export const storage = {
   async getTasks(): Promise<ScheduledTask[]> {
@@ -17,15 +26,19 @@ export const storage = {
   },
 
   async addTask(task: ScheduledTask): Promise<void> {
-    const tasks = await this.getTasks();
-    tasks.push(task);
-    await this.saveTasks(tasks);
+    return enqueueTaskMutation(async () => {
+      const tasks = await this.getTasks();
+      tasks.push(task);
+      await this.saveTasks(tasks);
+    });
   },
 
   async removeTask(id: string): Promise<void> {
-    const tasks = await this.getTasks();
-    const filtered = tasks.filter((t) => t.id !== id);
-    await this.saveTasks(filtered);
+    return enqueueTaskMutation(async () => {
+      const tasks = await this.getTasks();
+      const filtered = tasks.filter((t) => t.id !== id);
+      await this.saveTasks(filtered);
+    });
   },
 
   async updateTaskStatus(
@@ -33,38 +46,58 @@ export const storage = {
     status: ScheduledTask["status"],
     lastResult?: ScheduledTask["lastResult"]
   ): Promise<void> {
-    const tasks = await this.getTasks();
-    const task = tasks.find((t) => t.id === id);
-    if (task) {
-      task.status = status;
-      if (lastResult) task.lastResult = lastResult;
-      await this.saveTasks(tasks);
-    }
+    return enqueueTaskMutation(async () => {
+      const tasks = await this.getTasks();
+      const task = tasks.find((t) => t.id === id);
+      if (task) {
+        task.status = status;
+        if (lastResult) task.lastResult = lastResult;
+        await this.saveTasks(tasks);
+      }
+    });
   },
 
   async getCalibration(domain?: string): Promise<ClockCalibration | null> {
+    const TTL_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
     if (domain) {
       const clean = domain.replace(/^www\./, "").toLowerCase();
       const domainData = await chrome.storage.local.get(STORAGE_KEYS.DOMAIN_CALIBRATIONS);
       const dict = (domainData[STORAGE_KEYS.DOMAIN_CALIBRATIONS] || {}) as Record<string, ClockCalibration>;
-      if (dict[clean]) {
-        return dict[clean];
+      const cal = dict[clean];
+      if (cal && now - cal.lastCalibratedAt < TTL_MS) {
+        return cal;
       }
       return null;
     }
     const data = await chrome.storage.local.get(STORAGE_KEYS.CLOCK_CALIBRATION);
-    return data[STORAGE_KEYS.CLOCK_CALIBRATION] || null;
+    const cal = (data[STORAGE_KEYS.CLOCK_CALIBRATION] || null) as ClockCalibration | null;
+    if (cal && now - cal.lastCalibratedAt < TTL_MS) {
+      return cal;
+    }
+    return null;
   },
 
   async saveCalibration(calibration: ClockCalibration): Promise<void> {
-    await chrome.storage.local.set({ [STORAGE_KEYS.CLOCK_CALIBRATION]: calibration });
-    if (calibration.serverHost) {
-      const clean = calibration.serverHost.replace(/^www\./, "").toLowerCase();
-      const domainData = await chrome.storage.local.get(STORAGE_KEYS.DOMAIN_CALIBRATIONS);
-      const dict = (domainData[STORAGE_KEYS.DOMAIN_CALIBRATIONS] || {}) as Record<string, ClockCalibration>;
-      dict[clean] = calibration;
-      await chrome.storage.local.set({ [STORAGE_KEYS.DOMAIN_CALIBRATIONS]: dict });
-    }
+    const TTL_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const write = calibrationWrites.then(async () => {
+      await chrome.storage.local.set({ [STORAGE_KEYS.CLOCK_CALIBRATION]: calibration });
+      if (calibration.serverHost) {
+        const clean = calibration.serverHost.replace(/^www\./, "").toLowerCase();
+        const domainData = await chrome.storage.local.get(STORAGE_KEYS.DOMAIN_CALIBRATIONS);
+        const dict = (domainData[STORAGE_KEYS.DOMAIN_CALIBRATIONS] || {}) as Record<string, ClockCalibration>;
+        for (const host of Object.keys(dict)) {
+          if (!dict[host] || now - dict[host].lastCalibratedAt >= TTL_MS) {
+            delete dict[host];
+          }
+        }
+        dict[clean] = calibration;
+        await chrome.storage.local.set({ [STORAGE_KEYS.DOMAIN_CALIBRATIONS]: dict });
+      }
+    });
+    calibrationWrites = write.catch(() => {});
+    return write;
   },
 
   async getSettings(): Promise<ExtensionSettings> {
@@ -119,27 +152,13 @@ export const storage = {
 
   async getSavedTargetForUrl(url: string): Promise<SavedPageTarget | null> {
     const targets = await this.getSavedPageTargets();
-    try {
-      const current = new URL(url);
-      return (
-        targets.find((t) => {
-          try {
-            const u = new URL(t.url);
-            return u.origin === current.origin && u.pathname === current.pathname;
-          } catch {
-            return t.url === url;
-          }
-        }) || null
-      );
-    } catch {
-      return targets.find((t) => t.url === url) || null;
-    }
+    return targets.find((t) => isSamePageUrl(t.url, url)) || null;
   },
 
   async savePageTarget(target: SavedPageTarget): Promise<void> {
     const targets = await this.getSavedPageTargets();
     const index = targets.findIndex(
-      (t) => t.id === target.id || (t.origin === target.origin && t.url === target.url)
+      (t) => t.id === target.id || isSamePageUrl(t.url, target.url)
     );
     if (index >= 0) {
       targets[index] = target;

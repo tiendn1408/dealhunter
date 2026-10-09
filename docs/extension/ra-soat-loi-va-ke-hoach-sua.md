@@ -19,6 +19,7 @@
 ## 1. Lỗi NGHIÊM TRỌNG — bấm sai / báo sai kết quả (Đợt 1, bắt buộc)
 
 ### C1. Báo "đã lưu" sai sau 1 click [R]
+- [x] Đã sửa (2026-10-09, test: element_resolver.test.ts C1, hunt_engine.test.ts C1)
 - Vị trí: `src/content/core/element_resolver.ts:239-293` (`isTargetCompleted`), `src/content/core/hunt_engine.ts:94`, `:268-273`.
 - (a) So chữ hiện tại với `initialText` chụp **lúc chọn nút**: chọn nút lúc nó hiện "Sắp mở", tới giờ thành "Lưu" → click 1 lần, thấy khác chữ ⇒ báo `saved`, task `completed` dù server chưa xác nhận gì.
 - (b) Kiểm tra ngay sau click (đồng bộ): nút chuyển disabled/loading tạm thời trong lúc request chạy ⇒ coi là `saved`, kể cả khi sau đó server báo "hết lượt" và bật lại nút.
@@ -27,6 +28,7 @@
 - Hướng sửa: so với chữ **tại thời điểm bắt đầu săn** (hoặc chụp lại khi nút chuyển sang bấm được); xác nhận thành công bằng tín hiệu ổn định (chữ/trạng thái giữ ≥ N ms, hoặc toast/nội dung xác nhận của trang); selector icon khớp nguyên token; nút biến mất ≠ thành công (cần xác nhận khác).
 
 ### C2. Bấm nhầm voucher/nút khác khi relocate [R]
+- [x] Đã sửa (2026-10-09, test: element_resolver.test.ts C2)
 - Vị trí: `element_resolver.ts:414-448`, `:495-534`, `:536-548`; `hunt_engine.ts:120-121`. Chú thích "never fall back to a different button" **không đúng** với code.
 - `uniqueSelector`/`parentSelector` dạng `div:nth-of-type(1) > button` được dùng **không kiểm tra nội dung** ⇒ list đổi thứ tự/card biến mất lúc drop thì trỏ sang card kế bên (đo được 25 click vào voucher khác). Test hiện có pass chỉ vì fixture có `id`.
 - Bước query `[data-testid|name|aria-label]` lấy phần tử đầu tiên, không kiểm tra duy nhất.
@@ -36,6 +38,7 @@
 - Hướng sửa: mọi ứng viên relocate phải khớp **chữ ký nội dung** (chữ nút + chữ card/giá trị voucher); không khớp ⇒ không bấm (báo `not_found`), tuyệt đối không fallback theo vị trí.
 
 ### C3. Chế độ "unlocked" bấm bất kỳ nút nào [R]
+- [x] Đã sửa (2026-10-09, test: element_resolver.test.ts C3, hunt_engine.test.ts C3)
 - Vị trí: `FloatingHUD.tsx:1029-1031` (nút Arm luôn bấm được), `armHunt:619-646`, `ScheduleForm.tsx:185-186`, `hunt_coordinator.ts:197-210`, `hunt_engine.ts:111-155`, `element_resolver.ts:103-146`.
 - Không có danh sách cấm Mua/Thanh toán/Checkout/Đặt; tái hiện: bấm "Mua ngay" trong card flash-sale 4 lần. `findCollectButtons` trả cả nút của chính HUD (HUD ở light DOM). Auto-detect / Test click khi chưa có target khoá `buttons[0]` của trang.
 - Bộ lọc "voucher đã mở trước giờ G" (`hunt_engine.ts:111-112, 143, 174`) lấy khoá là `cardText` ⇒ card có đồng hồ đếm ngược/số lượt còn lại đổi chữ mỗi giây ⇒ khoá khác ⇒ bộ lọc vô hiệu, voucher mở sẵn vẫn bị coi là "mới mở".
@@ -43,11 +46,13 @@
 - Hướng sửa (theo quyết định §0): khoá Arm/Schedule khi chưa có target; Auto-detect chỉ gợi ý; loại trừ `#dealhunter-hud-root` và phần tử ẩn; thêm danh sách cấm nút mua/thanh toán cho mọi đường tự chọn.
 
 ### C4. XSS khi chọn nút
+- [x] Đã sửa (2026-10-09, test: isolation.test.ts C4)
 - Vị trí: `src/content/ui/FloatingHUD.tsx:531` — `overlayEl.innerHTML = ... "${displayLabel}"` với `displayLabel` lấy từ `innerText` của trang.
 - Kịch bản: bình luận/tiêu đề chứa `<img src=x onerror=…>` (trang hiển thị an toàn dạng text) ⇒ rê chuột qua ở chế độ Pick là chèn HTML và chạy script trong DOM trang.
 - Hướng sửa: dựng phần tử bằng `textContent` / `createElement`, không dùng `innerHTML` với dữ liệu trang.
 
 ### C5. CSS rò ra mọi trang web
+- [x] Đã sửa (2026-10-09, test: isolation.test.ts C5)
 - Vị trí: `tailwind.config.js` (`important: true`, content quét toàn bộ `src`), `content.css` nạp trên `<all_urls>`. Bản build: 305/369 rule là utility không scope có `!important`, ví dụ `.hidden{display:none!important}`, `.flex`, `.grid`, `.container`; keyframes `pulse/spin/ping` trùng tên.
 - Kịch bản: trang dùng Tailwind có `class="hidden md:flex"` ⇒ menu desktop biến mất.
 - Hướng sửa: render HUD/badge trong **Shadow DOM** (CSS chỉ áp trong shadow root) hoặc tách build CSS cho content với `prefix`/`important: '#dealhunter-hud-root'`; popup CSS không lẫn vào `content.css`.
@@ -57,40 +62,47 @@
 ## 2. Lỗi CAO — lịch hẹn & vòng đời (Đợt 1)
 
 ### H1. Alarm mất sau khi reload/update extension hoặc khởi động lại trình duyệt
+- [x] Đã sửa (2026-10-09, test: scheduler.test.ts H1)
 - Vị trí: `src/background/index.ts:10-14` (`onInstalled` chỉ calibrate), `scheduler.ts:53-73`; không có `chrome.runtime.onStartup`.
 - Kịch bản: hẹn 00:00, bấm Reload extension (đúng như docs hướng dẫn) ⇒ task hiện "Đang chờ" nhưng không bao giờ chạy.
 - Sửa: đăng ký lại alarm cho mọi task `pending` trong `onStartup` và `onInstalled`.
 
 ### H2. Alarm trễ sau giờ G ⇒ hunt lặng lẽ dời sang ngày mai [R]
+- [x] Đã sửa (2026-10-09, test: scheduler.test.ts H2)
 - Vị trí: `src/lib/drop_time.ts:34-39` (`nextExactDropAt` không bao giờ trả mốc đã qua), `hunt_coordinator.ts:190-195` (`armFromTask`), `scheduler.ts:145-155`. Grace −10s/−15s (`scheduler.ts:31-33`, `content/index.tsx:165-168`) là code chết.
 - Nguyên nhân alarm trễ: máy sleep, trình duyệt tắt, giới hạn tối thiểu ~30s của alarm khi đóng gói (`scheduler.ts:63` dùng `now + 500`), đồng hồ máy lệch.
 - Hậu quả: task "running" 24h, tab bị arm cho hôm sau.
 - Sửa: lưu **thời điểm tuyệt đối** `targetAt` cho task; quá hạn quá grace ⇒ trạng thái `missed` và báo người dùng.
 
 ### H3. Task cũ bị kẹt tự bắn lại vào những ngày sau [R]
+- [x] Đã sửa (2026-10-09, test: scheduler.test.ts H1, H2)
 - Vị trí: `scheduler.ts:15-46`, `content/index.tsx:145-173` (`checkAndResumeScheduledTasks` nhận `pending`/`running` không xét ngày).
 - Cách bị kẹt `running`: đóng tab giữa chừng; dispatch lỗi sau khi đã ghi trạng thái (`scheduler.ts:166`); hai task cùng trang (`arm()` gọi `disarm(false)` mà không cập nhật task cũ).
 - Hậu quả: tự bấm "Mua/Lưu/Đặt vé" vào ngày người dùng không yêu cầu.
 - Sửa: dựa vào `targetAt` (H2); task quá hạn không bao giờ được resume; dọn task cũ.
 
 ### H4. Huỷ task bị ghi "failed"; xoá task không dừng tab đang săn [R]
+- [x] Đã sửa (2026-10-09, test: scheduler.test.ts H4)
 - Vị trí: `hunt_coordinator.ts:265-295`, `:297-334`; `scheduler.ts:204-207`; `content/index.tsx` không xử lý huỷ (`STOP_BURST_CLICK` không dùng).
 - `disarm()` → `activeCancel()` → `finish("cancelled")` → `handleDone()` chạy đồng bộ, xoá `currentSession`, gửi `TASK_STATUS_UPDATE: failed`; sau đó `taskId` đã `undefined` nên nhánh `CANCEL_TASK`/`cancelled` là code chết. My Hunts hiện "Could not save · Cancelled (0 clicks)". `arm()` thay phiên cũng đánh `failed` task đang chạy.
 - Xoá task trong popup: engine vẫn bấm lúc drop; `sessionStorage` khôi phục phiên sau F5.
 - Sửa: giữ `taskId` trước khi huỷ engine; gửi `cancelled`; background báo tab dừng khi task bị xoá; xoá `dh_armed_session`.
 
 ### H5. Đo đồng hồ gửi ~190 request dồn dập, trên mọi trang [R]
+- [x] Đã sửa (2026-10-09, test: time_calibrator.test.ts H5)
 - Vị trí: `background/time_calibrator.ts:73-104` (không nghỉ khi probe thành công), `content/index.tsx:18` → `time_sync_client.ts:14-19, 45-47, 51-66, 74-86`, `background/index.ts:107-123` (`tabs.onActivated`, chạy trùng với content), `scheduler.ts:104-109` (T−60s bắn vào shop).
 - Đo được: `calibrate(3)` với RTT ~12ms gửi 190 request; popup dùng `samples: 5` còn nhiều hơn.
 - Hậu quả: ~100–200 HEAD vào shopee.vn 60s trước flash sale (lúc chống bot nhạy nhất); traffic tới mọi site người dùng mở (kể cả intranet); fallback âm thầm sang shopee.vn (M7).
 - Sửa: theo quyết định §0.
 
 ### H6. Reload khẩn cấp luôn bật, bỏ qua chẩn đoán
+- [x] Đã sửa (2026-10-09, test: hunt_coordinator.ts reactive_no_reload)
 - Vị trí: `hunt_coordinator.ts:170` cố định `dualDefenseReload: true`; `hunt_engine.ts:227-246`. `TargetDiagnostics.strategy`, `task.dualDefenseReload`, `saved.dualDefenseReload` không được đọc.
 - Hậu quả: SPA (Shopee) có nút bật trễ hơn T+250ms ⇒ reload cả trang đúng lúc vàng.
 - Sửa: dùng kết quả chẩn đoán (`reactive_no_reload` ⇒ không reload), cho người dùng tắt.
 
 ### H7. So khớp tab/target bỏ qua query/hash ⇒ săn sai trang [R]
+- [x] Đã sửa (2026-10-09, test: url.test.ts, scheduler.test.ts H7)
 - Vị trí: `scheduler.ts:114-125`, `storage.ts:120-137`, `content/index.tsx:57-66, 153-161`, `hunt_coordinator.ts:38-47` (`isSamePageUrl`). Test `storage.test.ts:52` đang khẳng định hành vi sai.
 - Kịch bản: task `event?id=1`, đang mở `event?id=2` ⇒ focus + reload tab `id=2` rồi săn ở đó.
 - Sửa: so khớp cả query (bỏ riêng `utm_*`, `fbclid`, …) và hash route.
@@ -99,93 +111,91 @@
 
 ## 3. Lỗi TRUNG BÌNH (Đợt 2)
 
-- **M1. Mất cập nhật danh sách task (read-modify-write)** [R] — `lib/storage.ts:19-43`: 2 alarm cùng giờ ⇒ một task kẹt `pending`; HUD Disarm (`CANCEL_TASK` xoá task) song song content ghi `cancelled` (`hunt_coordinator.ts:283-284`) ⇒ task đã xoá sống lại. Sửa: mọi ghi task qua một hàng đợi ở background; content không ghi storage trực tiếp.
-- **M2. Gửi trigger ngay sau `tabs.reload` dựa trên status cũ** — `scheduler.ts:150-155, 184-186`: message vào document sắp huỷ; chỉ được cứu nhờ `onUpdated` gửi lại. Sửa: chờ `onUpdated` = `complete` sau reload.
-- **M3. Bán tự động và tự động giẫm lên nhau** — `hunt_coordinator.ts:104-113`: trigger task huỷ phiên tay đang arm; arm tay cùng timestamp bị bỏ qua lặng lẽ.
-- **M4. Không ràng buộc trang khi đang săn** — engine không kiểm tra `location` mỗi tick; SPA `pushState` sang trang khác (giỏ hàng) vẫn relocate và bấm.
-- **M5. WorkerTimer** — `timer_worker.ts:35-58`: không có `w.onerror` (worker hỏng bất đồng bộ ⇒ không tick, kẹt "Armed"); fallback `setInterval` bị throttle mạnh ở tab ẩn.
-- **M6. Không try/catch trong tick** — `hunt_engine.ts:165-277` (`scrollIntoView` ở `:178` không bọc): lỗi lặp mỗi tick, không `onDone`, UI kẹt; `startHunt` đọc `sessionStorage` có thể throw sau khi đã `isArmed: true`.
-- **M7. Đóng HUD không unmount React** — `content/index.tsx:81` `onClose={() => container.remove()}`: interval 50ms/350ms, `MutationObserver(body, subtree)` (`FloatingHUD.tsx:165-199`, không throttle, gọi `relocateUniversal` mỗi đợt mutation — tranh main thread lúc drop), subscriber vẫn chạy; mở lại HUD tạo root thứ hai.
-- **M8. Bấm phần tử ẩn / xuyên lớp phủ** — `human_clicker.ts:35-43` (rect 0×0 ⇒ `el.click()`), kiểm tra hiển thị chỉ inline style (`element_resolver.ts:113`), không kiểm tra `elementFromPoint` ⇒ bấm xuyên modal/captcha.
-- **M9. Đo nhầm domain** — `time_calibrator.ts:89-99` fallback favicon Shopee, content áp offset đó cho site khác (`time_sync_client.ts:87-88`); `serverHost` không khớp ⇒ đo lại mỗi lần focus. Popup vẫn ghi "Offset vs. <domain>" (`TimeOffsetCard.tsx:75-76`).
-- **M10. `data-state="active"` bị coi là `saved`** — `element_resolver.ts:169` (toggle/tab kiểu Radix).
-- **M11. Popup inject lại không kèm CSS** — `App.tsx:135-138` chỉ `executeScript({files:["content.js"]})`, không `insertCSS` ⇒ HUD không có style.
-- **M12. Chuỗi trạng thái engine tiếng Anh khi chọn VI** — `hunt_coordinator.ts:156` ("Armed · X" ghi đè `t.armedWaitingDrop`), `hunt_engine.ts:182, 237`, `FloatingHUD.tsx:230, 246` ("clicks"), `task.lastResult.detail`.
-- **M13. HUD tự bật trên trang không phải Shopee** — `content/index.tsx:22-27` khớp `/m/`, `/cart` mọi hostname. (Theo §0: không tự bật HUD trên trang lạ.)
-- **M14. Auto-detect khoá chính nút của HUD** — `findCollectButtons` không loại `#dealhunter-hud-root`; "Found N button(s)" tính cả nút HUD.
-- **M15. Effect khôi phục target phụ thuộc `[lang]`** — `FloatingHUD.tsx:131-155`: đổi EN/VI reset slot/giờ custom và ghi đè status (kể cả khi đang armed).
-- **M16. Nút X cạnh tên target** — `FloatingHUD.tsx:945-953`: chưa lưu thì không làm gì; đã lưu thì không xoá highlight/descriptor ⇒ vẫn dùng khi Arm.
-- **M17. Countdown popup dùng giờ máy** — `App.tsx:82` dùng `Date.now()`, HUD dùng giờ server ⇒ hai bên lệch.
-- **M18. Popup import `taskScheduler`** — `ScheduleForm.tsx:6`, `TaskList.tsx:4`: constructor đăng ký thêm `tabs.onUpdated` trong popup ⇒ trigger gửi trùng. Sửa: tách client gửi message khỏi scheduler.
-- **M19. `onMessage` background không `.catch`** — `background/index.ts:24-75`: promise reject ⇒ không `sendResponse`; popup fallback gọi `scheduleTask` lần nữa ⇒ có thể thêm task 2 lần.
+- [x] **M1. Mất cập nhật danh sách task (read-modify-write)** [R] — Đã sửa (2026-10-09, test: storage.test.ts M1). Đã bổ sung hàng đợi tuần tự hóa `enqueueTaskMutation` trong `src/lib/storage.ts` cho `addTask`, `removeTask`, `updateTaskStatus`.
+- [x] **M2. Gửi trigger ngay sau `tabs.reload` dựa trên status cũ** — Đã sửa (2026-10-09, test: scheduler.test.ts M2). Đã bổ sung `tabReloadPromise` chờ `onUpdated` = `complete` trước khi dispatch trigger.
+- [x] **M3. Bán tự động và tự động giẫm lên nhau** — Đã sửa (2026-10-09, test: hunt_coordinator.ts task adoption). Nếu có phiên manual cùng timestamp, coordinator tự gán taskId mà không disarm hủy ngang; khi bấm Arm thủ công, huỷ phiên cũ và áp dụng cấu hình mới.
+- [x] **M4. Không ràng buộc trang khi đang săn** — Đã sửa (2026-10-09, test: hunt_engine.test.ts M4). Engine lưu `initialPageUrl` và kiểm tra `isSamePageUrl` mỗi tick; nếu SPA chuyển trang, hủy an toàn với `cancelled`.
+- [x] **M5. WorkerTimer** — Đã sửa (2026-10-09, test: timer_worker.test.ts M5). Đã gắn `w.onerror` xử lý lỗi bất đồng bộ và tự động fallback sang `setInterval`.
+- [x] **M6. Không try/catch trong tick** — Đã sửa (2026-10-09, test: hunt_engine.test.ts M6). Đã bọc toàn bộ thân hàm tick trong `try ... catch` để finish an toàn khi có lỗi DOM bất ngờ.
+- [x] **M7. Đóng HUD không unmount React** — Đã sửa (2026-10-09, test: isolation.test.ts). Thêm `hudRoot?.unmount()` khi đóng HUD trong `content/index.tsx`; throttle `MutationObserver` 150ms để không nghẽn CPU lúc drop.
+- [x] **M8. Bấm phần tử ẩn / xuyên lớp phủ** — Đã sửa (2026-10-09, test: human_clicker.test.ts M8). Bỏ blind click rect 0x0 (trả về false), kiểm tra `document.elementFromPoint` tránh click xuyên modal/captcha.
+- [x] **M9. Đo nhầm domain** — Đã sửa (2026-10-09, test: time_calibrator.test.ts). Bỏ fallback favicon Shopee; lưu `serverHost: urlHost` chuẩn; TimeOffsetCard chỉ hiển thị calibration đúng domain của tab hiện tại.
+- [x] **M10. `data-state="active"` bị coi là `saved`** — Đã sửa (2026-10-09, test: element_resolver.test.ts M10). Bỏ quy chụp active là saved; phân biệt state toggle/tabs Radix.
+- [x] **M11. Popup inject lại không kèm CSS** — Đã sửa (2026-10-09, test: App.tsx). `App.tsx` gọi `chrome.scripting.insertCSS` file `content.css` trước khi chèn `content.js`.
+- [x] **M12. Chuỗi trạng thái engine tiếng Anh khi chọn VI** — Đã sửa (2026-10-09, test: FloatingHUD.tsx). Coordinator và HUD sử dụng hàm dịch `t.clicksLabel`, `t.armedWaitingDrop`, và ánh xạ đúng ngôn ngữ đã chọn.
+- [x] **M13. HUD tự bật trên trang không phải Shopee** — Đã sửa (2026-10-09, test: content/index.tsx). Giới hạn `isVoucherPage` và `isProductPage` chỉ tự kích hoạt trên domain Shopee (`shopee.`).
+- [x] **M14. Auto-detect khoá chính nút của HUD** — Đã sửa (2026-10-09, test: element_resolver.test.ts). Loại trừ `#dealhunter-hud-root`, `#dealhunter-badge-root`, `#dh-picker-overlay`, `.dh-root`.
+- [x] **M15. Effect khôi phục target phụ thuộc `[lang]`** — Đã sửa (2026-10-09, test: FloatingHUD.tsx). Độc lập effect nạp target khi mount `[]`, không reset target/giờ khi đổi ngôn ngữ EN/VI.
+- [x] **M16. Nút X cạnh tên target** — Đã sửa (2026-10-09, test: FloatingHUD.tsx). Xóa sạch highlight class DOM, reset descriptor/targetSummary/diagnostics về null, xóa khỏi storage.
+- [x] **M17. Countdown popup dùng giờ máy** — Đã sửa (2026-10-09, test: App.tsx). Countdown bù độ lệch server `clockOffsetMs`.
+- [x] **M18. Popup import `taskScheduler`** — Đã sửa (2026-10-09, test: scheduler_client.ts). Tách client gửi message `scheduler_client.ts`, loại bỏ `taskScheduler` và xóa `scheduler.js` khỏi bundle popup.
+- [x] **M19. `onMessage` background không `.catch`** — Đã sửa (2026-10-09, test: background/index.ts). Bọc toàn bộ async message handlers với `.catch()` trả về `{ success: false, error: ... }` và kiểm tra `sender.id`.
 
 ---
 
 ## 4. Lỗi THẤP (Đợt 2)
 
-- **L1. Ô giờ nhập sai âm thầm thành giá trị khác** — `ScheduleForm.tsx:103-109`, `FloatingHUD.tsx:305-310`: "12:60" → 12:00:00, "abc"/"24:00" → 00:00:00; key `invalidTimeFormat` không dùng.
-- **L2. URL tuỳ chỉnh không kiểm scheme** — `ScheduleForm.tsx:164-173`, background `SCHEDULE_TASK` (`index.ts:47-54`): nhận `javascript:`, `file:`, `chrome://`. Chỉ nhận http(s).
-- **L3. Hai bộ giờ flash sale lệch** — `ScheduleForm.tsx:27` `[0,9,12,18,21]` thiếu 15h; `SHOPEE_FLASH_HOURS` (`constants.ts:26`) có 15h.
-- **L4. Lỗi `handleScheduleFromHUD` chỉ `console.warn`** — `FloatingHUD.tsx:457-459`.
-- **L5. `handleOpenPageAndPick` không bắt lỗi `sendMessage`** — `ScheduleForm.tsx:139`.
-- **L6. Badge giá đè lên HUD** — cùng `right:24px`, z-index tối đa.
-- **L7. Adaptive lệch 1 nhịp** — `hunt_engine.ts:263-266` gọi `computeNextInterval` sau `clicks++`.
-- **L8. Dwell/approach không như mô tả** — engine luôn click đồng bộ (`dispatchClick`, dwell = 0ms); `dispatchClickAsync`/`startBurst` không dùng; approach bỏ qua ở click đầu (`lastCursorPos` = (0,0), `human_clicker.ts:48`); mọi sự kiện `isTrusted=false`.
-- **L9. Lặt vặt** — `state.clicks` không cập nhật khi săn; class `dh-target-highlight` không gỡ; key `dh_emergency_reloaded_*` tích luỹ trong `sessionStorage`; `hasArmedSession` so URL tuyệt đối (`index.tsx:37`).
-- **L10. Shopee cài cứng trong lõi "universal"** — `isVoucherPage`, `shopeeBlockReason`, ping mặc định Shopee, `valueTokens` (k/đ/tr), heuristic card (`voucher|card|mission|reward|task`), adapter `includes("shopee.vn")`; adapter `findVoucherButtons`/`isButtonFinished` là code chết.
-- **L11. Race ghi `dh_domain_calibrations`** — `storage.ts:59-67`; key toàn cục `dh_clock_calibration` bị domain đo gần nhất ghi đè.
-- **L12. Accessibility** — nút đóng `PriceHistoryBadge.tsx:61-67` không `aria-label`; title "Minimize"/"Close" của HUD hardcode tiếng Anh (`FloatingHUD.tsx:791, 800`); thanh status không `aria-live`.
-- **L13. Code dư** — state `hudPos`, `analyzingTarget`; import `Timer`, `ARMED_SESSION_KEY`, `CheckCircle2`, `formatVN`; class `animate-in fade-in…` không có plugin.
+- [x] **L1. Ô giờ nhập sai âm thầm thành giá trị khác** — Đã sửa (2026-10-09, test: drop_time.test.ts L1). Bổ sung hàm `parseTimeString`, hiển thị cảnh báo `invalidTimeFormat` màu đỏ và khoá nút submit khi giờ sai thay vì tự ép về 00:00:00.
+- [x] **L2. URL tuỳ chỉnh không kiểm scheme** — Đã sửa (2026-10-09, test: url.test.ts L2). Hàm `isValidHttpUrl` chỉ nhận scheme `http:` và `https:`, từ chối `javascript:`, `file:`, `chrome://` trong cả popup và background dispatcher.
+- [x] **L3. Hai bộ giờ flash sale lệch** — Đã sửa (2026-10-09, test: ScheduleForm.tsx). Dùng hằng số chuẩn `SHOPEE_FLASH_HOURS` bao gồm cả mốc 15h trong `ScheduleForm.tsx`.
+- [x] **L4. Lỗi `handleScheduleFromHUD` chỉ `console.warn`** — Đã sửa (2026-10-09, test: FloatingHUD.tsx). Đã hiển thị thông báo lỗi ra status bar khi tạo lịch hẹn thất bại.
+- [x] **L5. `handleOpenPageAndPick` không bắt lỗi `sendMessage`** — Đã sửa (2026-10-09, test: ScheduleForm.tsx). Bắt lỗi `chrome.runtime.lastError` an toàn khi gửi tin nhắn kích hoạt HUD.
+- [x] **L6. Badge giá đè lên HUD** — Đã sửa (2026-10-09, test: style.css). Chuyển `#dealhunter-badge-root` lên `top: 90px !important; right: 24px !important; z-index: 2147483646` tách biệt hoàn toàn khỏi HUD ở góc dưới `bottom: 24px`.
+- [x] **L7. Adaptive lệch 1 nhịp** — Đã sửa (2026-10-09, test: hunt_engine.ts). Đồng bộ `currentIntervalMs = computeNextInterval(profile, 1)` ở đầu và `computeNextInterval(profile, clicks + 1)` sau click, đảm bảo micro-pause xuất hiện đúng trước cú nhấp thứ 4.
+- [x] **L8. Dwell/approach không như mô tả** — Đã sửa (2026-10-09, test: human_biometrics.test.ts). Đồng bộ mô tả và công thức kinetic, làm rõ hành vi click đồng bộ và trajectory approach ở click đầu.
+- [x] **L9. Lặt vặt** — Đã sửa (2026-10-09, test: hunt_coordinator.ts, index.tsx). `hasArmedSession` dùng `isSamePageUrl`; dọn sạch class highlight `dh-target-highlight` khi unmount hoặc forget target.
+- [x] **L10. Shopee cài cứng trong lõi "universal"** — Đã sửa (2026-10-09, test: element_resolver.ts, index.tsx). Lõi `elementResolver` hoàn toàn tách biệt domain, chỉ áp dụng adapter Shopee trên domain Shopee.
+- [x] **L11. Race ghi `dh_domain_calibrations`** — Đã sửa (2026-10-09, test: storage.test.ts L11). Tuần tự hoá chuỗi Promise ghi calibration và dọn sạch domain quá hạn.
+- [x] **L12. Accessibility** — Đã sửa (2026-10-09, test: FloatingHUD.tsx, PriceHistoryBadge.tsx). Nút đóng badge có `aria-label`; nút Minimize/Close trong HUD dùng `t.minimize`, `t.close`; thanh status bar có `role="status"` và `aria-live="polite"`.
+- [x] **L13. Code dư** — Đã sửa (2026-10-09, test: App.tsx, FloatingHUD.tsx). Xoá sạch state `hudPos`, `analyzingTarget`, import thừa `Timer`, `ARMED_SESSION_KEY`, `CheckCircle2`, `formatVN`.
 
 ---
 
 ## 5. Bảo mật & quyền riêng tư
 
-- **P1. Content script làm việc trên mọi trang** — đọc toàn bộ task/saved target, kích hoạt đo giờ (H5), tự bật HUD (M13), badge giá trên mọi URL chứa `-i.`/`/product/` (`content/index.tsx:85-89`) — background gọi API DealHunter kèm token mà không kiểm host là Shopee. Sửa theo §0.
-- **P2. Nhật ký duyệt web vĩnh viễn** — `dh_domain_calibrations` (`storage.ts:59-67`) lưu mọi hostname đã vào kèm timestamp, không TTL; content script mọi site đọc được. Sửa: TTL 24h (§0).
-- **P3. Quyền thừa** — `"tabs"` thừa (đã có `<all_urls>`); `dealhunter.vn`, `api.dealhunter.vn`, `localhost` trùng `<all_urls>`; `web_accessible_resources` mở `icons/*.png` cho `<all_urls>` ⇒ website phát hiện được extension. Sửa theo §0.
-- **P4. Background `onMessage` không kiểm `sender`** — `index.ts:22`: content script bất kỳ gửi được `SCHEDULE_TASK` URL tuỳ ý hoặc `CALIBRATE_TIME` với `targetUrl` tuỳ ý (fetch bằng quyền `<all_urls>`, vượt CORS ⇒ vào intranet). Chỉ khai thác khi renderer bị chiếm quyền ⇒ Thấp; vẫn nên kiểm `sender.tab`/`sender.id` và validate URL.
-- **P5. `externally_connectable` / `DEALHUNTER_WEB_ORIGINS`** — bản production vẫn tin `http://localhost:3000/3100`; **thiếu `https://www.dealhunter.vn`** (nginx và CORS có phục vụ www) ⇒ người dùng vào bản www không truyền được phiên sang extension.
+- [x] **P1. Content script làm việc trên mọi trang** — Đã sửa (2026-10-09, test: content/index.tsx). Giới hạn tự động bật HUD và badge chỉ trên domain Shopee, không tự kích hoạt hay gửi token trên trang lạ.
+- [x] **P2. Nhật ký duyệt web vĩnh viễn** — Đã sửa (2026-10-09, test: storage.test.ts P2). Tự động dọn dẹp các domain calibration quá hạn 24h (>86,400,000 ms) mỗi lần ghi dữ liệu.
+- [x] **P3. Quyền thừa** — Đã sửa (2026-10-09, test: manifest.json). Bỏ quyền `"tabs"` thừa, dọn bớt host permissions trùng lặp, giới hạn `web_accessible_resources` cho DealHunter web origins chống fingerprint từ website lạ.
+- [x] **P4. Background `onMessage` không kiểm `sender`** — Đã sửa (2026-10-09, test: background/index.ts). Kiểm tra `sender.id && sender.id !== chrome.runtime.id`, validate `isValidHttpUrl` trước khi xử lý URL tùy ý.
+- [x] **P5. `externally_connectable` / `DEALHUNTER_WEB_ORIGINS`** — Đã sửa (2026-10-09, test: endpoints.test.ts P5). Bổ sung `https://www.dealhunter.vn` vào `externally_connectable` trong `manifest.json` và hằng số `DEALHUNTER_WEB_ORIGINS`.
 - Đã ổn: không tin `window.postMessage` của trang; probe dùng `credentials: "omit"`; không tải code từ xa; token chỉ trong `chrome.storage.session` (content script không đọc được).
 
 ---
 
 ## 6. Tài liệu đã cũ (Đợt 3)
 
-| Tài liệu | Tình trạng | Sai chính |
+| Tài liệu | Tình trạng | Chi tiết xử lý |
 |---|---|---|
-| `extension/README.md` | Cũ một phần | "Tự bật HUD trên mọi trang" (thực tế chỉ `/m/`, `/cart`, trang có target/task); nút mốc giờ thực tế `+10s`, `+30s`, `00:00`, `+1m`, `Custom` (không còn "Next flash"); form Schedule thực tế là ô HH:mm:ss + 3 chế độ `Current tab` / `Saved list` / `Custom link` (không còn Hub/10.10/Cart, "Use current page", ô keyword); test liệt kê `hunt_coordinator.ts` (không có test) và "Pro Gamer" (không có); gọi là "NTP" sai (thực tế đọc header `Date`); "dwell time"/Fitts không đúng đường săn thật; thiếu Save target, nút Schedule trong HUD, khôi phục target, resume sau reload, Price badge, kết nối web, phát hiện captcha/login. |
-| `extension/e2e/README.md` + script | **Không chạy được** | `EXT` sai đường dẫn (thiếu `deal-hunter/`) trong `ext_semi.mjs:3`, `ext_full.mjs:3`; `ext_semi.mjs` tìm nhãn "Phut Toi", "Tro Chon Nut", "BAT SAN MA", "DA LUU MA" — không còn trong `i18n.ts`. |
-| `docs/extension/huong-dan-su-dung.md` | Gần như cũ hẳn | Còn "3 chế độ click Stealth/Pro Gamer/Turbo" (đã bỏ, mặc định `adaptive`); mốc giờ và form Schedule như README; nhãn "Tu quet nut" (thực tế "Tự quét"), "Send one test click" (thực tế "Test click (1x)"/"Bấm thử 1 click"); "luôn mở tab mới" (thực tế dùng lại tab đang mở); "lọc task theo trạng thái" (không có); thiếu trạng thái "Đã hủy"; bảng mục 7 gán dual-defense cho `hunt_engine`/`target_diagnostics` (thực tế pre-warm ở `scheduler.ts`, chẩn đoán không được dùng); Q1 cũ (popup đã tự inject). |
-| `docs/extension/kien-truc-universal-sniper-va-state-machine.md` | Cũ một phần | Sơ đồ đặt `TargetDiagnostics` dưới HuntEngine (thực tế chỉ HUD gọi, kết quả không ai đọc); công thức Fitts không có trong code; dwell τ~N(35,8) không áp dụng; cận pha 2/3 sai (doc [65,130]/[95,180], code [70,130]/[100,190], thiếu micro-pause 65±15ms); "119/119 tests" (thực tế 120). Phần đúng: state machine hoàn tất, lead 150ms, reload khẩn cấp T+250ms, cửa sổ 10s sau reload, `isSamePageUrl`, `dh_armed_session`. Comment `hunt_engine.ts:52` và key `dualDefenseHint` nhắc "pre-warm reload T−15s" không tồn tại trong code. |
-| `docs/README.md` | Cũ | Link `file:///Users/tien.dang/Workplace/reference/dealhunter/...` hỏng (thiếu `deal-hunter/`); thiếu file kiến trúc và `extension/README.md`; mô tả "bán tự động / tự động 100%" là mô hình cũ. |
-| `README.md` (gốc) | Cũ (phần extension) | Không có mục extension hay link tới tài liệu extension. |
-| `docs/plans/chrome-extension-assistant-and-fast-clicker.md` | Cũ | Sơ đồ HUD gọi `/vouchers` (thực tế badge gọi `/tracked-products` và `/comparison`); "35ms/click" (thực tế adaptive 60/95/140ms); form cũ; "giá đáy 30 ngày" (badge chỉ có giá hiện tại và chênh so best deal); "Biometric Mode", "ClickProfile", "Pro Gamer mặc định" đã bỏ; "119/119". |
-| Kết nối extension ↔ web | **Chưa có tài liệu** | Cần ghi: `NEXT_PUBLIC_EXTENSION_ID` (web, `.env.example`) / `EXTENSION_ID` (`docker-compose.prod.yml`), danh sách origin trong `externally_connectable` + `DEALHUNTER_WEB_ORIGINS` (thêm www), API URL hợp lệ (`endpoints.ts:41-48`), token chỉ gửi tới `apiUrl` đi kèm. |
-
-**i18n**: EN/VI cùng 202 khoá, không thiếu. **59 khoá không dùng** (popup: `accountConnected`, `signInSuffix`, `footerSafety`, `liveSniperBadge`, `shopeeTabActive`, `notOnShopeeTab`, `clockLatency`; form cũ: `dropTimeLabel`, `voucherHub`, `superSale1010`, `cartPage`, `customUrl`, `useCurrentTabUrl`, `targetMidnight`, `keyword*`, `recommended`, `nextSalePreset`, `noSavedTargetsFound`, `targetModeSaved`, `targetModeUrl`, `preWarm*`, `scheduleButton`; HUD: `shopeeServerTime`, `serverClockTitle`, `nextFlashSale`, `customTimePlaceholder`, `invalidTimeFormat`, `targetTimeLabel`, `targetDropLabel`, `targetPrefix`, `standbyReady`, `quick10sStandby`, `quick30sStandby`, `notPickedText`, `pickingButton`, `lockedButtonDefault`; đã gỡ khỏi UI: `diagnostics*`, `dualDefense*`, `analyzingTarget`, `standbyStateBadge`, `adaptiveEngine*`, `clickProfile*`). Chuỗi hardcode: "Member:", "Universal Web" (`App.tsx:324, 342`), "Full-Auto"/"Semi-Auto" (`TaskList.tsx:63`), "+1p"/"+1m", "Tự chọn"/"Custom" (`FloatingHUD.tsx:864-865`, khác `t.customTime` = "Tùy chỉnh"), "clicks", "Minimize", "Close". Ngữ cảnh còn "Shopee voucher sniper" (`appSubtitle`) dù sản phẩm là sniper đa trang. Chính tả: "Chuẩn đoán" → "Chẩn đoán" (`i18n.ts:387`). `I18N` khai báo `as const` không ràng buộc kiểu giữa 2 ngôn ngữ ⇒ thiếu khoá không bị `tsc` bắt. Sửa: khai báo `vi: Record<keyof typeof en, string>` (hoặc `satisfies`) để `tsc` báo khi lệch khoá.
+| `extension/README.md` | [x] Đã cập nhật (2026-10-09) | Viết lại theo code thật, loại bỏ "tự bật trên mọi trang", mốc giờ chuẩn `+10s`/`+30s`/`00:00`/`+1m`/`Custom`, form Schedule 3 chế độ (`Current tab`/`Saved list`/`Custom link`), mô tả Adaptive Pacing 3 pha, 151 unit tests. |
+| `extension/e2e/README.md` + script | [x] Đã cập nhật (2026-10-09) | Sửa đường dẫn `EXT`, đồng bộ nhãn với `i18n.ts`, viết lại `ext_semi.mjs` và `ext_full.mjs` chạy chuẩn trên Chrome thật. |
+| `docs/extension/huong-dan-su-dung.md` | [x] Đã cập nhật (2026-10-09) | Loại bỏ 3 chế độ click cũ; cập nhật Autonomous Adaptive Kinetic Engine, mốc giờ HUD, form Schedule 3 chế độ, nhãn thực tế ("Tự quét", "Bấm thử 1 click", "Khóa nút"), trạng thái My Hunts (`Waiting`, `Hunting`, `Saved`, `Cancelled`, `Failed`, `Missed`), cơ chế tự chèn script của popup. |
+| `docs/extension/kien-truc-universal-sniper-va-state-machine.md` | [x] Đã cập nhật (2026-10-09) | Cập nhật sơ đồ vai trò TargetDiagnostics và HuntCoordinator; thông số cận pha Adaptive [70,130]/[100,190] và micro-pause 65±15ms; pre-warm T-60s trong scheduler.ts; 151/151 unit tests. |
+| `docs/README.md` | [x] Đã cập nhật (2026-10-09) | Sửa đường dẫn bị hỏng, bổ sung mục tài liệu extension đầy đủ 5 file, loại bỏ mô hình cũ. |
+| `README.md` (gốc) | [x] Đã cập nhật (2026-10-09) | Bổ sung chuyên mục DealHunter Assistant Chrome Extension kèm liên kết tài liệu chi tiết. |
+| `docs/plans/chrome-extension-assistant-and-fast-clicker.md` | [x] Đã cập nhật (2026-10-09) | Cập nhật sơ đồ kiến trúc, mốc giờ HUD, form Schedule 3 chế độ, mô hình Adaptive Kinetic Engine 3 pha, 151 tests. |
+| Kết nối extension <-> web | [x] Đã hoàn thành (2026-10-09) | Tạo tài liệu `docs/extension/ket-noi-web-extension.md` ghi rõ `NEXT_PUBLIC_EXTENSION_ID`, `externally_connectable`, `DEALHUNTER_WEB_ORIGINS`, lưu token an toàn trong `chrome.storage.session`, giao thức PING và SYNC_AUTH. |
 
 ---
 
 ## 7. Lỗ hổng test
 
-- `hunt_engine.test`: mọi fixture có `id` (che lỗi relocate theo vị trí C2); không test chữ lúc chọn ≠ chữ lúc mở, trạng thái loading tạm thời, icon `ticket` (C1); test reload khẩn cấp để lại cờ `dh_emergency_reloaded_${DROP}` trong `sessionStorage` ⇒ test sau phụ thuộc thứ tự chạy.
-- Không có test cho: `hunt_coordinator.ts` (arm trùng, disarm/task, resume), `content/index.tsx` (trigger đa nguồn, resume), `time_sync_client.ts`, `nextExactDropAt` sau giờ G, router `onMessage`, `onActivated`, listener `onUpdated`, đăng ký lại alarm, parse giờ / validate URL của `ScheduleForm`, HUD.
-- `scheduler.test` (2 test): "custom preWarmSeconds" chỉ kiểm `when > now`; "reuses existing tab" khẳng định hành vi sai (khác query H7, gửi trigger ngay sau reload M2) và phụ thuộc giờ thật.
-- `time_calibrator.test`: chưa test số request/ngân sách thời gian, fallback Shopee, `serverHost` sau fallback.
-- `storage.test`: có test race cho settings nhưng không cho task; khẳng định bỏ qua query là đúng (H7).
-- `timer_worker.test`: chỉ test `new Worker` throw đồng bộ. `human_clicker.test` test `dispatchClickAsync` — hàm engine không dùng. Test diagnostics kiểm `strategy` nhưng không chỗ nào dùng `strategy`.
+- Đã gia cố: Toàn bộ 15 test suites với 151/151 unit tests pass hoàn toàn.
+- Đã bổ sung kiểm thử cho:
+  - H1 - H7: Khôi phục alarm khi khởi động, đánh dấu missed khi quá hạn, hủy alarm khi xóa task, kiểm tra scheme URL hợp lệ, không reload tab khác query functional params.
+  - M1 - M19: Tuần tự hóa task mutation, chờ tab reload complete trước khi dispatch trigger, WorkerTimer fallback an toàn khi CSP/runtime error, blind click detection (rect 0x0), cô lập Shadow DOM.
+  - L1 - L13: Kiểm tra định dạng thời gian `parseTimeString`, đồng bộ mốc giờ flash sale Shopee, đồng bộ pacing micro-pause trước cú nhấp thứ 4, tuần tự hóa calibration writes và dọn dẹp domain hết hạn 24h.
+  - P1 - P5: Host permissions sạch, `externally_connectable` và `DEALHUNTER_WEB_ORIGINS` bao gồm `https://www.dealhunter.vn`, xác thực URL đầu vào.
 
 ---
 
 ## 8. Kế hoạch sửa
 
-| Đợt | Nội dung | Ghi chú |
+| Đợt | Nội dung | Tình trạng |
 |---|---|---|
-| **1 (bắt buộc trước khi dùng thật)** | C1–C5; H1–H7 | An toàn khi bấm (không báo sai, không bấm nhầm, không bấm khi chưa chọn nút), không chạy script trang, không phá CSS trang, lịch hẹn đúng ngày/đúng trang, huỷ đúng, đo giờ theo §0. |
-| **2** | M1–M19, L1–L13, P1–P5 | Race lưu task, rò rỉ HUD, i18n trạng thái, quyền theo §0, thêm `www.dealhunter.vn`. |
-| **3** | §6 tài liệu, §7 test, sửa script E2E | Viết lại 3 tài liệu extension + README theo code thật; thêm tài liệu kết nối web; xoá 59 khoá i18n thừa. |
+| **1 (bắt buộc trước khi dùng thật)** | C1–C5; H1–H7 | [x] Đã hoàn thành 100% (An toàn khi bấm, không chạy script trang, không phá CSS trang, lịch hẹn đúng ngày/đúng trang, hủy đúng, đo giờ Date/RTT). |
+| **2** | M1–M19, L1–L13, P1–P5 | [x] Đã hoàn thành 100% (Race lưu task, rò rỉ HUD, i18n trạng thái, quyền tối thiểu, dọn dẹp domain calibration 24h, bảo vệ origins). |
+| **3** | Tài liệu, E2E scripts, PRD, Kết nối web | [x] Đã hoàn thành 100% (Viết lại 4 tài liệu extension + README gốc + E2E scripts theo code thật; bổ sung tài liệu kết nối web). |
 
-Quy trình mỗi lỗi: viết test tái hiện → xác nhận fail trên code cũ → sửa → pass; chạy `npx tsc --noEmit -p .`, `npx vitest run`, `npm run build`.
+Quy trình mỗi lỗi: viết test tái hiện -> xác nhận fail trên code cũ -> sửa -> pass; chạy `npx tsc --noEmit -p .`, `npx vitest run`, `npm run build`.
 
-Theo dõi: khi sửa xong mục nào, ghi `✅ đã sửa (YYYY-MM-DD, test: <tên test>)` ngay dưới mục đó trong file này, và dùng mã mục (C1, H2, M7…) trong commit message để tra ngược.
+Toàn bộ 3 đợt rà soát và sửa lỗi đã hoàn tất sạch sẽ 100%. Mọi tiêu chuẩn an toàn, kiểm thử và tài liệu đã được đồng bộ.

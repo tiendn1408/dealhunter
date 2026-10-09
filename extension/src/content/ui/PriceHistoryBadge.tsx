@@ -62,6 +62,8 @@ export const PriceHistoryBadge: React.FC = () => {
           type="button"
           onClick={() => setVisible(false)}
           className="text-slate-400 hover:text-slate-600 p-0.5 rounded"
+          title={t.close}
+          aria-label={t.close}
         >
           <X className="w-3.5 h-3.5" />
         </button>

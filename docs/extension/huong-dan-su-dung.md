@@ -1,8 +1,8 @@
 # DealHunter Assistant — Huong Dan Su Dung (User Guide)
 
-> Tien ich mo rong Chrome chuyen dung de **san voucher Shopee va tu dong click nut tren moi website dung gio G** (dac biet la nua dem 00:00:00 hoac cac khung gio vang 9h, 12h, 15h, 18h, 21h). Chay truc tiep tren trinh duyet voi tai khoan cua ban, an toan tuyet doi va toi uu toc do mili-giay.
+> Tien ich mo rong Chrome chuyen dung de **san voucher va tu dong click nut tren moi website dung gio G** (dac biet la nua dem 00:00:00 hoac cac khung gio vang 9h, 12h, 15h, 18h, 21h). Chay truc tiep tren trinh duyet voi tai khoan cua ban, an toan tuyet doi va toi uu toc do mili-giay.
 >
-> Cap nhat: 2026-10-08 · Ap dung cho ban build Universal Sniper trong `extension/dist`.
+> Cap nhat: 2026-10-09 · Ap dung cho ban build Universal Sniper trong `extension/dist`.
 
 ---
 
@@ -23,184 +23,188 @@
 ## 1. Tong Quan Tinh Nang
 
 ### Tinh nang vuot troi
-- **Universal Web Sniper**: Khong chi gioi han tren Shopee, tien ich ho tro san ve, dang ky su kien, giat slot, dat cho, hoac bam bat ky nut nao tren **moi trang web** (Shopee, Ticketbox, Lazada, Tiki, cong dang ky hoc phan, v.v.).
-- **Do gio sieu chinh xac (NTP Time Sync)**: Tinh toan do lech giua dong ho may tinh va may chu qua nhieu mau ping RTT, loai bo hoan toan sai so gio he thong.
-- **Bo dem khong tre (Web Worker Timer)**: Trinh duyet Chrome luon lam cham tab nen xuong 1000ms. DealHunter dung Web Worker rieng de duy tri nhip tick 10ms chinh xac tuyet doi.
-- **Mo phong chuot nguoi that sinh trac hoc (Anti-Bot Human Biometrics)**: Phat day du chuoi su kien W3C Pointer Events Level 3 (`pointerover` -> `pointerenter` -> `pointerdown` -> `mousedown` -> `focus` -> `pointerup` -> `mouseup` -> `click`) voi toa do Gauss 2 chieu tap trung trong tam, quy dao tiep can chuot Cubic Bezier theo Dinh luat Fitts, va thoi gian giu nut vat ly (dwell time).
-- **3 Che do click thich ung linh hoat (Click Profiles)**: Nguoi that (Stealth Human ~7 CPS), Game thu (Pro Gamer Jitter ~14 CPS), va Sieu toc (Turbo Blitz ~23 CPS) voi bien thien thoi gian Box-Muller Gaussian va ngat nhip sinh hoc (micro-pauses) loai bo hoan toan dau vet bot.
-- **Bam bat dau 150ms truoc gio G**: Kich hoat click nhip nhang de hap thu do tre mang va giat ma ngay miligiay dau tien.
+- **Universal Web Sniper**: Khong gioi han rieng tren Shopee. Tien ich ho tro san voucher, mua flash sale, giat ve su kien (Ticketbox), dang ky hoc phan, hoac click bat ky nut nao tren **moi trang web** dung gio G.
+- **Can chinh gio mili-giay theo tung domain (Domain Time Calibration)**: Tinh toan do lech giua dong ho may tinh va may chu cua trang web dang mo thong qua tieu de `Date` va do do tre 2 chieu (RTT), loai bo sai so gio he thong.
+- **Bo dem khong tre (Web Worker Timer)**: Trinh duyet Chrome bop toc do tab nen xuong 1000ms. DealHunter su dung luong Web Worker rieng biet de duy tri nhip tick 10ms on dinh, tu dong fallback sang `setInterval` neu trang bat CSP nghiem ngat.
+- **Dong co dinh hinh nhip do sinh hoc tu dong (Autonomous Adaptive Kinetic Engine)**:
+  - **Pha 1 — But toc gio G (Clicks 1-3)**: Chu ky 60ms ± 10ms (~14-16 CPS) de giat deal trong cua so vang mili-giay dau tien.
+  - **Pha 2 — Gian nhip thich ung (Clicks 4-8)**: Chu ky 95ms ± 16ms, bo sung vi nghi phuc hoi co hoc 65ms ± 15ms ngay truoc cu click thu 4 de pha vo hoan toan pho tu tuong quan (Autocorrelation) cua bo loc bot.
+  - **Pha 3 — On dinh dai han (Clicks 9+)**: Chu ky 140ms ± 22ms kem vi nghi dinh ky sau moi 5 clicks nham bao ve tai khoan an toan khi cho may chu xu ly.
+- **Kich hoat som 150ms truoc gio G (Lead Time)**: Bat dau quy trinh click truoc gio G 150ms de hap thu do tre mang Internet, dam bao cu click dau tien cham vao may chu dung miligiay mo deal.
+- **May trang thai hanh vi (Behavioral State Machine)**: Loai bo 100% tu dien ngon ngu hardcode. Xac dinh ket qua san dua tren bien doi DOM thuc te (unmount, disabled state, text mutation, W3C ARIA, SVG icon injection).
+- **Price History Intelligence Badge**: Tu dong hien thi huy hieu lich su gia va so sanh deal tren cac trang san pham Shopee, ho tro xem bien dong gia va chuyen huong ve DealHunter Web.
 
 ---
 
 ## 2. Cai Dat Tien Ich Vao Trinh Duyet
 
-### 2.1. Bien dich ma nguon (Neu can build lai tu source)
-Mo Terminal va di chuyen den thu muc extension:
+### 2.1. Bien dich ma nguon
+Mo Terminal va di chuyen den thu muc extension cua du an:
 ```bash
-cd /Users/tien.dang/Workplace/reference/deal-hunter/dealhunter/extension
+cd /Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension
 npm install
 npm run build
 ```
-Thu muc thanh pham se duoc tao tai: `dealhunter/extension/dist`.
+Thu muc build hoan tat se duoc tao tai:
+```text
+/Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/dist
+```
 
-### 2.2. Nap tien ich vao Chrome / Edge / Coc Coc / Brave
-1. Mo trinh duyet va truy cap dia chi: `chrome://extensions` (Edge: `edge://extensions`, Coc Coc: `coccoc://extensions`).
+### 2.2. Nap tien ich vao Chrome / Edge / Brave / Coc Coc
+1. Mo trinh duyet va truy cap dia chi: `chrome://extensions`.
 2. Bat cong tac **Developer mode** (Che do nha phat trien) o goc tren ben phai.
 3. Bam nut **Load unpacked** (Tai tien ich da giai nen).
 4. Chon thu muc:
    ```text
-   /Users/tien.dang/Workplace/reference/deal-hunter/dealhunter/extension/dist
+   /Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/dist
    ```
-5. Tien ich **DealHunter Assistant** se xuat hien tren trinh duyet. Bam vao bieu tuong manh ghep tren thanh cong cu roi **Ghim (Pin)** de de dang su dung.
+5. Tien ich **DealHunter Assistant** se xuat hien tren thanh cong cu trinh duyet. Bam bieu tuong manh ghep va **Ghim (Pin)** tien ich de tien thao tac.
 
-### 2.3. Cap nhat sau khi sua code
-Moi khi bien dich lai code (`npm run build`), hay vao lai `chrome://extensions` va bam nut **Reload** (mui ten tron) tren the DealHunter Assistant, sau do tai lai trang web dang mo (F5).
+### 2.3. Cap nhat sau khi bien dich lai
+Moi khi build lai ma nguon (`npm run build`), hay vao `chrome://extensions` va bam nut **Reload** (mui ten xoay tron) tren the DealHunter Assistant de ap dung code moi nhat.
 
 ---
 
 ## 3. Giao Dien Va Tuy Chon Ngon Ngu (EN / VI)
 
-DealHunter Assistant duoc thiet ke theo phong cach hien dai Dark Cyber-Tactical voi 3 the chinh va ho tro 2 ngon ngu:
-- **Tieng Anh (English)**: Ngon ngu mac dinh cua he thong.
-- **Tieng Viet (Vietnamese)**: Tieng Viet co dau chuan xac, de hieu.
+DealHunter Assistant su dung giao dien Dark Cyber-Tactical voi 3 the thao tac chinh va ho tro 2 ngon ngu:
+- **Tieng Anh (English)**: Ngon ngu mac dinh quoc te.
+- **Tieng Viet (Vietnamese)**: Ban dia hoa day du, chuan xac.
 
-**Cach doi ngon ngu**:
-- Tai Popup: Bam vao nut **`EN`** hoac **`VI`** o goc tren ben phai tieu de.
-- Tai Floating HUD tren trang: Bam vao nut **`EN`** hoac **`VI`** tren thanh tieu de cua HUD.
-- Cai dat ngon ngu duoc dong bo ngay lap tuc cho toan bo popup va cac tab dang mo.
+**Cach chuyen doi ngon ngu**:
+- Tren Popup: Bam vao nut **`EN`** hoac **`VI`** o goc tren ben phai tieu de.
+- Tren Floating HUD: Bam vao nut **`EN`** hoac **`VI`** tren thanh tieu de cua bang HUD.
+- Thiet lap ngon ngu duoc dong bo ngay lap tuc giua popup va toan bo cac tab dang mo.
 
 ---
 
 ## 4. Che Do 1 — Live Sniper (San Truc Tiep Tren Moi Trang Web)
 
-Dung khi ban dang ngoi truoc may tinh va can bam mot nut vao dung gio G (vi du: nua dem 00:00:00 hoac cac gio flash sale).
+Dung khi ban dang theo doi truc tiep tren man hinh va can kich hoat san mot nut bam vao moc gio xac dinh.
 
 ### Buoc 1: Mo trang web can san
-- Neu san voucher Shopee: Mo `https://shopee.vn/m/ma-giam-gia`, `https://shopee.vn/cart`, hoac trang chien dich sale.
-- Neu san trang khac: Mo trang ban ve, dang ky hoc phan, trang su kien flash sale ma ban can bam nut.
+- Mo trang chua nut can bam: trang voucher Shopee (`https://shopee.vn/m/ma-giam-gia`), gio hang, trang ban ve Ticketbox, hoac trang su kien flash sale tren bat ky website nao.
 
 ### Buoc 2: Bat bang dieu khien Sniper HUD
-1. Bam vao icon DealHunter tren thanh trinh duyet de mo Popup.
-2. The **Live Sniper** se tu dong nhan dien trang web ban dang dung:
-   - Hien thi domain hien tai (vi du: `ticketbox.vn active`, `shopee.vn active`) voi cham xanh san sang.
-   - Dong ho dem nguoc gio G lon o giua man hinh.
-3. Bam nut lon noi bat:
+1. Bam vao icon DealHunter tren thanh cong cu Chrome de mo Popup.
+2. The **Live Sniper** tu dong nhan dien domain cua trang dang mo (vi du: `shopee.vn active`, `ticketbox.vn active`).
+3. Bam nut noi bat:
    - **`START SNIPER ON THIS PAGE`** (hoac **`BAT DAU SAN TREN TRANG NAY`**).
-4. Bang dieu khien **Sniper HUD** se lap tuc noi len o goc duoi ben phai cua trang web.
+   - Popup se tu dong chen tep CSS va script vao trang web (neu trang chua co) va hien thi bang **Floating HUD** o goc duoi ben phai man hinh.
 
 ### Buoc 3: Thiet lap tren bang Sniper HUD
 1. **Chon moc gio san**:
-   - **`[00:00]`**: Canh nua dem dung 00:00:00.000 (khuyen dung cho moi trang web).
-   - **`[Next flash]`**: Canh gio flash sale tiep theo (0h, 9h, 12h, 15h, 18h, 21h).
-   - **`[Next min]`**: Canh dau phut tiep theo de kiem tra thu nghiem.
-2. **Khoa nut muc tieu**:
-   - Bam nut **`Pick button`** (**`Chon nut`**): Re chuot vao bat ky nut nao ban can bam tren man hinh (nut Luu voucher, nut Dat ve, nut Mua ngay, nut Dang ky). Nut se sang vien xanh la neon. Click vao nut do de khoa.
-   - Hoac bam **`Auto-detect`** (**`Tu quet nut`**): Neu dang o tren Shopee, tien ich tu dong tim nut Luu voucher hop le dau tien.
+   - **`+10s`**: San sau 10 giay (phu hop test nhanh).
+   - **`+30s`**: San sau 30 giay.
+   - **`00:00`**: San vao dung nua dem tiep theo (00:00:00).
+   - **`+1m` / `+1p`**: San vao dau phut tiep theo.
+   - **`Custom` / `Tuy chinh`**: Nhap gio bat ky theo dinh dang `HH:mm:ss`. He thong kiem tra tinh hop le va canh bao neu gio nhap khong dung dinh dang.
+2. **Khoa nut muc tieu (Target Button)**:
+   - Bam nut **`Pick button`** (**`Chon nut`**): Re chuot len man hinh den nut ban muon click (nut Luu voucher, nut Mua ngay, nut Dat cho). Nut se duoc lam noi bat voi vien xanh neon `dh-target-highlight`. Click vao nut de khoa muc tieu.
+   - Hoac bam **`Auto-detect`** (**`Tu quet`**): Neu dang o tren Shopee, tien ich tu dong quet va de xuat nut voucher hop le dau tien tren man hinh.
+   - Neu muon huy chon nut da khoa, bam bieu tuong nut **X** ben canh ten muc tieu de reset ve trang thai ban dau.
 3. **Kiem tra dong bo dong ho**:
-   - Bang HUD hien thi thoi gian may chu chuan xac den tung miligiay.
-   - Neu can dong bo lai, bam nut lam moi ben canh do lech mili-giay.
-4. **Dinh hinh sinh hoc tu dong (Autonomous Adaptive Kinetic Engine)**:
-   - Tien ich su dung **thuat toan tu dong dinh hinh nhip do co hoc** ma khong bat nguoi dung phai phan van lua chon giua cac che do.
-   - **Giai doan 1 (But toc gio G)**: 1-3 click dau tien kich hoat phan xa thi dau dinh cao (~14-16 CPS, khoang cach ~60ms) de giat deal trong cua so vang miligiay truoc khi het suat.
-   - **Giai doan 2 (Gian nhip thich ung)**: Tu click thu 4-8, he thong tu dong gian nhip (~95ms) va chen vi nghi phuc hoi co (~50ms) de tranh bi WAF/bot detector danh gia la spam may moc.
-   - **Giai doan 3 (On dinh dai han)**: Tu click thu 9 tro di, duy tri nhip deu dan an toan (~140ms, tuong duong ~7 CPS) kem vi nghi co hoc moi 5 click de cho hang doi may chu xu ly ma khong gay khoa tai khoan.
-5. **Bam thu nghiem (Tuy chon)**:
-   - Bam **`Send one test click`** (**`Bam thu 1 phat click`**) de kiem tra xem click va quy dao co truyen dung vao nut hay khong.
+   - Bang HUD hien thi thoi gian thuc va do lech giua may tinh va server (vi du: `+120ms ±15ms`).
+   - Bam bieu tuong xoay tron ben canh de can chinh lai neu can.
+4. **Bam thu 1 click (Test click)**:
+   - Bam **`Test click (1x)`** (**`Bam thu 1 click`**) de kiem tra xem chuoi pointer events co truyen dung vao nut muc tieu hay khong.
 
 ### Buoc 4: Kich hoat truc chien (Arm Sniper)
-- Bam nut lon: **`Arm sniper`** (**`Kich hoat san`**).
-- Nut chuyen sang mau do cam **`Disarm`** (**`Huy kich hoat`**) va he thong vao trang thai truc chien dem nguoc miligiay.
-- Ban co the thu nho HUD (nut dau tru `-`) thanh mot vien thu gon nho gon.
-- Dung moc gio da dinh, he thong se tu dong ban chuoi click theo dung thuat toan sinh hoc tu thich ung cho den khi trang xac nhan hoan tat.
+1. Bam nut lon: **`Arm sniper`** (**`Kich hoat san`**).
+2. Nut chuyen sang trang thai **`Disarm`** (**`Huy kich hoat`**) va bang HUD bat dau dem nguoc mili-giay den gio G.
+3. Ban co the bam nut Minimize (`-`) de thu gon HUD xuong thanh trang thai nho gon o goc man hinh.
+4. Dung gio G (co tinh lead 150ms), he thong se tu dong kich hoat chuoi click adaptive cho den khi trang web xac nhan luu thanh cong hoac het thoi gian san.
 
 ---
 
 ## 5. Che Do 2 — Schedule (Hen Gio Tu Dong 100%)
 
-Dung khi ban khong the truc tiep ngoi canh may (vi du: can san voucher nua dem 00:00 nhung muon di ngu som).
+Dung khi ban muon dat lich truoc va de trinh duyet tu dong mo trang, khoa muc tieu va san khi den gio (vi du: san voucher nua dem khi ban khong ngoi truoc may).
 
-### Buoc 1: Chuyen sang the Schedule trong Popup
-1. Bam bieu tuong tien ich tren thanh cong cu Chrome.
+### Buoc 1: Mo the Schedule tren Popup
+1. Bam icon DealHunter tren thanh cong cu Chrome.
 2. Chon the o giua: **`Schedule`** (**`Dat lich`**).
 
-### Buoc 2: Chon khung gio va trang muc tieu
-1. **Drop time (Vietnam)**: Chon gio ban muon he thong hanh dong (`00`, `09`, `12`, `15`, `18`, `21`).
-2. **Target page / URL**:
-   - Cac lua chon co san cua Shopee: `Shopee Hub`, `10.10 Sale`, `Cart`.
-   - Hoac chon **`Custom URL`** (**`URL tuy chon`**):
-     + O nhap URL se xuat hien.
-     + Bam nut **`Use current page`** (**`Dung link hien tai`**) de he thong tu dong dien link trang ban dang xem.
-     + Hoac dan bat ky duong link web nao ban muon.
-3. **Voucher keyword** (Tu khoa voucher - khuyen dung cho Shopee):
-   - Dien doan chu dac trung cua voucher, vi du: `500k`, `15%`, `freeship`.
-   - He thong se chi uu tien bam dung voucher chua tu khoa nay khi mo trang.
+### Buoc 2: Chon gio san va phuong thuc muc tieu
+1. **Gio san (Drop time - Vietnam)**:
+   - Nhap gio truc tiep theo dinh dang `HH:mm:ss` (gio Viet Nam GMT+7).
+   - Hoac bam nhanh vao cac nut goi y flash sale Shopee: `00:00`, `09:00`, `12:00`, `15:00`, `18:00`, `21:00`.
+2. **Che do muc tieu (Target Mode)**:
+   - **`Current tab`** (**`Tab hien tai`**): Su dung duong dan URL cua tab dang mo lam trang muc tieu.
+   - **`Saved list`** (**`Danh sach da luu`**): Chon tu danh sach cac nut voucher ban da khoa va luu truoc do tu Floating HUD.
+   - **`Custom link`** (**`Link tuy chinh`**):
+     - Dan duong link web bat ky vao o nhap URL (he thong chi chap nhan giao thuc `http://` hoac `https://` hop le).
+     - Bam nut **`Open page and pick`** (**`Mo trang & chon nut`**) de tien ich tu dong mo trang web do trong tab moi va bat che do chon nut tren HUD de ban khoa muc tieu.
 
-### Buoc 3: Xac nhan tao lich
-- Bam nut: **`Schedule [gio]:00 hunt`** (**`Dat lich san [gio]:00`**).
-- Lich hen se duoc luu vao bo nho va xuat hien trong danh sach quan ly.
+### Buoc 3: Tao lich hen
+1. Bam nut **`Schedule hunt`** (**`Dat lich san`**).
+2. Nhiem vu moi se duoc luu vao bo nho va hien thi trong danh sach quan ly.
 
-### Co che he thong thuc thi khi den gio:
-1. **Truoc gio G 60 giay**: Tien ich tu dong chay ngam, do lai gio may chu va tu dong mo tab moi dan den dung link trang web ban da dat.
-2. **Tab tai xong**: He thong tu dong cuon trang den vi tri voucher va khoa muc tieu.
-3. **Dung gio G**: Tien ich kich hoat loat click sieu toc va ghi nhan ket qua vao danh sach lich hen.
-
-*Luu y quan trong*: De che do hen gio hoat dong, trinh duyet Chrome phai duoc bat va may tinh khong bi dua vao che do Sleep.
+### Co che he thong thuc thi ngam:
+1. **Truoc gio G 60 giay (Pre-warm T-60s)**:
+   - Background Alarm danh thuc service worker.
+   - He thong kiem tra xem da co tab nao dang mo dung trang web do hay chua (`isSamePageUrl`). Neu da co, tien ich tai su dung tab do va focus len dau; neu chua co, tien ich mo mot tab moi.
+   - Tab duoc tai moi de lam sach cache va do lai gio may chu.
+2. **Khoa muc tieu tu dong**:
+   - Khi tab hoan tat tai trang, content script tu dong khoi phuc target descriptor va cuon nut vao khung nhin (`scrollIntoView`).
+3. **Dung gio G**:
+   - Content script kich hoat dong co san adaptive va ghi nhan ket qua vao danh sach lich hen.
 
 ---
 
 ## 6. Che Do 3 — My Hunts (Quan Ly Lich Hen Va Lich Su San)
 
 1. Mo Popup, chon the thu ba: **`My Hunts`** (**`Lich hen`**).
-2. Danh sach hien thi toan bo cac lich da len kem trang thai:
-   - **Waiting for drop** (**Cho den gio**): Dang cho den moc gio hen.
-   - **Hunting** (**Dang san**): Dang trong qua trinh mo tab va ban click.
-   - **Voucher saved** (**Da luu ma**): San thanh cong, trang xac nhan da luu.
-   - **Could not save** (**Khong luu duoc**): Hien thi chi tiet ly do (het luot, khong tim thay nut, hoac so luot click da gui).
-3. Ban co the loc danh sach theo trang thai hoac bam bieu tuong thung rac de xoa lich bat ky luc nao.
+2. Danh sach hien thi toan bo cac lich da len kem trang thai thoi gian thuc:
+   - **`Waiting`** (**`Cho den gio`**): Dang cho den moc gio hen.
+   - **`Hunting`** (**`Dang san`**): Dang trong qua trinh chuan bi tab va ban click.
+   - **`Saved`** (**`Da luu ma`**): San thanh cong, trang da tiep nhan va xac nhan luu deal.
+   - **`Cancelled`** (**`Da huy`**): Nhiem vu da duoc nguoi dung chu dong huy.
+   - **`Failed`** (**`That bai`**): Khong luu duoc (het ma, nut khong xuat hien, hoac loi ket noi).
+   - **`Missed`** (**`Bo lo`**): Qua gio G do may tinh bi tat nguon hoac mat mang trong luc hen.
+3. Ban co the bam bieu tuong nut thung rac de xoa nhiem vu khoi danh sach bat ky luc nao.
 
 ---
 
 ## 7. Thuoc Tinh Ky Thuat Va Thuat Toan Loi
 
-DealHunter Assistant duoc phat trien dua tren cac nguyen ly ky thuat cao cap danh cho trinh duyet:
-
 | Thanh phan | File ma nguon | Co che hoat dong |
 |---|---|---|
-| **Hunt Coordinator (SSOT)** | `hunt_coordinator.ts` | Single Source of Truth quan ly phien san, thong nhat 100% giua Arm Sniper tren Floating HUD va Schedule tu dong tu Background. |
-| **Human Biometrics Engine** | `human_biometrics.ts` | Bo thuat toan sinh trac hoc: bien doi Box-Muller Gaussian cho thoi gian, toa do Gauss 2 chieu tap trung trong tam, quy dao Cubic Bezier theo Dinh luat Fitts, chuan hoa phan cung W3C Pointer Events Level 3, va co che ngat nhip sinh hoc (micro-pauses). |
-| **Behavioral State Machine** | `element_resolver.ts` | Loai bo 100% tu dien hardcoded text. Xac dinh ket qua san dua tren su bien doi DOM (unmount, disabled transition, text mutation, SVG icon injection) va chuan W3C ARIA. |
-| **Dual-Defense Reload** | `hunt_engine.ts`, `target_diagnostics.ts` | Tu dong pre-warm tab o T-60s va emergency reload ngam o T+250ms tren trang tinh. Tu dong mo rong cua so 10s sau reload kem khoa chong lap vo han. |
-| **NTP Time Calibrator** | `time_calibrator.ts`, `time_sync_client.ts` | Do do tre 2 chieu (RTT) va can chinh dong ho cuc bo theo thoi gian thuc cua server. Loai bo hoan toan do lech gio may tinh. |
-| **Web Worker Ticker** | `timer_worker.ts` | Tranh tinh trang Chrome giam hieu nang tab nen xuong 1000ms. Chay tren luong Worker rieng voi tan so 10ms. |
-| **Human Clicker** | `human_clicker.ts` | Phat chuoi pointer/mouse day du voi toa do ngau nhien va thoi gian giu nut vat ly (dwell time). Khong dung `el.click()` tho giup tranh bi bot-detector chan. |
-| **Full-Auto Scheduler** | `scheduler.ts` | Dung `chrome.alarms` MV3 de danh thuc tien ich truoc gio G, tai moi tab va chuan bi phien san. |
+| **Hunt Coordinator (SSOT)** | [`hunt_coordinator.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_coordinator.ts) | Single Source of Truth quan ly phien san tap trung, thong nhat giua Arm manual tren HUD va Schedule tu dong tu Background. Xu ly ket noi lai phien qua reload. |
+| **Autonomous Adaptive Engine** | [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Dong co dinh hinh dong hoc 3 pha: 60ms but toc dau, 95ms kem vi nghi phuc hoi co 65ms truoc click 4, va 140ms on dinh dai han. Lead time 150ms truoc gio G. |
+| **Behavioral State Machine** | [`element_resolver.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/element_resolver.ts) | Loai bo hoan toan regex tu dien. Xac dinh ket qua dua tren DOM detachment, disabled transition, text mutation, W3C ARIA contracts va SVG icon injection. |
+| **Target Diagnostics** | [`target_diagnostics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/target_diagnostics.ts) | Chuan doan phan tu muc tieu va tinh chat trang (SPA reactive vs Static). Tu dong tat phong thu kep reload tren ung dung React de tranh mat state trang. |
+| **Dual-Defense Reload** | [`scheduler.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/background/scheduler.ts), [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Pre-warm tab o T-60s tu Background; Emergency reload o T+250ms tren trang tinh neu nut bi stale DOM; cua so mo rong 10 giay sau reload voi khoa chong lap vo han. |
+| **Human Biometrics** | [`human_biometrics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/human_biometrics.ts) | Bien doi Box-Muller Gaussian cho khoang thoi gian, phan bo toa do 2 chieu Bivariate Gaussian trong tam nut, va quy dao tiep can chuot theo Dinh luat Fitts. |
+| **Human Clicker** | [`human_clicker.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/human_clicker.ts) | Phat day du chuoi su kien W3C Pointer Events Level 3 (`pointerdown` -> `mousedown` -> `pointerup` -> `mouseup` -> `click`) voi toa do ngau nhien va dwell time vat ly. |
+| **Time Calibrator** | [`time_calibrator.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/background/time_calibrator.ts) | Can chinh dong ho may chu theo tieu de `Date` va RTT theo tung domain; tu dong don dep cac domain calibration qua han 24 gio. |
+| **Web Worker Ticker** | [`timer_worker.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/timer_worker.ts) | Chay tren luong Worker rieng voi chu ky 10ms chong throttling tab nen cua Chrome; tu dong fallback sang window timer khi gap loi CSP. |
+| **Full-Auto Scheduler** | [`scheduler.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/background/scheduler.ts) | Quan ly lich trinh bang `chrome.alarms` MV3, tai su dung tab thong minh voi so khop URL chuan hoa (`isSamePageUrl`). |
 
-Chi tiet kien truc toan dien duoc tai lieu hoa tai: [`docs/extension/kien-truc-universal-sniper-va-state-machine.md`](kien-truc-universal-sniper-va-state-machine.md).
+Chi tiet kien truc toan dien duoc tai lieu hoa tai: [`docs/extension/kien-truc-universal-sniper-va-state-machine.md`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/kien-truc-universal-sniper-va-state-machine.md).
 
 ---
 
 ## 8. Xu Ly Su Co Thuong Gap (Troubleshooting)
 
-### Q1: Tai sao toi bam Start tren mot trang web ma khong thay bang HUD xuat hien?
-- **Nguyen nhan**: Trang web do duoc mo truoc khi ban cai dat hoac reload extension.
-- **Cach khac phuc**: Hay refresh (F5) lai trang web do mot lan, sau do mo popup va bam lai nut `START SNIPER ON THIS PAGE`.
+### Q1: Toi bam nut Start tren trang web ma khong thay bang HUD xuat hien?
+- **Tra loi**: Hien tai popup da duoc tich hop co che tu dong chen tep CSS va script vao tab dang mo khi ban bam `START SNIPER ON THIS PAGE`. Neu ban van khong thay HUD, co the do tab dang o dia chi cam cua trinh duyet (vi du: `chrome://`, `about:blank`, hoac Web Store). Hay thu tren mot trang web `https://` thong thuong.
 
 ### Q2: Dong ho bao "Not synced" hoac "Chua dong bo"?
-- **Nguyen nhan**: Mat ket noi mang hoac mang qua cham khien tien ich chua do duoc RTT.
-- **Cach khac phuc**: Bam nut xoay tron ben canh dong ho tren HUD hoac vao the Live Sniper bam `Re-sync` de he thong do lai.
+- **Tra loi**: Do ket noi mang cham hoac domain chua hoan tat do thoi gian khuu hoi RTT. Ban co the bam bieu tuong xoay tron ben canh dong ho tren HUD hoac bam `Re-sync` tren Popup de thuc hien can chinh lai ngay lap tuc.
 
-### Q3: Nut tren trang web bi vo hieu hoa (disabled/mo di) truoc 00:00:00, co chon duoc khong?
-- **Tra loi**: Hoan toan duoc. Co che **Pick button** cho phep ban re chuot va khoa ca nhung nut dang bi disabled. Tien ich se quan sat va ngay khi nut duoc mo vao dung 00:00:00, no se lap tuc ban loat click vao nut do.
+### Q3: Nut tren trang web bi disabled (mo di) truoc gio G, tien ich co bam duoc khong?
+- **Tra loi**: Hoan toan duoc. Tinh nang **Pick button** cho phep ban khoa ca nhung nut dang bi `disabled`. He thong se quan sat va ngay khi nut duoc kich hoat vao gio G, dong co san se ban loat click ngay lap tuc.
 
-### Q4: May tinh cua toi dat mui gio khac (khong phai GMT+7) thi co san dung gio khong?
-- **Tra loi**: Luon luon dung. Toan bo thuat toan gio cua DealHunter deu quy doi chuan theo gio Viet Nam (GMT+7, khong DST), bat ke may tinh cua ban dang o My, Nhat Ban hay chau Au.
+### Q4: May tinh dat mui gio khac (khong phai GMT+7) thi he thong co san dung gio khong?
+- **Tra loi**: Luon luon dung. Thuat toan gio cua DealHunter luon quy doi thoi gian ve chuan gio Viet Nam (GMT+7, khong DST), dam bao chay dung gio du ban dang o bat ky quoc gia nao tren the gioi.
 
 ---
 
 ## 9. Luu Y Quan Trong Va An Toan Tai Khoan
 
-1. **An toan thong tin**: Tien ich chay hoan toan tai phia Client tren trinh duyet cua ban, su dung phien dang nhap co san cua chinh ban. Tien ich khong bao gio luu tru hay gui mat khau hoac thong tin thanh toan cua ban ra ben ngoai.
+1. **Bao mat tuyet doi**: Tien ich hoat dong hoan toan tai phia client tren trinh duyet cua ban, su dung phien dang nhap co san cua chinh ban. Tien ich khong bao gio luu tru mat khau hay thong tin the tin dung.
 2. **Chuan bi truoc gio G**:
-   - Voi Shopee: Hay dang nhap truoc, mo thu trang voucher truoc 5 phut de vuot qua captcha neu co.
-   - Voi cac trang web khac: Hay dang nhap san tai khoan, chon san thong tin can thiet de khi nut mo ra la co the click ngay.
-3. **Giu may tinh hoat dong**: Khong gap man hinh may tinh hoac de may roi vao che do Sleep neu ban dat lich tu dong luc nua dem.
+   - Voi Shopee: Dang nhap san tai khoan, mo thu trang voucher truoc 5-10 phut de vuot qua captcha neu co.
+   - Voi cac trang web khac: Dang nhap va chon san thong tin can thiet tren man hinh de san sang bam nut ngay khi gio G den.
+3. **Giu trinh duyet hoat dong**: Khong gap man hinh hoac de may tinh roi vao che do Sleep neu ban dat lich san tu dong khi khong ngoi truoc may.

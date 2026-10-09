@@ -6,6 +6,7 @@ import {
   computeNextInterval,
 } from "./human_biometrics";
 import { WorkerTimer } from "./timer_worker";
+import { isSamePageUrl } from "../../lib/url";
 
 /**
  * Outcome of one target snipe. Only what the page actually shows is reported:
@@ -83,7 +84,7 @@ export function startHunt(opts: HuntOptions): () => void {
   let currentIntervalMs =
     opts.clickIntervalMs !== undefined
       ? opts.clickIntervalMs
-      : computeNextInterval(profile, 0).intervalMs;
+      : computeNextInterval(profile, 1).intervalMs;
   const maxClicks = opts.maxClicks ?? HUNT_DEFAULTS.maxClicks;
   const ticker = opts.ticker ?? new WorkerTimer();
 
@@ -92,12 +93,14 @@ export function startHunt(opts: HuntOptions): () => void {
   let descriptor: VoucherDescriptor | null = opts.locked ? elementResolver.describe(opts.locked) : null;
   let current: HTMLElement | null = opts.locked ?? null;
   let initialText = (opts.locked ? elementResolver.text(opts.locked) : opts.universalDescriptor?.initialText) || "";
+  let baselineTextAtDrop: string | null = null;
 
   let clicks = 0;
   let lastClickAt = -Infinity;
   let lastStatusAt = -Infinity;
   let scrolled = false;
   let done = false;
+  const initialPageUrl = typeof window !== "undefined" ? window.location.href : "";
 
   const finish = (result: HuntResult, detail: string) => {
     if (done) return;
@@ -106,23 +109,29 @@ export function startHunt(opts: HuntOptions): () => void {
     opts.onDone({ result, clicks, detail });
   };
 
-  // Vouchers that could already be saved before the drop are not the drop; remembered so that,
-  // without a lock or keyword, only a voucher that opens at the drop is clicked.
-  const openBeforeDrop = new Set<string>();
-  const key = (el: HTMLElement) => elementResolver.describe(el).cardText;
-
   const isLockedHunt = Boolean(opts.locked || opts.universalDescriptor);
+  if (!isLockedHunt && !opts.keyword) {
+    // Decision 0 / C3: Hunting without a locked target or keyword is strictly prohibited.
+    ticker.stop();
+    opts.onDone({ result: "not_found", clicks: 0, detail: "No target locked" });
+    return () => {};
+  }
 
   // Re-find the target. A locked target is the ONLY acceptable target: if it cannot be found,
   // nothing is clicked (never fall back to a different button).
   const resolve = (atDrop: boolean): HTMLElement | null => {
     let el: HTMLElement | null = null;
     if (current && current.isConnected) {
-      el = current;
-    } else if (universalDesc) {
+      if (universalDesc && !elementResolver.matchesContentSignature(current, universalDesc)) {
+        current = null;
+      } else {
+        el = current;
+      }
+    }
+    if (!el && universalDesc) {
       el = elementResolver.relocateUniversal(universalDesc);
       if (el) current = el;
-    } else if (descriptor) {
+    } else if (!el && descriptor) {
       el = elementResolver.relocate(descriptor);
       if (el) current = el;
     }
@@ -137,10 +146,8 @@ export function startHunt(opts: HuntOptions): () => void {
     // If user locked a target and it cannot be relocated, NEVER fall back to another button
     if (isLockedHunt) return null;
 
-    if (!atDrop) return null;
-    const candidates = elementResolver
-      .findCollectButtons(opts.keyword)
-      .filter((el) => opts.keyword || !openBeforeDrop.has(key(el)));
+    if (!atDrop || !opts.keyword) return null;
+    const candidates = elementResolver.findCollectButtons(opts.keyword);
     current = candidates[0] ?? null;
     if (current) {
       if (!initialText) {
@@ -163,20 +170,33 @@ export function startHunt(opts: HuntOptions): () => void {
   };
 
   ticker.start(HUNT_DEFAULTS.tickMs, () => {
-    if (done) return;
-    const t = opts.now();
+    try {
+      if (done) return;
+
+      // M4: Page navigation constraint (SPA pushState/redirect)
+      if (
+        initialPageUrl &&
+        typeof window !== "undefined" &&
+        !isSamePageUrl(window.location.href, initialPageUrl)
+      ) {
+        finish("cancelled", "Page navigated away during hunt");
+        return;
+      }
+
+      const t = opts.now();
     const untilDrop = opts.targetTimestamp - t;
 
     if (untilDrop > leadMs) {
       // Waiting: keep the target located and visible so the burst starts without searching
       if (untilDrop < 60_000) {
-        if (!descriptor && !universalDesc && !opts.keyword) {
-          for (const el of elementResolver.findCollectButtons()) openBeforeDrop.add(key(el));
-        }
         const el = resolve(false);
         if (el && !scrolled) {
-          el.scrollIntoView({ block: "center" });
-          scrolled = true;
+          try {
+            el.scrollIntoView({ block: "center" });
+            scrolled = true;
+          } catch {
+            // ignore
+          }
         }
       }
       status(t, `Waiting for the drop: ${(untilDrop / 1000).toFixed(1)}s`);
@@ -209,7 +229,8 @@ export function startHunt(opts: HuntOptions): () => void {
     // 1. Completion verification: ONLY valid if we clicked at least once!
     // Prevents false-positives when target button still displays yesterday's completion label
     if (clicks > 0) {
-      const check = elementResolver.isTargetCompleted(el, initialText, clicks);
+      const activeBaseline = baselineTextAtDrop ?? initialText;
+      const check = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
       if (check.completed) {
         if (check.state === "saved") return finish("saved", check.reason);
         if (check.state === "exhausted") return finish("exhausted", check.reason);
@@ -255,6 +276,11 @@ export function startHunt(opts: HuntOptions): () => void {
       clicks < maxClicks
     ) {
       const isFirstClick = clicks === 0;
+      if (isFirstClick) {
+        // C1-a: Capture the true baseline text right before click 1 at drop moment
+        // (after countdown has transitioned to the actionable label)
+        baselineTextAtDrop = elementResolver.text(el);
+      }
       if (humanClicker.dispatchClick(el, { profileMode, approach: isFirstClick })) {
         clicks++;
         lastClickAt = t;
@@ -263,10 +289,11 @@ export function startHunt(opts: HuntOptions): () => void {
         currentIntervalMs =
           opts.clickIntervalMs !== undefined
             ? opts.clickIntervalMs
-            : computeNextInterval(profile, clicks).intervalMs;
+            : computeNextInterval(profile, clicks + 1).intervalMs;
 
         // Check completion immediately after click was dispatched
-        const postCheck = elementResolver.isTargetCompleted(el, initialText, clicks);
+        const activeBaseline = baselineTextAtDrop ?? initialText;
+        const postCheck = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
         if (postCheck.completed) {
           if (postCheck.state === "saved") return finish("saved", postCheck.reason);
           if (postCheck.state === "exhausted") return finish("exhausted", postCheck.reason);
@@ -274,6 +301,10 @@ export function startHunt(opts: HuntOptions): () => void {
       }
     }
     status(t, clicks > 0 ? `Target active · ${clicks} clicks` : "Waiting for target button...");
+  } catch (err) {
+    // M6: Catch uncaught errors in tick to avoid hung loop/UI
+    finish("not_found", "Runtime error during hunt: " + (err as Error).message);
+  }
   });
 
   return () => finish("cancelled", "Cancelled");

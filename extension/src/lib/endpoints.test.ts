@@ -34,6 +34,7 @@ describe("validateApiUrl", () => {
 describe("validateWebUrl", () => {
   it("accepts a DealHunter web origin matching the sender", () => {
     expect(validateWebUrl("https://dealhunter.vn", "https://dealhunter.vn")).toBe("https://dealhunter.vn");
+    expect(validateWebUrl("https://www.dealhunter.vn", "https://www.dealhunter.vn")).toBe("https://www.dealhunter.vn");
     expect(validateWebUrl("http://localhost:3100", "http://localhost:3100")).toBe("http://localhost:3100");
   });
 

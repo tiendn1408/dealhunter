@@ -7,14 +7,10 @@
   "permissions": [
     "storage",
     "alarms",
-    "tabs",
     "scripting"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "https://dealhunter.vn/*",
-    "https://api.dealhunter.vn/*",
-    "http://localhost/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js",
@@ -54,7 +50,8 @@
     "matches": [
       "http://localhost:3000/*",
       "http://localhost:3100/*",
-      "https://dealhunter.vn/*"
+      "https://dealhunter.vn/*",
+      "https://www.dealhunter.vn/*"
     ]
   },
   "web_accessible_resources": [
@@ -63,7 +60,10 @@
         "icons/*.png"
       ],
       "matches": [
-        "<all_urls>"
+        "http://localhost:3000/*",
+        "http://localhost:3100/*",
+        "https://dealhunter.vn/*",
+        "https://www.dealhunter.vn/*"
       ]
     }
   ]

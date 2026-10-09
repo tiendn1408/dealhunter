@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextDropAt, nextFlashDrop, formatVN, nextExactDropAt, formatCountdown } from "./drop_time";
+import { nextDropAt, nextFlashDrop, formatVN, nextExactDropAt, formatCountdown, parseTimeString } from "./drop_time";
 
 const vn = (iso: string) => new Date(iso + "+07:00").getTime();
 
@@ -42,3 +42,33 @@ describe("drop time (Vietnam GMT+7)", () => {
     expect(formatCountdown(ms12h)).toBe("12:45:30.90");
   });
 });
+
+describe("L1: parseTimeString validation", () => {
+  it("parses valid HH:mm:ss and HH:mm formats", () => {
+    const res1 = parseTimeString("12:30:45");
+    expect(res1.valid).toBe(true);
+    expect(res1.h).toBe(12);
+    expect(res1.m).toBe(30);
+    expect(res1.s).toBe(45);
+    expect(res1.formatted).toBe("12:30:45");
+
+    const res2 = parseTimeString("9:5");
+    expect(res2.valid).toBe(true);
+    expect(res2.h).toBe(9);
+    expect(res2.m).toBe(5);
+    expect(res2.s).toBe(0);
+    expect(res2.formatted).toBe("09:05:00");
+  });
+
+  it("marks invalid hour, minute, second or syntax as invalid", () => {
+    expect(parseTimeString("12:60").valid).toBe(false);
+    expect(parseTimeString("24:00").valid).toBe(false);
+    expect(parseTimeString("25:10:00").valid).toBe(false);
+    expect(parseTimeString("12:30:60").valid).toBe(false);
+    expect(parseTimeString("abc").valid).toBe(false);
+    expect(parseTimeString("").valid).toBe(false);
+    expect(parseTimeString("12:").valid).toBe(false);
+    expect(parseTimeString("12:30:").valid).toBe(false);
+  });
+});
+

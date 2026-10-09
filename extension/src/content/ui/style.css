@@ -36,8 +36,9 @@
 }
 
 #dealhunter-badge-root {
-  bottom: 120px !important;
+  top: 90px !important;
   right: 24px !important;
+  z-index: 2147483646 !important;
 }
 
 /* Universal typography & box model isolation across all DealHunter descendants */

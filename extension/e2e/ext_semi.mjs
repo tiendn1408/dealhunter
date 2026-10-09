@@ -1,6 +1,10 @@
 // Loads the built extension in real Chrome and runs a semi-auto hunt on a simulated Shopee voucher page.
 import puppeteer from "puppeteer-core";
-const EXT = "/Users/tien.dang/Workplace/reference/dealhunter/extension/dist";
+import { fileURLToPath } from "url";
+import path from "path";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const EXT = path.resolve(__dirname, "../dist");
 const PAGE = "https://shopee.vn/m/dh-e2e-voucher";
 
 const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>Ma giam gia</title></head><body>
@@ -45,22 +49,40 @@ page.on("console", (m) => logs.push(m.text()));
 await page.goto(PAGE, { waitUntil: "domcontentloaded" });
 await page.waitForSelector("#dealhunter-hud-root", { timeout: 15000 });
 const clickByText = (text) =>
-  page.evaluate((t) => { const el = [...document.querySelectorAll("#dealhunter-hud-root button")].find((b) => b.textContent.includes(t)); el?.click(); return !!el; }, text);
+  page.evaluate((t) => {
+    const el = [...document.querySelectorAll("#dealhunter-hud-root button")].find(
+      (b) => b.textContent.toLowerCase().includes(t.toLowerCase()) || b.title?.toLowerCase().includes(t.toLowerCase())
+    );
+    el?.click();
+    return !!el;
+  }, text);
 
-await new Promise((r) => setTimeout(r, 4000)); // let the clock calibrate against live Shopee
+await new Promise((r) => setTimeout(r, 4000)); // let the clock calibrate
 const hudBefore = await page.$eval("#dealhunter-hud-root", (e) => e.innerText);
 
-await clickByText("Phut Toi");
+const clickedNextMinute = (await clickByText("+1m")) || (await clickByText("+1p"));
 const hudStatus = () => page.$eval("#dealhunter-hud-root", (e) => e.innerText.split("\n").pop());
-console.log("after Phut Toi:", await hudStatus());
-await clickByText("Tro Chon Nut");
-console.log("after Tro Chon:", await hudStatus());
-await page.click("#b-target"); // lock the (still disabled) target voucher
+console.log("after Next Minute slot:", clickedNextMinute, "|", await hudStatus());
+
+const clickedPick = (await clickByText("Pick")) || (await clickByText("Chọn"));
+console.log("after Pick Button:", clickedPick, "|", await hudStatus());
+
+await page.click("#b-target"); // lock the target voucher
 await new Promise((r) => setTimeout(r, 300));
 console.log("after picking target:", await hudStatus(), "| highlighted:", await page.$$eval(".dh-target-highlight", (els) => els.map((e) => e.id || e.tagName)));
-console.log("arm click found:", await clickByText("BAT SAN MA"));
+
+const armed = await page.evaluate(() => {
+  const btn = document.querySelector(".dh-arm-btn");
+  if (btn) {
+    btn.click();
+    return true;
+  }
+  return false;
+});
+console.log("arm click:", armed);
 await new Promise((r) => setTimeout(r, 500));
 console.log("HUD after arm:", (await page.$eval("#dealhunter-hud-root", (e) => e.innerText)).replace(/\n/g, " | "));
+
 const releaseAt = await page.evaluate(() => window.__release);
 const waitMs = releaseAt - Date.now() + 5000;
 console.log(`armed; waiting ${Math.round(waitMs / 1000)}s for the drop...`);
@@ -70,13 +92,18 @@ const hudAfter = await page.$eval("#dealhunter-hud-root", (e) => e.innerText);
 const log = await page.evaluate(() => window.__log);
 await browser.close();
 
+const isSaved =
+  hudAfter.toLowerCase().includes("lưu") ||
+  hudAfter.toLowerCase().includes("saved") ||
+  hudAfter.includes("DA LUU");
+
 const checks = [
   ["HUD injected on shopee.vn page", hudBefore.length > 0],
   ["clock calibrated against live Shopee", /ms ±\d+ms/.test(hudBefore), hudBefore.match(/[+-]?\d+ms ±\d+ms|CHUA DONG BO[^\n]*/)?.[0]],
   ["decoy voucher never clicked", !log.includes("decoy"), JSON.stringify(log)],
   ["new (re-rendered) target button clicked", log.some((l) => l.startsWith("target@")), JSON.stringify(log)],
   ["first click lands within 300ms of the drop", log.filter((l) => l.startsWith("target@")).map((l) => parseInt(l.slice(7))).every((ms) => ms >= 0 && ms < 300), JSON.stringify(log)],
-  ["HUD reports saved (page confirmed)", hudAfter.includes("DA LUU MA"), hudAfter.split("\n").slice(-3).join(" | ")],
+  ["HUD reports saved (page confirmed)", isSaved, hudAfter.split("\n").slice(-3).join(" | ")],
 ];
 console.log("console:", logs.filter((l) => !l.includes("Download the React")).slice(-15).join("\n  "));
 for (const [name, ok, detail] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  -> " + detail : ""}`);

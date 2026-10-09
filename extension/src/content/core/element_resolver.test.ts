@@ -180,4 +180,95 @@ describe("ElementResolver", () => {
     expect(relocated?.className).toBe("btn-active-new");
     expect(relocated?.innerText).toBe("Điểm danh");
   });
+
+  it("C1-c: does not misidentify ticket or checkout icon as success/check", () => {
+    const ticketBtn = document.createElement("button");
+    ticketBtn.innerHTML = '<i class="icon-ticket"></i> Mua vé';
+    document.body.appendChild(ticketBtn);
+    expect(resolver.isTargetCompleted(ticketBtn, "Mua vé", 1).completed).toBe(false);
+
+    const checkoutBtn = document.createElement("button");
+    checkoutBtn.innerHTML = '<svg class="checkout-icon"></svg> Checkout';
+    document.body.appendChild(checkoutBtn);
+    expect(resolver.isTargetCompleted(checkoutBtn, "Checkout", 1).completed).toBe(false);
+  });
+
+  it("C1-d: does not mark as saved simply because node was removed from DOM", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Lưu";
+    document.body.appendChild(btn);
+    // Simulate node removal (e.g. redirected or unmounted during re-render)
+    btn.remove();
+    const status = resolver.isTargetCompleted(btn, "Lưu", 1);
+    expect(status.completed).toBe(false);
+    expect(status.state).not.toBe("saved");
+  });
+
+  it("C2: relocateUniversal does not pick another button when original card was removed", () => {
+    document.body.innerHTML = `
+      <div class="voucher-card" id="card-1">
+        <span>Giảm 50k đơn 500k</span>
+        <button class="btn-collect">Lưu</button>
+      </div>
+      <div class="voucher-card" id="card-2">
+        <span>Giảm 20k đơn 200k</span>
+        <button class="btn-collect">Lưu</button>
+      </div>
+    `;
+    const btn1 = document.querySelector("#card-1 button") as HTMLElement;
+    const desc1 = resolver.describeUniversal(btn1);
+
+    // Now simulate card-1 disappears (consumed or expired), leaving only card-2:
+    document.body.innerHTML = `
+      <div class="voucher-card" id="card-2">
+        <span>Giảm 20k đơn 200k</span>
+        <button class="btn-collect">Lưu</button>
+      </div>
+    `;
+
+    const relocated = resolver.relocateUniversal(desc1);
+    // Must NOT match card-2 because its valueTokens and card content are completely different!
+    expect(relocated).toBeNull();
+  });
+
+  it("C2: relocateUniversal does not pick another button when card index shifts without ID", () => {
+    document.body.innerHTML = `
+      <div class="voucher-list">
+        <div class="voucher-card">
+          <span>Giảm 50k đơn 500k</span>
+          <button class="btn-collect">Lưu</button>
+        </div>
+        <div class="voucher-card">
+          <span>Giảm 20k đơn 200k</span>
+          <button class="btn-collect">Lưu</button>
+        </div>
+      </div>
+    `;
+    const btn1 = document.querySelector(".voucher-card button") as HTMLElement;
+    const desc1 = resolver.describeUniversal(btn1);
+
+    // Card 1 disappears, card 2 is now :nth-of-type(1):
+    document.body.innerHTML = `
+      <div class="voucher-list">
+        <div class="voucher-card">
+          <span>Giảm 20k đơn 200k</span>
+          <button class="btn-collect">Lưu</button>
+        </div>
+      </div>
+    `;
+
+    const relocated = resolver.relocateUniversal(desc1);
+    expect(relocated).toBeNull();
+  });
+
+  it("M10: button with data-state='active' is not considered completed/saved", () => {
+    const tabBtn = document.createElement("button");
+    tabBtn.setAttribute("data-state", "active");
+    tabBtn.innerText = "Tab 1";
+    document.body.appendChild(tabBtn);
+
+    const check = resolver.isTargetCompleted(tabBtn, "Tab 1", 1);
+    expect(check.completed).toBe(false);
+    expect(check.state).not.toBe("saved");
+  });
 });

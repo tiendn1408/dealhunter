@@ -1,3 +1,5 @@
+export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "missed";
+
 export type ClickProfileMode = "adaptive" | "stealth" | "pro_gamer" | "turbo";
 
 export interface ScheduledTask {
@@ -5,6 +7,7 @@ export interface ScheduledTask {
   targetHour: number; // 0..23
   targetMinute: number; // 0..59
   targetSecond?: number; // 0..59
+  targetAt?: number; // absolute epoch drop timestamp in ms
   targetUrl: string;
   label: string;
   mode: "semi_auto" | "full_auto";
@@ -26,7 +29,7 @@ export interface ScheduledTask {
   dualDefenseReload?: boolean; // automatically executes pre-warm reload & emergency fallback if static
   clickProfileMode?: ClickProfileMode; // default: "adaptive"
   diagnostics?: TargetDiagnosticsSummary;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  status: TaskStatus;
   createdAt: number;
   /** What the page actually showed at the end of the hunt. */
   lastResult?: {

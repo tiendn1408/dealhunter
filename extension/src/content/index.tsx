@@ -10,6 +10,7 @@ import { nextDropAt, nextExactDropAt } from "../lib/drop_time";
 import { ScheduledTask } from "../lib/types";
 import { MESSAGE_ACTIONS } from "../lib/constants";
 import { storage } from "../lib/storage";
+import { isSamePageUrl } from "../lib/url";
 import "./ui/style.css";
 
 console.log("[DealHunter Assistant] Content script injected on", window.location.href);
@@ -17,14 +18,19 @@ console.log("[DealHunter Assistant] Content script injected on", window.location
 // 1. Initialize clock calibration
 timeSyncClient.init();
 
+let hudRoot: ReactDOM.Root | null = null;
+let badgeRoot: ReactDOM.Root | null = null;
+
 // 2. Inject Floating HUD on voucher/campaign/cart pages or pages with a saved target / scheduled task / armed session
 async function injectFloatingHUD(force = false, autoPick = false) {
+  const isShopee = window.location.hostname.includes("shopee.");
   const isVoucherPage =
-    window.location.href.includes("/m/ma-giam-gia") ||
-    window.location.href.includes("/m/10-10") ||
-    window.location.href.includes("/m/11-11") ||
-    window.location.href.includes("/m/") ||
-    window.location.href.includes("/cart");
+    isShopee &&
+    (window.location.href.includes("/m/ma-giam-gia") ||
+      window.location.href.includes("/m/10-10") ||
+      window.location.href.includes("/m/11-11") ||
+      window.location.href.includes("/m/") ||
+      window.location.href.includes("/cart"));
 
   let hasSavedTarget = false;
   let hasScheduledTask = false;
@@ -34,7 +40,7 @@ async function injectFloatingHUD(force = false, autoPick = false) {
     const raw = sessionStorage.getItem(ARMED_SESSION_KEY);
     if (raw) {
       const sess = JSON.parse(raw);
-      if (sess.url === window.location.href) {
+      if (sess.url && isSamePageUrl(sess.url, window.location.href)) {
         hasArmedSession = true;
       }
     }
@@ -55,14 +61,8 @@ async function injectFloatingHUD(force = false, autoPick = false) {
         const tasks = await storage.getTasks();
         const currentUrl = window.location.href;
         hasScheduledTask = tasks.some((t) => {
-          if (t.status === "completed" || t.status === "failed" || t.status === "cancelled") return false;
-          try {
-            const u1 = new URL(t.targetUrl);
-            const u2 = new URL(currentUrl);
-            return u1.origin === u2.origin && u1.pathname === u2.pathname;
-          } catch {
-            return t.targetUrl === currentUrl;
-          }
+          if (t.status === "completed" || t.status === "failed" || t.status === "cancelled" || t.status === "missed") return false;
+          return isSamePageUrl(t.targetUrl, currentUrl);
         });
       } catch {
         // ignore
@@ -77,14 +77,30 @@ async function injectFloatingHUD(force = false, autoPick = false) {
   container.id = "dealhunter-hud-root";
   document.body.appendChild(container);
 
-  const root = ReactDOM.createRoot(container);
-  root.render(<FloatingHUD onClose={() => container.remove()} hostElement={container} autoPick={autoPick} />);
+  hudRoot = ReactDOM.createRoot(container);
+  hudRoot.render(
+    <FloatingHUD
+      onClose={() => {
+        try {
+          hudRoot?.unmount();
+        } catch {
+          // ignore
+        }
+        container.remove();
+        hudRoot = null;
+      }}
+      hostElement={container}
+      autoPick={autoPick}
+    />
+  );
 }
 
 // 3. Inject Price History Badge on product pages
 function injectPriceHistoryBadge() {
+  const isShopee = window.location.hostname.includes("shopee.");
   const isProductPage =
-    window.location.href.includes("-i.") || window.location.href.includes("/product/");
+    isShopee &&
+    (window.location.href.includes("-i.") || window.location.href.includes("/product/"));
 
   if (!isProductPage) return;
   if (document.getElementById("dealhunter-badge-root")) return;
@@ -93,8 +109,8 @@ function injectPriceHistoryBadge() {
   container.id = "dealhunter-badge-root";
   document.body.appendChild(container);
 
-  const root = ReactDOM.createRoot(container);
-  root.render(<PriceHistoryBadge />);
+  badgeRoot = ReactDOM.createRoot(container);
+  badgeRoot.render(<PriceHistoryBadge />);
 }
 
 // Initialize injections and auto-resume scheduled tasks
@@ -149,20 +165,11 @@ async function checkAndResumeScheduledTasks() {
     const now = Date.now();
 
     const activeTask = tasks.find((t) => {
-      if (t.status === "completed" || t.status === "failed" || t.status === "cancelled") return false;
-      const urlMatches = (() => {
-        try {
-          const u1 = new URL(t.targetUrl);
-          const u2 = new URL(currentUrl);
-          return u1.origin === u2.origin && u1.pathname === u2.pathname;
-        } catch {
-          return t.targetUrl === currentUrl;
-        }
-      })();
-      if (!urlMatches) return false;
+      if (t.status === "completed" || t.status === "failed" || t.status === "cancelled" || t.status === "missed") return false;
+      if (!isSamePageUrl(t.targetUrl, currentUrl)) return false;
 
       const second = t.targetSecond ?? 0;
-      const targetTimestamp = nextExactDropAt(t.targetHour, t.targetMinute, second, now);
+      const targetTimestamp = t.targetAt ?? nextExactDropAt(t.targetHour, t.targetMinute, second, now);
       const preWarmMs = (t.preWarmSeconds ?? 60) * 1000;
       const untilDrop = targetTimestamp - now;
       return untilDrop <= preWarmMs && untilDrop >= -15_000;
@@ -196,6 +203,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     console.log("[DealHunter] Full-Auto trigger message received for task:", task);
     sendResponse({ received: true });
     executeFullAutoTask(task);
+    return false;
+  }
+
+  if (message.action === MESSAGE_ACTIONS.CANCEL_TASK) {
+    // H4: Disarm active hunt on this tab and clean session
+    huntCoordinator.disarm(false);
+    try {
+      sessionStorage.removeItem(ARMED_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+    sendResponse({ success: true, cancelled: true });
     return false;
   }
 

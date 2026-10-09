@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Plus, Bookmark, Globe, Crosshair, Sparkles, CheckCircle2, ChevronDown } from "lucide-react";
 import { ScheduledTask, SavedPageTarget, ClickProfileMode } from "../../lib/types";
 import { storage } from "../../lib/storage";
-import { nextExactDropAt, formatVN } from "../../lib/drop_time";
-import { taskScheduler } from "../../background/scheduler";
-import { MESSAGE_ACTIONS } from "../../lib/constants";
+import { nextExactDropAt, formatVN, parseTimeString } from "../../lib/drop_time";
+import { scheduleTaskViaBackground } from "../../lib/scheduler_client";
+import { MESSAGE_ACTIONS, SHOPEE_FLASH_HOURS } from "../../lib/constants";
+import { isValidHttpUrl } from "../../lib/url";
 import { Language, getTranslation } from "../../lib/i18n";
 
 interface ScheduleFormProps {
@@ -16,7 +17,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 
 /**
  * Calculates the next upcoming popular flash sale drop time in Vietnam (UTC+7).
- * Standard sales occur at 00:00, 09:00, 12:00, 18:00, 21:00.
+ * Uses standardized SHOPEE_FLASH_HOURS [0, 9, 12, 15, 18, 21] (L3).
  */
 function getNextSaleDrop(nowMs: number): { timeStr: string; label: string; hour: number } {
   const vnTime = new Date(nowMs + 7 * 3600 * 1000);
@@ -24,7 +25,7 @@ function getNextSaleDrop(nowMs: number): { timeStr: string; label: string; hour:
   const currM = vnTime.getUTCMinutes();
   const totalMinutes = currH * 60 + currM;
 
-  const popularSaleHours = [0, 9, 12, 18, 21];
+  const popularSaleHours = SHOPEE_FLASH_HOURS;
   let nextH = popularSaleHours.find((h) => h * 60 > totalMinutes);
   if (nextH === undefined) {
     nextH = 0; // Next drop is tomorrow midnight
@@ -99,22 +100,19 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
     });
   }, []);
 
-  // Parse time input into h, m, s
+  // Parse time input into h, m, s with strict validation (L1)
   const parsedTime = useMemo(() => {
-    const parts = timeInput.split(":").map((p) => parseInt(p.trim(), 10));
-    const h = Number.isFinite(parts[0]) && parts[0] >= 0 && parts[0] < 24 ? parts[0] : 0;
-    const m = Number.isFinite(parts[1]) && parts[1] >= 0 && parts[1] < 60 ? parts[1] : 0;
-    const s = Number.isFinite(parts[2]) && parts[2] >= 0 && parts[2] < 60 ? parts[2] : 0;
-    return { h, m, s, timeStr: `${pad(h)}:${pad(m)}:${pad(s)}` };
+    return parseTimeString(timeInput);
   }, [timeInput]);
 
   // When this hunt will actually run in Vietnam time
   const runsAt = useMemo(() => {
+    if (!parsedTime.valid) return "--:--:--";
     const at = nextExactDropAt(parsedTime.h, parsedTime.m, parsedTime.s, Date.now());
     const isSameDay =
       new Date(at + 7 * 3600 * 1000).getUTCDate() === new Date(Date.now() + 7 * 3600 * 1000).getUTCDate();
     const dayLabel = isSameDay ? t.today : t.tomorrow;
-    return `${dayLabel} ${parsedTime.timeStr}`;
+    return `${dayLabel} ${parsedTime.formatted}`;
   }, [parsedTime, t]);
 
   const altSale1 = nextSale.label === "00:00" ? "09:00" : "00:00";
@@ -136,7 +134,11 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const tabId = tabs[0]?.id;
         if (tabId) {
-          chrome.tabs.sendMessage(tabId, { action: MESSAGE_ACTIONS.ACTIVATE_HUD, pickTarget: true });
+          chrome.tabs.sendMessage(tabId, { action: MESSAGE_ACTIONS.ACTIVATE_HUD, pickTarget: true }, () => {
+            if (chrome.runtime.lastError) {
+              // Gracefully handle inactive or non-injectable tab (L5)
+            }
+          });
           window.close();
         }
       });
@@ -145,6 +147,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!parsedTime.valid) return;
 
     let finalUrl = "";
     let finalLabel = "";
@@ -154,22 +157,22 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
       finalUrl = currentTabUrl;
       targetSnapshot = currentTabTarget || undefined;
       const targetName = targetSnapshot?.name || currentTabDomain;
-      finalLabel = `${parsedTime.timeStr} · ${targetName}`;
+      finalLabel = `${parsedTime.formatted} · ${targetName}`;
     } else if (targetMode === "saved") {
       targetSnapshot = savedTargets.find((t) => t.id === selectedSavedId);
       if (!targetSnapshot) return;
       finalUrl = targetSnapshot.url;
-      finalLabel = `${parsedTime.timeStr} · ${targetSnapshot.name}`;
+      finalLabel = `${parsedTime.formatted} · ${targetSnapshot.name}`;
     } else {
       finalUrl = customUrl.trim();
-      if (!finalUrl) return;
+      if (!isValidHttpUrl(finalUrl)) return;
       let host = "Web";
       try {
         host = new URL(finalUrl).hostname.replace(/^www\./, "");
       } catch {
         // ignore
       }
-      finalLabel = `${parsedTime.timeStr} · ${host}`;
+      finalLabel = `${parsedTime.formatted} · ${host}`;
     }
 
     setSubmitting(true);
@@ -192,11 +195,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         createdAt: Date.now(),
       };
 
-      try {
-        await chrome.runtime.sendMessage({ action: MESSAGE_ACTIONS.SCHEDULE_TASK, task: newTask });
-      } catch {
-        await taskScheduler.scheduleTask(newTask);
-      }
+      await scheduleTaskViaBackground(newTask);
       onTaskCreated();
     } finally {
       setSubmitting(false);
@@ -370,8 +369,15 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
               value={customUrl}
               onChange={(e) => setCustomUrl(e.target.value)}
               placeholder={t.customUrlPlaceholder}
-              className="w-full rounded-lg bg-white/5 px-2.5 py-1 text-[11px] text-slate-100 ring-1 ring-white/10 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
+              className={`w-full rounded-lg bg-white/5 px-2.5 py-1 text-[11px] text-slate-100 ring-1 placeholder:text-slate-500 focus:outline-none focus:ring-1 font-mono ${
+                customUrl.trim() && !isValidHttpUrl(customUrl.trim())
+                  ? "ring-rose-500/50 focus:ring-rose-400"
+                  : "ring-white/10 focus:ring-emerald-400"
+              }`}
             />
+            {customUrl.trim() && !isValidHttpUrl(customUrl.trim()) && (
+              <span className="text-[9px] font-semibold text-rose-400">{t.invalidUrl}</span>
+            )}
           </div>
         )}
       </div>
@@ -390,7 +396,11 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
             value={timeInput}
             onChange={(e) => setTimeInput(e.target.value)}
             placeholder="HH:mm:ss"
-            className="w-24 shrink-0 rounded-xl bg-black/40 px-2 py-1.5 text-center font-mono text-sm font-bold text-emerald-300 ring-1 ring-white/10 outline-none focus:ring-2 focus:ring-emerald-400"
+            className={`w-24 shrink-0 rounded-xl bg-black/40 px-2 py-1.5 text-center font-mono text-sm font-bold ring-1 outline-none focus:ring-2 ${
+              !parsedTime.valid
+                ? "text-rose-300 ring-rose-500/50 focus:ring-rose-400"
+                : "text-emerald-300 ring-white/10 focus:ring-emerald-400"
+            }`}
           />
           <div className="flex flex-1 items-center gap-1">
             {[
@@ -425,6 +435,9 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
             })}
           </div>
         </div>
+        {!parsedTime.valid && (
+          <span className="text-[9px] font-semibold text-rose-400">{t.invalidTimeFormat}</span>
+        )}
       </div>
 
       {/* Submit Button */}
@@ -432,14 +445,15 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         type="submit"
         disabled={
           submitting ||
+          !parsedTime.valid ||
           (targetMode === "current" && !currentTabUrl) ||
           (targetMode === "saved" && savedTargets.length === 0) ||
-          (targetMode === "custom" && !customUrl.trim())
+          (targetMode === "custom" && (!customUrl.trim() || !isValidHttpUrl(customUrl.trim())))
         }
         className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-2.5 text-[13px] font-bold text-slate-950 shadow-lg shadow-emerald-950/50 transition hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50"
       >
         <Plus className="h-4 w-4" />
-        {t.scheduleSubmitBtn(parsedTime.timeStr)}
+        {t.scheduleSubmitBtn(parsedTime.formatted)}
       </button>
     </form>
   );

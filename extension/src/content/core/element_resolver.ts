@@ -89,6 +89,28 @@ function computeCssSelector(el: HTMLElement): string {
   return path.join(" > ");
 }
 
+export function hasCompletionIcon(button: HTMLElement): boolean {
+  const iconElements = button.querySelectorAll<HTMLElement>("svg, i, span[class*='icon'], [role='img']");
+  for (const el of iconElements) {
+    const rawCls = el.getAttribute("class") || (typeof el.className === "string" ? el.className : "");
+    const testId = el.getAttribute("data-testid") || "";
+    const ariaLabel = el.getAttribute("aria-label") || "";
+    const title = el.getAttribute("title") || "";
+    const combined = `${rawCls} ${testId} ${ariaLabel} ${title}`.toLowerCase();
+
+    // Explicitly reject ticket, checkout, checkbox
+    if (/(?:ticket|checkout|checkbox)/i.test(combined)) {
+      continue;
+    }
+
+    // Match check, checkmark, success, done as whole words or delimited by - / _ / space
+    if (/(?:^|[\s_-])(check|checkmark|success|done)(?:$|[\s_-])/i.test(combined)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export class ElementResolver {
   text(el: Element | null | undefined): string {
     return ((el as HTMLElement | null)?.innerText || el?.textContent || "").replace(/\s+/g, " ").trim();
@@ -115,6 +137,17 @@ export class ElementResolver {
       const label = this.text(el);
       if (!label && el.children.length === 0) continue;
 
+      // Exclude HUD, badge, and overlay elements
+      if (
+        typeof el.closest === "function" &&
+        (el.closest("#dealhunter-hud-root") ||
+          el.closest("#dh-picker-overlay") ||
+          el.closest("#dealhunter-badge-root") ||
+          el.closest(".dh-root"))
+      ) {
+        continue;
+      }
+
       // Filter out non-action secondary widgets (modal openers, details toggles, plain navigation links)
       if (
         el.getAttribute("aria-haspopup") === "dialog" ||
@@ -130,6 +163,14 @@ export class ElementResolver {
       const cls = typeof el.className === "string" ? el.className : "";
       if (
         /(?:^|[\s_-])(secondary|detail|terms|condition|rules?|info|more|link|dismiss|cancel|close|help)(?:$|[\s_-])/i.test(cls)
+      ) {
+        continue;
+      }
+
+      // Exclude dangerous payment / purchase buttons from automatic scanning
+      if (
+        /(?:^|[\s_-])(checkout|buy-now|btn-buy|payment|place-order|pay)(?:$|[\s_-])/i.test(cls) ||
+        /^(mua ngay|mua với voucher|thanh toán|đặt hàng|place order|checkout|buy now)$/i.test(label)
       ) {
         continue;
       }
@@ -162,23 +203,18 @@ export class ElementResolver {
       return "saved";
     }
 
-    // 2. Standard HTML5 / Framework Data Contracts
+    // 2. Standard HTML5 / Framework Data Contracts (exclude active state which represents tabs/toggles)
     const dataState = button.getAttribute("data-state") || "";
     const dataStatus = button.getAttribute("data-status") || "";
     if (
-      /^(checked|success|completed|saved|claimed|done|active)$/i.test(dataState) ||
+      /^(checked|success|completed|saved|claimed|done)$/i.test(dataState) ||
       /^(success|completed|saved|claimed|done)$/i.test(dataStatus)
     ) {
       return "saved";
     }
 
-    // 3. Structural Icon Marker: Checkmark / Success Icon inside button
-    const hasSuccessIcon = Boolean(
-      button.querySelector(
-        'svg[class*="check" i], svg[class*="success" i], svg[class*="done" i], [class*="icon-check" i], [class*="icon-success" i], [class*="tick" i]'
-      )
-    );
-    if (hasSuccessIcon) {
+    // 3. Structural Icon Marker: Checkmark / Success Icon inside button (robust whole-word match)
+    if (hasCompletionIcon(button)) {
       return "saved";
     }
 
@@ -233,20 +269,25 @@ export class ElementResolver {
 
   /**
    * Universal completion detector: purely behavioral and structural.
-   * Confirms action success via DOM removal, disabled transitions, ARIA state updates,
+   * Confirms action success via stable state updates, ARIA attributes,
    * and text mutations without requiring language-specific dictionaries.
    */
   isTargetCompleted(button: HTMLElement | null, initialText?: string, clicksCount = 0): CompletionStatus {
-    // 1. DOM removal / Consumption after click
+    // 1. Target not in DOM: disconnection from DOM is NOT proof of success (could be redirect/captcha/re-render)
     if (!button || !button.isConnected) {
-      if (clicksCount > 0) {
-        return { completed: true, state: "saved", reason: "Target element consumed/removed from DOM after click" };
-      }
       return { completed: false, state: "gone", reason: "Target element not in DOM" };
     }
 
     const currentText = this.text(button);
     const cls = typeof button.className === "string" ? button.className : "";
+
+    // Intermediate loading / in-flight state is not completion
+    const isBusy =
+      button.getAttribute("aria-busy") === "true" ||
+      /(?:^|[\s_-])(loading|is-loading|spinner|busy)(?:$|[\s_-])/i.test(cls);
+    if (isBusy) {
+      return { completed: false, state: "collectable", reason: "Target in loading/in-flight state" };
+    }
 
     // 2. Behavioral state transitions after clicks dispatched
     if (clicksCount > 0) {
@@ -267,11 +308,7 @@ export class ElementResolver {
       }
 
       // 2c. Checkmark or success icon added inside button after click
-      const hasSuccessIcon = Boolean(
-        button.querySelector(
-          'svg[class*="check" i], svg[class*="success" i], svg[class*="done" i], [class*="icon-check" i], [class*="icon-success" i], [class*="tick" i]'
-        )
-      );
+      const hasSuccessIcon = hasCompletionIcon(button);
 
       // 2d. Class mutation: button gained completed/saved/success class
       const hasCompletedClass =
@@ -401,21 +438,57 @@ export class ElementResolver {
   }
 
   /**
+   * Validates whether a candidate element strictly matches the content/value signature of the descriptor.
+   */
+  matchesContentSignature(candidate: HTMLElement, desc: UniversalTargetDescriptor): boolean {
+    const hasTokens = Boolean(desc.valueTokens && desc.valueTokens.length > 0);
+    const hasContainer = Boolean(desc.containerText && desc.containerText.trim().length > 0);
+
+    if (!hasTokens && !hasContainer) {
+      return true;
+    }
+
+    const card = this.findVoucherContainer(candidate);
+    const cardText = card ? this.text(card).replace(this.text(candidate), "").trim() : "";
+
+    if (hasTokens) {
+      const candidateTokens = valueTokens(cardText);
+      const wanted = new Set(desc.valueTokens!);
+      return sameSet(wanted, candidateTokens);
+    }
+
+    if (hasContainer) {
+      if (!cardText) return false;
+      return cardText.includes(desc.containerText!) || desc.containerText!.includes(cardText);
+    }
+
+    return true;
+  }
+
+  /**
    * Re-locates any target button across DOM replacements, framework re-renders, or animations.
-   * Uses ranked heuristics: ID -> unique CSS selector -> key attributes -> DOM path -> text -> geometry.
+   * Uses ranked heuristics with strict content signature validation:
+   * ID -> unique CSS selector -> key attributes -> DOM path -> text -> card container match.
+   * Never falls back to arbitrary spatial guessing.
    */
   relocateUniversal(desc: UniversalTargetDescriptor): HTMLElement | null {
     // 1. By ID
     if (desc.id) {
       const el = document.getElementById(desc.id);
-      if (el && el.isConnected) return this.normalizeTarget(el);
+      if (el && el.isConnected) {
+        const norm = this.normalizeTarget(el);
+        if (this.matchesContentSignature(norm, desc)) return norm;
+      }
     }
 
     // 2. By uniqueSelector
     if (desc.uniqueSelector) {
       try {
         const el = document.querySelector<HTMLElement>(desc.uniqueSelector);
-        if (el && el.isConnected) return this.normalizeTarget(el);
+        if (el && el.isConnected) {
+          const norm = this.normalizeTarget(el);
+          if (this.matchesContentSignature(norm, desc)) return norm;
+        }
       } catch {
         // ignore selector syntax errors
       }
@@ -427,7 +500,10 @@ export class ElementResolver {
       if (val) {
         try {
           const el = document.querySelector<HTMLElement>(`[${attr}="${safeCssEscape(val)}"]`);
-          if (el && el.isConnected) return this.normalizeTarget(el);
+          if (el && el.isConnected) {
+            const norm = this.normalizeTarget(el);
+            if (this.matchesContentSignature(norm, desc)) return norm;
+          }
         } catch {
           // ignore
         }
@@ -440,36 +516,31 @@ export class ElementResolver {
         const parent = document.querySelector(desc.parentSelector);
         if (parent && parent.children[desc.childIndex]) {
           const el = parent.children[desc.childIndex] as HTMLElement;
-          if (el && el.isConnected) return this.normalizeTarget(el);
+          if (el && el.isConnected) {
+            const norm = this.normalizeTarget(el);
+            if (this.matchesContentSignature(norm, desc)) return norm;
+          }
         }
       } catch {
         // ignore
       }
     }
+
     const all = document.querySelectorAll<HTMLElement>(desc.tagName || BUTTON_SELECTOR);
 
-    // 5. By tag name + initial text match (only if container or context matches)
+    // 5. By tag name + initial text match (strictly verifying content signature)
     const candidates: HTMLElement[] = [];
     for (const el of all) {
       if (!el.isConnected) continue;
-      const txt = this.text(el);
+      const norm = this.normalizeTarget(el);
+      if (!this.matchesContentSignature(norm, desc)) continue;
+
+      const txt = this.text(norm);
       if (txt && desc.initialText && txt === desc.initialText) {
-        if (desc.id && el.id && desc.id !== el.id && !desc.containerText) {
+        if (desc.id && norm.id && desc.id !== norm.id && !desc.containerText) {
           continue;
         }
-        if (desc.containerText) {
-          const card = this.findVoucherContainer(el);
-          const cardText = card ? this.text(card).replace(txt, "").trim() : "";
-          if (desc.valueTokens && desc.valueTokens.length > 0) {
-            const wanted = new Set(desc.valueTokens);
-            if (!sameSet(wanted, valueTokens(cardText))) {
-              continue;
-            }
-          } else if (!cardText.includes(desc.containerText) && !desc.containerText.includes(cardText)) {
-            continue;
-          }
-        }
-        candidates.push(this.normalizeTarget(el));
+        candidates.push(norm);
       }
     }
 
@@ -491,37 +562,26 @@ export class ElementResolver {
       return closest;
     }
 
-    // 5b. Language-agnostic fallback: when button text changed between states
-    if (candidates.length === 0 && desc.rect) {
-      const spatialCandidates: HTMLElement[] = [];
+    // 5b. Card-matched fallback: when button text mutated (countdown ended or state changed),
+    // find buttons strictly within the matching card container (NO loose 150px spatial guessing)
+    if (desc.containerText || (desc.valueTokens && desc.valueTokens.length > 0)) {
+      const cardCandidates: HTMLElement[] = [];
       for (const el of all) {
         if (!el.isConnected) continue;
-        const r = el.getBoundingClientRect ? el.getBoundingClientRect() : { top: 0, left: 0, width: 0, height: 0 };
-        if (r.width <= 0 || r.height <= 0) continue;
-
-        if (desc.containerText) {
-          const card = this.findVoucherContainer(el);
-          const cardText = card ? this.text(card).replace(this.text(el), "").trim() : "";
-          if (desc.valueTokens && desc.valueTokens.length > 0) {
-            const wanted = new Set(desc.valueTokens);
-            if (!sameSet(wanted, valueTokens(cardText))) {
-              continue;
-            }
-          } else if (!cardText.includes(desc.containerText) && !desc.containerText.includes(cardText)) {
-            continue;
-          }
-        }
-
-        const dist = Math.hypot(r.left - desc.rect.left, r.top - desc.rect.top);
-        if (dist < 150) {
-          spatialCandidates.push(this.normalizeTarget(el));
+        const norm = this.normalizeTarget(el);
+        if (this.matchesContentSignature(norm, desc)) {
+          cardCandidates.push(norm);
         }
       }
 
-      if (spatialCandidates.length > 0) {
-        let closest = spatialCandidates[0];
+      if (cardCandidates.length === 1) {
+        return cardCandidates[0];
+      }
+
+      if (cardCandidates.length > 1 && desc.rect) {
+        let closest = cardCandidates[0];
         let minDist = Infinity;
-        for (const c of spatialCandidates) {
+        for (const c of cardCandidates) {
           const r = c.getBoundingClientRect ? c.getBoundingClientRect() : { top: 0, left: 0 };
           const dist = Math.hypot(r.left - desc.rect.left, r.top - desc.rect.top);
           if (dist < minDist) {
@@ -536,13 +596,14 @@ export class ElementResolver {
     // 6. Fallback to voucher or container relocation if value tokens exist
     if (desc.containerText && desc.valueTokens && desc.valueTokens.length > 0) {
       const voucherMatch = this.relocate({ cardText: desc.containerText });
-      if (voucherMatch) return voucherMatch;
+      if (voucherMatch && this.matchesContentSignature(voucherMatch, desc)) return voucherMatch;
 
       const wanted = new Set(desc.valueTokens);
       for (const el of all) {
         const card = this.findVoucherContainer(el);
         if (card && sameSet(wanted, valueTokens(this.text(card)))) {
-          return this.normalizeTarget(el);
+          const norm = this.normalizeTarget(el);
+          if (this.matchesContentSignature(norm, desc)) return norm;
         }
       }
     }

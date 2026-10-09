@@ -41,6 +41,23 @@ export class WorkerTimer {
           }
         };
 
+        w.onerror = (err) => {
+          console.warn("[DealHunter] Web Worker runtime error, falling back to window timer:", err);
+          try {
+            w.terminate();
+          } catch {
+            // ignore
+          }
+          this.worker = null;
+          if (this.fallbackTimerId === null) {
+            this.fallbackTimerId = setInterval(() => {
+              if (this.onTickCallback) {
+                this.onTickCallback();
+              }
+            }, intervalMs);
+          }
+        };
+
         w.postMessage({ action: "start", interval: intervalMs });
         this.worker = w;
         workerStarted = true;

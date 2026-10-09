@@ -59,8 +59,9 @@ describe("startHunt", () => {
   it("does not click before the drop window", () => {
     document.body.innerHTML = voucherCard("v1", "Giảm 50k đơn 500k");
     const clicks = vi.fn();
-    document.getElementById("v1")!.addEventListener("click", clicks);
-    const h = setup();
+    const btn = document.getElementById("v1")!;
+    btn.addEventListener("click", clicks);
+    const h = setup(undefined, btn);
     h.advanceTo(DROP - 200);
     expect(clicks).not.toHaveBeenCalled();
     expect(h.outcome).toBeNull();
@@ -139,7 +140,7 @@ describe("startHunt", () => {
   });
 
   it("starts clicking a voucher that only appears after the drop", () => {
-    const h = setup();
+    const h = setup("500k");
     h.advanceTo(DROP + 300);
     document.body.innerHTML = voucherCard("late", "Giảm 50k đơn 500k");
     const late = document.getElementById("late")!;
@@ -183,13 +184,13 @@ describe("startHunt", () => {
     expect(h.outcome?.result).toBe("not_found");
   });
 
-  it("without a lock or keyword ignores vouchers that were already open before the drop", () => {
+  it("with a keyword ignores vouchers that were already open before the drop", () => {
     document.body.innerHTML =
       voucherCard("open", "Giảm 10k đơn 99k") +
       `<div class="voucher-card"><span>Giảm 50k đơn 500k</span><button id="drop" disabled>Lưu</button></div>`;
     const open = vi.fn();
     document.getElementById("open")!.addEventListener("click", open);
-    const h = setup();
+    const h = setup("500k");
     h.advanceTo(DROP - 50);
     const drop = document.getElementById("drop")!;
     drop.removeAttribute("disabled");
@@ -341,5 +342,123 @@ describe("startHunt", () => {
     // In turbo mode, it should fire more clicks than stealth in 400ms
     expect(clickTimestamps.length).toBeGreaterThanOrEqual(5);
   });
+
+  it("C1-a: does not report saved on click 1 when target text simply transitioned from pre-drop label", () => {
+    document.body.innerHTML = voucherCard("v1", "Giảm 50k", "Sắp mở");
+    const btn = document.getElementById("v1")!;
+    let clicked = 0;
+    btn.addEventListener("click", () => {
+      clicked++;
+      // Button still says 'Lưu', server has not confirmed yet!
+    });
+
+    let now = DROP - 1000;
+    const ticker = new ManualTicker();
+    let outcome: HuntOutcome | null = null;
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      ticker,
+      onDone: (o) => (outcome = o),
+    });
+
+    // Before drop, it was 'Sắp mở'. At drop, countdown ends and page changes button to 'Lưu':
+    now = DROP;
+    btn.textContent = "Lưu";
+    ticker.tick(); // click 1 dispatched
+
+    expect(clicked).toBe(1);
+    // Must NOT be reported as saved yet because transition from 'Sắp mở' to 'Lưu' was pre-drop unlock!
+    expect(outcome).toBeNull();
+  });
+
+  it("C3: startHunt does not click arbitrary buttons when no target is locked", () => {
+    document.body.innerHTML = `
+      <div class="card">
+        <button id="buy-btn">Mua ngay</button>
+      </div>
+    `;
+    const buyBtn = document.getElementById("buy-btn")!;
+    const clickFn = vi.fn();
+    buyBtn.addEventListener("click", clickFn);
+
+    let now = DROP;
+    const ticker = new ManualTicker();
+    let outcome: HuntOutcome | null = null;
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      // NO locked target
+      ticker,
+      onDone: (o) => (outcome = o),
+    });
+
+    ticker.tick();
+    expect(clickFn).not.toHaveBeenCalled();
+    expect((outcome as HuntOutcome | null)?.result).toBe("not_found");
+  });
+
+  it("M4: aborts hunt with cancelled if page navigates to different URL during hunt (SPA pushState)", () => {
+    window.history.pushState({}, "", "/flash_sale");
+    document.body.innerHTML = `
+      <div id="card">
+        <button id="target-btn">LƯU</button>
+      </div>
+    `;
+    const btn = document.getElementById("target-btn") as HTMLElement;
+
+    let now = DROP;
+    const ticker = new ManualTicker();
+    let outcome: HuntOutcome | null = null;
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      ticker,
+      onDone: (o) => (outcome = o),
+    });
+
+    // Simulate SPA navigation to cart before tick
+    window.history.pushState({}, "", "/cart");
+
+    ticker.tick();
+    expect(outcome).not.toBeNull();
+    expect((outcome as any)?.result).toBe("cancelled");
+    expect((outcome as any)?.detail).toContain("Page navigated away");
+  });
+
+  it("M6: catches unexpected exception in tick and finishes safely without hanging loop", () => {
+    window.history.pushState({}, "", "/event");
+    document.body.innerHTML = `
+      <div id="card">
+        <button id="target-btn">LƯU</button>
+      </div>
+    `;
+    const btn = document.getElementById("target-btn") as HTMLElement;
+
+    // Simulate a crashing scrollIntoView or resolve
+    btn.scrollIntoView = () => {
+      throw new Error("Simulated DOM crash in tick");
+    };
+
+    let now = DROP - 1000;
+    const ticker = new ManualTicker();
+    let outcome: HuntOutcome | null = null;
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      leadMs: 2000,
+      ticker,
+      onDone: (o) => (outcome = o),
+    });
+
+    // Tick should not throw unhandled exception
+    expect(() => ticker.tick()).not.toThrow();
+  });
 });
+
 

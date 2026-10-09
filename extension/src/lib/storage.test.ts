@@ -49,11 +49,14 @@ describe("storage saved page targets", () => {
     expect(found?.targetSlot).toBe("midnight");
   });
 
-  it("retrieves saved target ignoring hash or query parameters", async () => {
+  it("retrieves saved target with marketing tags stripped but distinguishes different functional query parameters", async () => {
     await storage.savePageTarget(sampleTarget);
-    const found = await storage.getSavedTargetForUrl("https://app.caffiliate.vn/mission?tab=daily#section");
-    expect(found).not.toBeNull();
-    expect(found?.id).toBe("target-caffiliate-1");
+    const withTracking = await storage.getSavedTargetForUrl("https://app.caffiliate.vn/mission?utm_source=facebook&fbclid=abc");
+    expect(withTracking).not.toBeNull();
+    expect(withTracking?.id).toBe("target-caffiliate-1");
+
+    const differentTab = await storage.getSavedTargetForUrl("https://app.caffiliate.vn/mission?tab=daily");
+    expect(differentTab).toBeNull();
   });
 
   it("updates existing page target when id or url matches", async () => {
@@ -135,3 +138,127 @@ describe("storage.saveSettings", () => {
     expect(settings.soundEnabled).toBe(false);
   });
 });
+
+describe("M1: storage concurrent task operations", () => {
+  it("concurrent task writes preserve all tasks without lost updates", async () => {
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: async (key: string) => (await tick(), { [key]: structuredClone(localStore[key]) }),
+          set: async (items: Record<string, unknown>) => (await tick(), void Object.assign(localStore, items)),
+        },
+      },
+    });
+
+    const task1 = {
+      id: "task-1",
+      targetHour: 12,
+      targetMinute: 0,
+      targetUrl: "https://shopee.vn",
+      label: "Task 1",
+      mode: "full_auto" as const,
+      status: "pending" as const,
+      createdAt: Date.now(),
+    };
+    const task2 = {
+      id: "task-2",
+      targetHour: 12,
+      targetMinute: 0,
+      targetUrl: "https://shopee.vn",
+      label: "Task 2",
+      mode: "full_auto" as const,
+      status: "pending" as const,
+      createdAt: Date.now(),
+    };
+
+    await Promise.all([storage.addTask(task1), storage.addTask(task2)]);
+
+    const tasks = await storage.getTasks();
+    expect(tasks.length).toBe(2);
+    expect(tasks.map((t) => t.id).sort()).toEqual(["task-1", "task-2"]);
+  });
+});
+
+describe("P2 and L11: storage calibration cleanup and race condition prevention", () => {
+  it("P2: purges expired domain calibrations (>24h) when saving new calibrations", async () => {
+    const now = Date.now();
+    const TTL_MS = 24 * 60 * 60 * 1000;
+
+    // Seed storage with an expired calibration (25 hours ago) and a recent one
+    localStore["dh_domain_calibrations"] = {
+      "old-domain.com": {
+        offsetMs: 10,
+        rttMs: 20,
+        errorMs: 5,
+        calibrated: true,
+        lastCalibratedAt: now - TTL_MS - 3600000,
+        serverHost: "old-domain.com",
+      },
+      "recent-domain.com": {
+        offsetMs: 15,
+        rttMs: 25,
+        errorMs: 5,
+        calibrated: true,
+        lastCalibratedAt: now - 3600000,
+        serverHost: "recent-domain.com",
+      },
+    };
+
+    // Save a new calibration for another domain
+    await storage.saveCalibration({
+      offsetMs: 50,
+      rttMs: 30,
+      errorMs: 8,
+      calibrated: true,
+      lastCalibratedAt: now,
+      serverHost: "new-domain.com",
+    });
+
+    const dict = localStore["dh_domain_calibrations"] as Record<string, any>;
+    expect(dict).toBeDefined();
+    // old-domain.com should be purged
+    expect(dict["old-domain.com"]).toBeUndefined();
+    // recent-domain.com should still exist
+    expect(dict["recent-domain.com"]).toBeDefined();
+    // new-domain.com should exist
+    expect(dict["new-domain.com"]).toBeDefined();
+  });
+
+  it("L11: concurrent calibration saves for different domains preserve both", async () => {
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: async (key: string) => (await tick(), { [key]: structuredClone(localStore[key]) }),
+          set: async (items: Record<string, unknown>) => (await tick(), void Object.assign(localStore, items)),
+        },
+      },
+    });
+
+    await Promise.all([
+      storage.saveCalibration({
+        offsetMs: 100,
+        rttMs: 20,
+        errorMs: 5,
+        calibrated: true,
+        lastCalibratedAt: Date.now(),
+        serverHost: "shopee.vn",
+      }),
+      storage.saveCalibration({
+        offsetMs: 200,
+        rttMs: 25,
+        errorMs: 6,
+        calibrated: true,
+        lastCalibratedAt: Date.now(),
+        serverHost: "lazada.vn",
+      }),
+    ]);
+
+    const dict = localStore["dh_domain_calibrations"] as Record<string, any>;
+    expect(dict).toBeDefined();
+    expect(dict["shopee.vn"]).toBeDefined();
+    expect(dict["lazada.vn"]).toBeDefined();
+  });
+});
+

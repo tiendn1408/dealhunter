@@ -52,3 +52,44 @@ export function formatCountdown(diffMs: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(hundredth)}`;
 }
 
+export interface ParsedTimeResult {
+  valid: boolean;
+  h: number;
+  m: number;
+  s: number;
+  formatted: string;
+}
+
+/**
+ * Validates and parses a time string in "HH:mm" or "HH:mm:ss" format (L1).
+ * Returns valid=false if hour (0-23), minute (0-59), or second (0-59) is out of range,
+ * or if the input format does not match.
+ */
+export function parseTimeString(timeStr: string): ParsedTimeResult {
+  if (!timeStr || typeof timeStr !== "string") {
+    return { valid: false, h: 0, m: 0, s: 0, formatted: "00:00:00" };
+  }
+  const trimmed = timeStr.trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
+  if (!match) {
+    return { valid: false, h: 0, m: 0, s: 0, formatted: "00:00:00" };
+  }
+
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const s = match[3] !== undefined ? parseInt(match[3], 10) : 0;
+
+  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) {
+    return { valid: false, h: 0, m: 0, s: 0, formatted: "00:00:00" };
+  }
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    valid: true,
+    h,
+    m,
+    s,
+    formatted: `${pad(h)}:${pad(m)}:${pad(s)}`,
+  };
+}
+

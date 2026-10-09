@@ -96,4 +96,59 @@ describe("HumanClicker", () => {
     const success = clicker.dispatchClick(btn);
     expect(success).toBe(false);
   });
+
+  it("M8: returns false and does not dispatch click for elements with 0 width or height", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Hidden Button";
+    document.body.appendChild(btn);
+    btn.getBoundingClientRect = () => ({
+      left: 0,
+      top: 0,
+      width: 0,
+      height: 0,
+      right: 0,
+      bottom: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    const clickSpy = vi.fn();
+    btn.addEventListener("click", clickSpy);
+
+    const success = clicker.dispatchClick(btn);
+    expect(success).toBe(false);
+    expect(clickSpy).not.toHaveBeenCalled();
+  });
+
+  it("M8: returns false when target element is obscured by an overlay modal via elementFromPoint", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Under Modal";
+    document.body.appendChild(btn);
+    btn.getBoundingClientRect = () => ({
+      left: 100,
+      top: 100,
+      width: 80,
+      height: 40,
+      right: 180,
+      bottom: 140,
+      x: 100,
+      y: 100,
+      toJSON: () => {},
+    });
+
+    const modalOverlay = document.createElement("div");
+    modalOverlay.id = "captcha-modal-overlay";
+    document.body.appendChild(modalOverlay);
+
+    // Mock document.elementFromPoint to return modalOverlay instead of btn
+    document.elementFromPoint = vi.fn().mockReturnValue(modalOverlay);
+
+    const clickSpy = vi.fn();
+    btn.addEventListener("click", clickSpy);
+
+    const success = clicker.dispatchClick(btn);
+    expect(success).toBe(false);
+    expect(clickSpy).not.toHaveBeenCalled();
+  });
 });
