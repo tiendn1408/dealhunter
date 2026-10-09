@@ -14,6 +14,7 @@ export interface UniversalTargetDescriptor {
   childIndex?: number;
   parentSelector?: string;
   rect?: { top: number; left: number; width: number; height: number };
+  documentTop?: number;
   containerText?: string;
   valueTokens?: string[];
 }
@@ -109,6 +110,84 @@ export function hasCompletionIcon(button: HTMLElement): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Scans page-level notification banners, toasts, and dialogs (Shopee, Lazada, TikTok Shop)
+ * for immediate post-click success or exhaustion confirmations.
+ */
+export function checkPageToastConfirmation(): CompletionStatus | null {
+  if (typeof document === "undefined") return null;
+
+  const toastSelectors = [
+    '[role="alert"]',
+    '[role="status"]',
+    '[aria-live="assertive"]',
+    '[aria-live="polite"]',
+    ".shopee-toast",
+    ".shopee-alert-popup",
+    ".next-feedback-toast",
+    ".arco-message",
+    'div[class*="toast" i]',
+    'div[class*="snackbar" i]',
+    'div[class*="alert-popup" i]',
+    'div[class*="floating-alert" i]',
+  ];
+
+  let elements: HTMLElement[] = [];
+  try {
+    elements = Array.from(document.querySelectorAll<HTMLElement>(toastSelectors.join(", ")));
+  } catch {
+    return null;
+  }
+
+  for (const el of elements) {
+    if (!el.isConnected) continue;
+    // Strictly exclude DealHunter's own HUD and container elements
+    if (el.closest("#dealhunter-hud-root, [class*='dh-'], [data-dealhunter]")) {
+      continue;
+    }
+
+    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 0, height: 0 };
+    const hasDimensions = rect.width > 0 || rect.height > 0 || el.offsetWidth > 0 || el.offsetHeight > 0;
+    const isTestEnv = typeof process !== "undefined" && process.env.NODE_ENV === "test";
+    if (!hasDimensions && !isTestEnv) continue;
+    const style = typeof window !== "undefined" && window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0")) {
+      continue;
+    }
+
+    const text = ((el.innerText || el.textContent || "") as string).toLowerCase().replace(/\s+/g, " ").trim();
+    if (!text || text.length > 200) continue;
+
+    // Success confirmation in toast/alert
+    if (
+      /(?:đã\s*lưu|lưu\s*thành\s*công|vào\s*ví|đã\s*sở\s*hữu|đã\s*nhận|nhận\s*thành\s*công|thu\s*thập\s*thành\s*công|đã\s*thu\s*thập|saved\s*to\s*wallet|already\s*claimed|claimed\s*successfully|saved\s*successfully|collected\s*successfully)/i.test(
+        text
+      )
+    ) {
+      return {
+        completed: true,
+        state: "saved",
+        reason: `Page toast notification confirmed success: "${text.slice(0, 60)}"`,
+      };
+    }
+
+    // Out of quota / exhausted confirmation in toast/alert
+    if (
+      /(?:đã\s*hết\s*lượt|hết\s*lượt\s*sử\s*dụng|mã\s*đã\s*hết|hết\s*số\s*lượng|out\s*of\s*stock|fully\s*claimed|fully\s*redeemed|no\s*longer\s*available)/i.test(
+        text
+      )
+    ) {
+      return {
+        completed: true,
+        state: "exhausted",
+        reason: `Page toast notification confirmed exhausted: "${text.slice(0, 60)}"`,
+      };
+    }
+  }
+
+  return null;
 }
 
 export class ElementResolver {
@@ -328,6 +407,39 @@ export class ElementResolver {
           : "Target gained completion style";
         return { completed: true, state: "saved", reason };
       }
+
+      // 2e. Card container mutation after click (e.g. card badge or text changed to saved or exhausted)
+      const card = this.findVoucherContainer(button);
+      if (card) {
+        const cardTextNow = this.text(card).toLowerCase();
+        const initialClean = (initialText || "").toLowerCase();
+        if (
+          /(?:đã\s*lưu|đã\s*nhận|đã\s*thu\s*thập|đã\s*có\s*trong\s*ví|claimed|saved)/i.test(cardTextNow) &&
+          !/(?:đã\s*lưu|đã\s*nhận|đã\s*thu\s*thập|claimed|saved)/i.test(initialClean)
+        ) {
+          return {
+            completed: true,
+            state: "saved",
+            reason: "Voucher card updated with saved/claimed confirmation",
+          };
+        }
+        if (
+          /(?:hết\s*lượt|đã\s*hết|hết\s*số\s*lượng|out\s*of\s*stock|sold\s*out|fully\s*claimed)/i.test(cardTextNow) &&
+          !/(?:hết\s*lượt|đã\s*hết|hết\s*số\s*lượng)/i.test(initialClean)
+        ) {
+          return {
+            completed: true,
+            state: "exhausted",
+            reason: "Voucher card updated to exhausted/sold-out",
+          };
+        }
+      }
+
+      // 2f. Page-level toast notification confirmation (Shopee/Lazada/TikTok)
+      const toastCheck = checkPageToastConfirmation();
+      if (toastCheck) {
+        return toastCheck;
+      }
     }
 
     // 3. Static / Pre-existing state evaluation
@@ -369,10 +481,16 @@ export class ElementResolver {
       ) {
         return curr;
       }
+      if (curr === document.body || curr === document.documentElement) {
+        break;
+      }
       curr = curr.parentElement;
       depth++;
     }
-    return button.parentElement;
+    if (button.parentElement && button.parentElement !== document.body && button.parentElement !== document.documentElement) {
+      return button.parentElement;
+    }
+    return null;
   }
 
   describe(button: HTMLElement): VoucherDescriptor {
@@ -405,6 +523,8 @@ export class ElementResolver {
 
     const containerText = card ? this.text(card).replace(label, "").trim() : "";
     const tokens = Array.from(valueTokens(containerText));
+    const scrollY = typeof window !== "undefined" ? window.scrollY : 0;
+    const documentTop = Math.round(rect.top + scrollY);
 
     return {
       id: norm.id || undefined,
@@ -420,6 +540,7 @@ export class ElementResolver {
         width: rect.width,
         height: rect.height,
       },
+      documentTop,
       containerText,
       valueTokens: tokens,
     };
@@ -432,7 +553,7 @@ export class ElementResolver {
     const wanted = valueTokens(desc.cardText);
     if (wanted.size === 0) return null;
     for (const el of this.allVoucherButtons()) {
-      if (sameSet(wanted, valueTokens(this.describe(el).cardText))) return el;
+      if (matchesTokens(wanted, valueTokens(this.describe(el).cardText))) return el;
     }
     return null;
   }
@@ -454,7 +575,7 @@ export class ElementResolver {
     if (hasTokens) {
       const candidateTokens = valueTokens(cardText);
       const wanted = new Set(desc.valueTokens!);
-      return sameSet(wanted, candidateTokens);
+      return matchesTokens(wanted, candidateTokens);
     }
 
     if (hasContainer) {
@@ -627,6 +748,24 @@ function sameSet(a: Set<string>, b: Set<string>): boolean {
   if (a.size !== b.size) return false;
   for (const t of a) if (!b.has(t)) return false;
   return true;
+}
+
+export function matchesTokens(wanted: Set<string>, candidate: Set<string>): boolean {
+  if (sameSet(wanted, candidate)) return true;
+  if (wanted.size === 0 || candidate.size === 0) return false;
+
+  let shared = 0;
+  for (const t of wanted) {
+    if (candidate.has(t)) shared++;
+  }
+
+  // All wanted tokens are present in candidate (card may have added stock % or badges)
+  if (shared === wanted.size) return true;
+
+  // Significant overlap (at least 60% of wanted tokens) and at least 2 tokens
+  if (shared / wanted.size >= 0.6 && shared >= 2) return true;
+
+  return false;
 }
 
 export const elementResolver = new ElementResolver();

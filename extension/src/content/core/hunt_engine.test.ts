@@ -460,6 +460,106 @@ describe("startHunt", () => {
     // Tick should not throw unhandled exception
     expect(() => ticker.tick()).not.toThrow();
   });
+
+  it("resumes hunt started after drop time with expanded windowMs", () => {
+    document.body.innerHTML = voucherCard("v1", "Giảm 50k đơn 500k");
+    const btn = document.getElementById("v1")!;
+    let clickCount = 0;
+    btn.addEventListener("click", () => {
+      clickCount++;
+    });
+
+    // Start hunt at DROP + 3500ms (e.g. after page reload)
+    let now = DROP + 3500;
+    const ticker = new ManualTicker();
+    let outcome: HuntOutcome | null = null;
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      ticker,
+      onDone: (o) => (outcome = o),
+    });
+
+    // Tick 1 at DROP + 3500ms: must NOT timeout or report not_found
+    ticker.tick();
+    expect(outcome).toBeNull();
+    expect(clickCount).toBe(1);
+
+    // Advance 5000ms more (now = DROP + 8500ms): should still be active
+    for (let i = 0; i < 50; i++) {
+      now += 100;
+      ticker.tick();
+    }
+    expect(outcome).toBeNull();
+    expect(clickCount).toBeGreaterThan(1);
+  });
+
+  it("scrolls toward documentTop when target element is not in DOM upon reload", () => {
+    let scrolledTo: { top: number; behavior?: string } | null = null;
+    window.scrollTo = (options: any) => {
+      scrolledTo = options;
+    };
+    (window as any).scrollY = 0;
+
+    let now = DROP;
+    const ticker = new ManualTicker();
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      universalDescriptor: {
+        uniqueSelector: "#lazy-voucher-btn",
+        tagName: "button",
+        attributes: {},
+        initialText: "Lưu",
+        documentTop: 2400,
+      },
+      ticker,
+      onDone: () => {},
+    });
+
+    // Tick at drop time when element is not in DOM
+    ticker.tick();
+
+    expect(scrolledTo).not.toBeNull();
+    expect((scrolledTo as any)?.top).toBe(2150); // 2400 - 250
+  });
+
+  it("completes hunt immediately as saved when page toast appears after clicks", () => {
+    document.body.innerHTML = voucherCard("v1", "Giảm 50k");
+    const btn = document.getElementById("v1")!;
+    let now = DROP;
+    const ticker = new ManualTicker();
+    let outcome: HuntOutcome | null = null;
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      ticker,
+      onDone: (o) => (outcome = o),
+    });
+
+    // Click 1 dispatched
+    ticker.tick();
+    expect(outcome).toBeNull();
+
+    // Shopee displays toast notification
+    const toast = document.createElement("div");
+    toast.className = "shopee-toast";
+    toast.innerText = "Đã lưu voucher vào ví";
+    document.body.appendChild(toast);
+
+    // Next tick
+    now += 100;
+    ticker.tick();
+
+    expect(outcome).not.toBeNull();
+    expect((outcome as HuntOutcome | null)?.result).toBe("saved");
+    expect((outcome as HuntOutcome | null)?.detail).toContain("Page toast notification confirmed success");
+  });
 });
 
 

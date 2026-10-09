@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { ElementResolver } from "./element_resolver";
+import { ElementResolver, checkPageToastConfirmation, matchesTokens } from "./element_resolver";
 
 describe("ElementResolver", () => {
   let resolver: ElementResolver;
@@ -270,5 +270,73 @@ describe("ElementResolver", () => {
     const check = resolver.isTargetCompleted(tabBtn, "Tab 1", 1);
     expect(check.completed).toBe(false);
     expect(check.state).not.toBe("saved");
+  });
+
+  it("detects page toast notification confirming voucher saved after click", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Lưu";
+    document.body.appendChild(btn);
+
+    // Create a Shopee toast element
+    const toast = document.createElement("div");
+    toast.className = "shopee-toast";
+    toast.innerText = "Đã lưu voucher vào ví";
+    document.body.appendChild(toast);
+
+    const check = resolver.isTargetCompleted(btn, "Lưu", 1);
+    expect(check.completed).toBe(true);
+    expect(check.state).toBe("saved");
+    expect(check.reason).toContain("Page toast notification confirmed success");
+  });
+
+  it("detects page toast notification confirming voucher exhausted after click", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Lưu";
+    document.body.appendChild(btn);
+
+    const toast = document.createElement("div");
+    toast.setAttribute("role", "alert");
+    toast.innerText = "Mã voucher đã hết lượt sử dụng";
+    document.body.appendChild(toast);
+
+    const check = resolver.isTargetCompleted(btn, "Lưu", 1);
+    expect(check.completed).toBe(true);
+    expect(check.state).toBe("exhausted");
+    expect(check.reason).toContain("Page toast notification confirmed exhausted");
+  });
+
+  it("strictly ignores DealHunter HUD elements when scanning for toasts", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Lưu";
+    document.body.appendChild(btn);
+
+    // DealHunter's own HUD containing "saved"
+    const hud = document.createElement("div");
+    hud.id = "dealhunter-hud-root";
+    hud.innerHTML = '<div class="dh-status" role="status">Saved target</div>';
+    document.body.appendChild(hud);
+
+    const toastCheck = checkPageToastConfirmation();
+    expect(toastCheck).toBeNull();
+  });
+
+  it("matchesTokens handles stock percentage badges added to voucher card at drop", () => {
+    const wanted = new Set(["50k", "500k"]);
+    // Candidate card added progress "Còn 80%" at drop
+    const candidateWithStock = new Set(["50k", "500k", "80%"]);
+    expect(matchesTokens(wanted, candidateWithStock)).toBe(true);
+
+    // Completely different voucher should not match
+    const differentCard = new Set(["20k", "200k"]);
+    expect(matchesTokens(wanted, differentCard)).toBe(false);
+  });
+
+  it("describeUniversal includes documentTop offset for scroll restoration", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Lưu mã";
+    document.body.appendChild(btn);
+
+    const desc = resolver.describeUniversal(btn);
+    expect(typeof desc.documentTop).toBe("number");
   });
 });

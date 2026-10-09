@@ -43,7 +43,10 @@ export class HumanClicker {
     if (typeof document !== "undefined" && typeof document.elementFromPoint === "function") {
       const topEl = document.elementFromPoint(coords.clientX, coords.clientY);
       if (topEl && topEl !== element && !element.contains(topEl) && !topEl.contains(element)) {
-        return false;
+        // Do not block click if overlapped by DealHunter's own HUD or overlays
+        if (!topEl.closest("#dealhunter-hud-root, [class*='dh-'], [data-dealhunter]")) {
+          return false;
+        }
       }
     }
 

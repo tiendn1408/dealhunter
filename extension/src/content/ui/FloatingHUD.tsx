@@ -816,6 +816,19 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       }
     }
 
+    if (typeof window !== "undefined" && window.location.hostname.includes("shopee.")) {
+      const path = window.location.pathname;
+      if (path.startsWith("/verify/") || path.startsWith("/buyer/login")) {
+        setStatusMsg({
+          text: path.startsWith("/verify/")
+            ? "Shopee requires verification. Please verify and sign in first."
+            : "Please sign in to Shopee first.",
+          tone: "error",
+        });
+        return;
+      }
+    }
+
     const now = timeSyncClient.getServerTime();
 
     let timestamp: number;
@@ -841,6 +854,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       customTime: targetSlot === "custom" ? customTime : undefined,
       label: targetSummary || undefined,
       clickProfileMode: clickProfile,
+      diagnostics: diagnostics || undefined,
     });
   };
 

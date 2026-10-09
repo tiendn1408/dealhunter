@@ -1,6 +1,7 @@
 import { startHunt, HuntOutcome } from "./hunt_engine";
 import { elementResolver, UniversalTargetDescriptor } from "./element_resolver";
 import { timeSyncClient } from "./time_sync_client";
+import { targetDiagnostics } from "./target_diagnostics";
 import { ClickProfileMode } from "./human_biometrics";
 import { storage } from "../../lib/storage";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
@@ -138,10 +139,18 @@ export class HuntCoordinator {
     }
 
     // H6: Calculate effectiveReload respecting TargetDiagnostics strategy & user configuration
+    let diag = params.diagnostics;
+    if (!diag && targetEl) {
+      try {
+        diag = targetDiagnostics.inspect(targetEl);
+      } catch {
+        // ignore
+      }
+    }
     const effectiveReload =
-      params.diagnostics?.strategy === "reactive_no_reload"
+      diag?.strategy === "reactive_no_reload"
         ? false
-        : params.dualDefenseReload ?? true;
+        : params.dualDefenseReload ?? (diag?.strategy === "static_dual_defense");
 
     const session: ArmedSession = {
       targetTimestamp: params.targetTimestamp,
@@ -153,7 +162,7 @@ export class HuntCoordinator {
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
-      diagnostics: params.diagnostics,
+      diagnostics: diag || params.diagnostics,
       url: typeof window !== "undefined" ? window.location.href : "",
       armedAt: Date.now(),
     };
@@ -190,6 +199,7 @@ export class HuntCoordinator {
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
+      windowMs: (params as any).windowMs ?? 8000,
       onStatus: (msg) => {
         const isFiring = msg.includes("active") || msg.startsWith("Saving");
         this.setState({

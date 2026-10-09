@@ -151,4 +151,38 @@ describe("HumanClicker", () => {
     expect(success).toBe(false);
     expect(clickSpy).not.toHaveBeenCalled();
   });
+
+  it("does not block click when element is overlapped by DealHunter own HUD", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Lưu";
+    document.body.appendChild(btn);
+    btn.getBoundingClientRect = () => ({
+      left: 100,
+      top: 100,
+      width: 80,
+      height: 40,
+      right: 180,
+      bottom: 140,
+      x: 100,
+      y: 100,
+      toJSON: () => {},
+    });
+
+    const hudOverlay = document.createElement("div");
+    hudOverlay.id = "dealhunter-hud-root";
+    const hudInner = document.createElement("div");
+    hudInner.className = "dh-card";
+    hudOverlay.appendChild(hudInner);
+    document.body.appendChild(hudOverlay);
+
+    // Mock document.elementFromPoint to return hudInner
+    document.elementFromPoint = vi.fn().mockReturnValue(hudInner);
+
+    const clickSpy = vi.fn();
+    btn.addEventListener("click", clickSpy);
+
+    const success = clicker.dispatchClick(btn);
+    expect(success).toBe(true);
+    expect(clickSpy).toHaveBeenCalled();
+  });
 });

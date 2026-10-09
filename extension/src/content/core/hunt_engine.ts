@@ -74,11 +74,19 @@ export const HUNT_DEFAULTS = {
  */
 export function startHunt(opts: HuntOptions): () => void {
   const leadMs = opts.leadMs ?? HUNT_DEFAULTS.leadMs;
+  const nowAtStart = opts.now();
+  const isResumedAfterDrop = nowAtStart >= opts.targetTimestamp;
   const isEmergencyReloaded =
     typeof sessionStorage !== "undefined" &&
     Boolean(sessionStorage.getItem(`dh_emergency_reloaded_${opts.targetTimestamp}`));
   const baseWindowMs = opts.windowMs ?? HUNT_DEFAULTS.windowMs;
-  const windowMs = isEmergencyReloaded ? Math.max(baseWindowMs, 10_000) : baseWindowMs;
+  let windowMs = isEmergencyReloaded ? Math.max(baseWindowMs, 10_000) : baseWindowMs;
+
+  // Guarantee that after a reload or late resume, there is at least 8,000ms of active hunting time
+  if (isResumedAfterDrop) {
+    const elapsedSinceDrop = nowAtStart - opts.targetTimestamp;
+    windowMs = Math.max(windowMs, elapsedSinceDrop + 8_000);
+  }
   const profileMode = opts.clickProfileMode ?? HUNT_DEFAULTS.defaultProfileMode;
   const profile = CLICK_PROFILES[profileMode] ?? CLICK_PROFILES.adaptive;
   let currentIntervalMs =
@@ -210,12 +218,26 @@ export function startHunt(opts: HuntOptions): () => void {
     }
 
     const el = resolve(true);
-    if (el && !scrolled) {
-      try {
-        el.scrollIntoView({ block: "center" });
-        scrolled = true;
-      } catch {
-        // ignore
+    if (el) {
+      if (!scrolled) {
+        try {
+          el.scrollIntoView({ block: "center" });
+          scrolled = true;
+        } catch {
+          // ignore
+        }
+      }
+    } else if (universalDesc?.documentTop && !scrolled && typeof window !== "undefined") {
+      // Lazy-load activation fallback: if target is not found and descriptor has documentTop offset,
+      // scroll toward that region to trigger intersection observers and virtualized DOM mounting
+      const targetScrollY = Math.max(0, universalDesc.documentTop - 250);
+      if (Math.abs((window.scrollY || 0) - targetScrollY) > 200) {
+        try {
+          window.scrollTo({ top: targetScrollY, behavior: "instant" as ScrollBehavior });
+          scrolled = true;
+        } catch {
+          // ignore
+        }
       }
     }
 
@@ -239,10 +261,16 @@ export function startHunt(opts: HuntOptions): () => void {
       const state = elementResolver.getButtonState(el);
       if (state === "saved") return finish("saved", "The page shows the target as saved");
       if (state === "exhausted") return finish("exhausted", "The target is fully claimed");
+    } else if (t >= opts.targetTimestamp + 2000 && el) {
+      // If drop has passed by at least 2s, clicks === 0, and page already explicitly marks it exhausted
+      const state = elementResolver.getButtonState(el);
+      if (state === "exhausted") {
+        return finish("exhausted", "Target voucher is already exhausted or sold out");
+      }
     }
 
     // 2. Autonomous fallback reload for static pages:
-    // If drop time has passed by 250ms, clicks is 0, and the button is not clickable
+    // If drop time has passed by 500ms, clicks is 0, and the button is not clickable
     // (i.e. stuck in yesterday's disabled/completed state or countdown label),
     // automatically reload the page once to load the new day/drop session!
     if (
@@ -275,6 +303,19 @@ export function startHunt(opts: HuntOptions): () => void {
       t - lastClickAt >= currentIntervalMs &&
       clicks < maxClicks
     ) {
+      if (typeof window !== "undefined") {
+        const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { top: 0, bottom: 0, left: 0, right: 0 };
+        const viewH = window.innerHeight || document.documentElement?.clientHeight || 0;
+        const viewW = window.innerWidth || document.documentElement?.clientWidth || 0;
+        const isOffscreen = viewH > 0 && (rect.bottom < 0 || rect.top > viewH || rect.right < 0 || rect.left > viewW);
+        if (isOffscreen) {
+          try {
+            el.scrollIntoView({ block: "center" });
+          } catch {
+            // ignore
+          }
+        }
+      }
       const isFirstClick = clicks === 0;
       if (isFirstClick) {
         // C1-a: Capture the true baseline text right before click 1 at drop moment
