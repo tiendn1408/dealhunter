@@ -741,16 +741,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 <GripHorizontal className="h-3 w-3 shrink-0 text-slate-500 opacity-60" />
               </span>
             </div>
-            <div className="group relative min-w-0">
-              <div className="truncate text-[10px] font-medium text-slate-400 cursor-default">
-                {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
-              </div>
-              {/* Sleek dark capsule tooltip on hover, zero OS title conflict */}
-              {currentHost && (
-                <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden whitespace-nowrap rounded-lg bg-slate-900/95 px-2.5 py-1 font-mono text-[10px] text-slate-200 shadow-xl ring-1 ring-white/10 backdrop-blur-md group-hover:flex">
-                  {currentHost}
-                </div>
-              )}
+            <div className="truncate text-[10px] font-medium text-slate-400">
+              {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
             </div>
           </div>
         </div>
