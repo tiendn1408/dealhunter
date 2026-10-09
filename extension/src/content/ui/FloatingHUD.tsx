@@ -808,7 +808,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       <div className="space-y-2.5 px-3.5 pb-3.5 pt-2">
         {/* Card 1: Universal Server clock */}
         <div className="dh-inner-card rounded-2xl p-3">
-          <div className="flex items-center justify-between">
+          <div className="dh-card-header dh-card-header-clock flex items-center justify-between">
             <div className="flex items-center gap-1.5" title={serverDomain ? `${t.offsetVsDomain(serverDomain)} (${serverDomain})` : t.localDeviceTime}>
               <span className={`h-1.5 w-1.5 rounded-full ${calibrated ? "bg-emerald-400 shadow-sm shadow-emerald-400/50" : "bg-amber-400 animate-pulse"}`} />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
@@ -842,7 +842,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         {/* Card 2: Timing & Countdown */}
         <div className="dh-inner-card rounded-2xl p-3">
           {/* Card Header matching Card 1 and Card 3 */}
-          <div className="mb-2 flex items-center justify-between">
+          <div className="dh-card-header flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
               {t.timingAndCountdown || "Timing & Countdown"}
             </span>
@@ -925,7 +925,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
         {/* Card 3: Universal Target locking */}
         <div className="dh-inner-card rounded-2xl p-3">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="dh-card-header flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t.targetVoucher}</span>
             {isTargetSaved && (
               <span className="dh-card-badge flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">

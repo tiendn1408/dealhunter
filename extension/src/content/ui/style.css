@@ -110,6 +110,37 @@
   border-radius: 16px !important;
 }
 
+/* Card header row (Clock, Drop Target, Target Voucher)
+   Strict 20px height guarantees ZERO layout jumping when badges (Armed, Saved) appear or disappear */
+#dealhunter-hud-root .dh-card-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
+  margin-bottom: 8px !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+}
+
+#dealhunter-hud-root .dh-card-header-clock {
+  margin-bottom: 6px !important;
+}
+
+#dealhunter-hud-root .dh-card-header > span:first-child,
+#dealhunter-hud-root .dh-card-header > div:first-child {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  color: #94a3b8 !important;
+}
+
 /* Draggable Header */
 #dealhunter-hud-root .dh-header {
   display: flex !important;
@@ -245,7 +276,10 @@
   align-items: center !important;
   gap: 4px !important;
   border-radius: 9999px !important;
-  padding: 2px 8px !important;
+  padding: 2px 7px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
   font-size: 10px !important;
   font-weight: 600 !important;
@@ -291,13 +325,17 @@
   align-items: center !important;
   gap: 4px !important;
   border-radius: 9999px !important;
-  padding: 2px 8px !important;
+  padding: 2px 7px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
   font-size: 10px !important;
   font-weight: 600 !important;
   line-height: 1 !important;
   letter-spacing: normal !important;
   box-sizing: border-box !important;
+  transition: opacity 0.15s ease !important;
 }
 
 #dealhunter-hud-root .dh-card-badge *,
