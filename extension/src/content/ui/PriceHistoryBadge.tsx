@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { shopeeAdapter } from "../adapters/shopee_adapter";
+import { getAdapterForUrl } from "../adapters";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { PriceContextResponse } from "../../lib/types";
 import { storage } from "../../lib/storage";
@@ -30,7 +30,8 @@ export const PriceHistoryBadge: React.FC = () => {
 
   useEffect(() => {
     const fetchContext = async () => {
-      const prod = shopeeAdapter.extractProductInfo();
+      const adapter = getAdapterForUrl(window.location.href);
+      const prod = adapter?.extractProductInfo ? adapter.extractProductInfo() : null;
       if (!prod || !prod.itemId) return;
       try {
         const res: PriceContextResponse = await chrome.runtime.sendMessage({

@@ -26,15 +26,44 @@ let hudRoot: ReactDOM.Root | null = null;
 let badgeRoot: ReactDOM.Root | null = null;
 
 // 2. Inject Floating HUD on voucher/campaign/cart pages or pages with a saved target / scheduled task / armed session
+export function isECommerceVoucherOrDealPage(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr);
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname.toLowerCase();
+    const hash = url.hash.toLowerCase();
+    const full = (path + hash).toLowerCase();
+
+    // 1. Core e-commerce and shopping platforms
+    const isECommerceDomain =
+      host.includes("shopee.") ||
+      host.includes("lazada.") ||
+      host.includes("tiki.vn") ||
+      host.includes("tiktok.com") ||
+      host.includes("sendo.vn") ||
+      host.includes("amazon.") ||
+      host.includes("aliexpress.") ||
+      host.includes("taobao.com");
+
+    // 2. Hub / deal paths across all e-commerce platforms
+    const isDealPath =
+      /\/(m|voucher|vouchers|coupon|coupons|ma-giam-gia|khuyen-mai|uu-dai|giam-gia|flash-sale|flashsale|deal|deals|campaign|super-sale|cart|checkout|gio-hang|wow|promotion)/i.test(
+        full
+      );
+
+    if (isECommerceDomain && isDealPath) return true;
+
+    // 3. Generic site with voucher or coupon path
+    if (/\/(ma-giam-gia|voucher|vouchers|coupon|coupons|flash-sale|flashsale)/i.test(full)) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 async function injectFloatingHUD(force = false, autoPick = false) {
-  const isShopee = window.location.hostname.includes("shopee.");
-  const isVoucherPage =
-    isShopee &&
-    (window.location.href.includes("/m/ma-giam-gia") ||
-      window.location.href.includes("/m/10-10") ||
-      window.location.href.includes("/m/11-11") ||
-      window.location.href.includes("/m/") ||
-      window.location.href.includes("/cart"));
+  const isVoucherPage = isECommerceVoucherOrDealPage(window.location.href);
 
   let hasSavedTarget = false;
   let hasScheduledTask = false;
@@ -105,13 +134,32 @@ async function injectFloatingHUD(force = false, autoPick = false) {
 }
 
 // 3. Inject Price History Badge on product pages
-function injectPriceHistoryBadge() {
-  const isShopee = window.location.hostname.includes("shopee.");
-  const isProductPage =
-    isShopee &&
-    (window.location.href.includes("-i.") || window.location.href.includes("/product/"));
+export function isECommerceProductPage(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr);
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname.toLowerCase();
 
-  if (!isProductPage) return;
+    // Shopee product
+    if (host.includes("shopee.") && (path.includes("-i.") || path.includes("/product/"))) return true;
+
+    // Lazada product
+    if (host.includes("lazada.") && (path.includes("/products/") || path.includes("-i") || path.endsWith(".html"))) return true;
+
+    // Tiki product
+    if (host.includes("tiki.vn") && (path.includes("-p") || path.endsWith(".html"))) return true;
+
+    // TikTok Shop product
+    if (host.includes("tiktok.com") && (path.includes("/product/") || path.includes("/view/product"))) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function injectPriceHistoryBadge() {
+  if (!isECommerceProductPage(window.location.href)) return;
   if (document.getElementById("dealhunter-badge-root")) return;
 
   const container = document.createElement("div");
@@ -141,16 +189,45 @@ function initContentScript() {
   }
 }
 
-if (isTopWindow()) {
+const isTestEnv = typeof process !== "undefined" && process.env.NODE_ENV === "test";
+if (isTopWindow() && !isTestEnv) {
   initContentScript();
 }
 
-/** Why this tab cannot hunt, if Shopee redirected it away from the voucher page. */
-function shopeeBlockReason(): string | null {
-  if (!window.location.hostname.includes("shopee.")) return null;
-  const path = window.location.pathname;
-  if (path.startsWith("/verify/")) return "Shopee redirected to a verification (captcha) page - open Shopee, verify and sign in before the drop";
-  if (path.startsWith("/buyer/login")) return "Not signed in to Shopee in this browser";
+/** Detects whether platform redirected away to verification, captcha, or login */
+export function detectPlatformAuthOrCaptchaBlock(): string | null {
+  if (typeof window === "undefined") return null;
+  const host = window.location.hostname.toLowerCase();
+  const path = window.location.pathname.toLowerCase();
+
+  // Shopee
+  if (host.includes("shopee.")) {
+    if (path.startsWith("/verify/")) return "Shopee redirected to a verification (captcha) page - please verify and sign in before the drop";
+    if (path.startsWith("/buyer/login")) return "Not signed in to Shopee in this browser";
+  }
+
+  // Lazada
+  if (host.includes("lazada.")) {
+    if (path.includes("/verification/") || path.includes("/punish")) return "Lazada redirected to a verification (captcha) page - please verify and sign in before the drop";
+    if (path.includes("/user/login") || path.includes("/member/login")) return "Not signed in to Lazada in this browser";
+  }
+
+  // Tiki
+  if (host.includes("tiki.vn")) {
+    if (path.includes("/customer/account/login") || path.includes("/account/login")) return "Not signed in to Tiki in this browser";
+  }
+
+  // TikTok Shop
+  if (host.includes("tiktok.com")) {
+    if (path.includes("/verify") || path.includes("/security")) return "TikTok Shop requires verification - please verify and sign in before the drop";
+    if (path.includes("/login")) return "Not signed in to TikTok Shop in this browser";
+  }
+
+  // Generic Captcha / Security Check
+  if (path.includes("/captcha") || path.includes("/security-check")) {
+    return "The website requires captcha verification - please verify and sign in first";
+  }
+
   return null;
 }
 
@@ -160,8 +237,8 @@ async function executeFullAutoTask(task: ScheduledTask) {
   // 1. Ensure Floating HUD is visible to give visual real-time feedback
   injectFloatingHUD(true);
 
-  // 2. Check Shopee verification block if on Shopee
-  const blocked = shopeeBlockReason();
+  // 2. Check platform verification block
+  const blocked = detectPlatformAuthOrCaptchaBlock();
   if (blocked) {
     chrome.runtime.sendMessage({
       action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,

@@ -2,7 +2,7 @@
 
 Tai lieu nay mo ta chi tiet kien truc ky thuat, thuat toan loi, va luong xu ly dong bo cua he thong **DealHunter Universal Sniper** tren Chrome Extension (Manifest V3).
 
-Cap nhat: 2026-10-09 · Dong bo voi ban build production va 179 unit tests.
+Cap nhat: 2026-10-09 · Dong bo voi ban build production va 192 unit tests.
 
 ---
 
@@ -203,9 +203,30 @@ Hai che do "Arm Sniper" (kich hoat truc tiep tren Floating HUD) va "Schedule" (h
 
 ---
 
-## 7. Quy Chuan Chat Luong va Kiem Thu
+## 7. Kien Truc Da Nen Tang (Multi-Platform E-Commerce Architecture)
 
-- **Unit Tests**: 179/179 tests pass tren 17 test suites (`npx vitest run`).
+He thong khong gioi han o Shopee ma ho tro dong nhat tren moi san thuong mai dien tu va nen tang ban ve:
+
+1. **Marketplace Adapters & Registry (`src/content/adapters/`)**:
+   - `ShopeeAdapter`: Ho tro Shopee toan cau (`shopee.*` tai VN, TH, ID, MY, PH, SG, TW, BR).
+   - `LazadaAdapter`: Ho tro Lazada Dong Nam A (`lazada.*` tai VN, TH, PH, SG, MY, ID) va trich xuat thong tin san pham.
+   - `TikiAdapter`: Ho tro san Tiki (`tiki.vn`), nhan dien voucher/khuyen mai va trich xuat gia/ma san pham.
+   - `TikTokAdapter`: Ho tro TikTok Shop (`shop.tiktok.com`, `tiktok.com`) va trich xuat gia/san pham.
+   - Registry `getAdapterForUrl(url)`: Tu dong phan giai adapter phu hop theo URL trang hien tai.
+2. **Nhan dien trang deal / voucher da san (`isECommerceVoucherOrDealPage`)**:
+   - Quet cac mau duong dan chien dich (`/voucher`, `/coupon`, `/ma-giam-gia`, `/khuyen-mai`, `/flash-sale`, `/cart`, `/checkout`, `/wow/`, `/m/`) tren tat ca cac domain e-commerce (Shopee, Lazada, Tiki, TikTok Shop, Sendo, Amazon, AliExpress, Taobao).
+   - Tu dong kich hoat Floating HUD ma khong can thao tac thu cong.
+3. **Phat hien chuyen huong Captcha / Xac minh (`detectPlatformAuthOrCaptchaBlock`)**:
+   - Xu ly kiem tra trang thai xac minh / dang nhap cho tung san (Shopee `/verify/`, Lazada `/verification/` hoac `/punish`, Tiki `/customer/account/login`, TikTok Shop `/verify` hoac `/login`, va cac trang captcha tong quat).
+   - Canh bao som cho nguoi dung truoc gio G de tranh loi phien san.
+4. **Bo chon thong bao da nen tang**:
+   - Quet cac container thong bao dac thu cua tung san: `.shopee-toast`, `.next-feedback-toast`, `.lzd-toast`, `.arco-message` (ByteDance/TikTok), `.tiki-toast`, `.ant-message`, kem theo cac container W3C ARIA Live Regions.
+
+---
+
+## 8. Quy Chuan Chat Luong va Kiem Thu
+
+- **Unit Tests**: 192/192 tests pass tren 18 test suites (`npx vitest run`).
 - **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.
 - **Production Build**: Bien dich hoan tat sach se `popup.js`, `background.js`, `content.js` va `content.css`.
 - **Zero-Emoji**: Tuyet doi khong su dung emoji trong ma nguon, log, test va tai lieu.

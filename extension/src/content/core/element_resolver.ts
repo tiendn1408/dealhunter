@@ -128,14 +128,29 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
     '[role="status"]',
     '[aria-live="assertive"]',
     '[aria-live="polite"]',
+    // Shopee
     ".shopee-toast",
     ".shopee-alert-popup",
+    // Lazada
     ".next-feedback-toast",
+    ".lzd-toast",
+    ".lzd-message",
+    // TikTok Shop / ByteDance UI
     ".arco-message",
+    ".byte-message",
+    'div[class*="tiktok-toast" i]',
+    // Tiki / Ant Design
+    ".tiki-toast",
+    ".ant-message",
+    ".ant-notification",
+    // Global & generic framework notification containers
     'div[class*="toast" i]',
     'div[class*="snackbar" i]',
     'div[class*="alert-popup" i]',
     'div[class*="floating-alert" i]',
+    'div[class*="notification" i]',
+    'div[class*="feedback" i]',
+    'div[class*="notice" i]',
   ];
 
   let elements: HTMLElement[] = [];
@@ -492,12 +507,19 @@ export class ElementResolver {
       const cls = typeof curr.className === "string" ? curr.className.toLowerCase() : "";
       if (
         curr.getAttribute("data-testid")?.includes("voucher") ||
+        curr.getAttribute("data-testid")?.includes("coupon") ||
         cls.includes("voucher") ||
+        cls.includes("coupon") ||
+        cls.includes("deal") ||
         cls.includes("card") ||
+        cls.includes("item") ||
+        cls.includes("ticket") ||
         cls.includes("mission") ||
         cls.includes("reward") ||
         cls.includes("task") ||
-        curr.getAttribute("role") === "region"
+        curr.getAttribute("role") === "region" ||
+        curr.getAttribute("role") === "article" ||
+        curr.getAttribute("role") === "listitem"
       ) {
         return curr;
       }
@@ -760,7 +782,7 @@ export class ElementResolver {
  */
 function valueTokens(text: string): Set<string> {
   const withoutClocks = text.replace(/\d{1,2}:\d{2}(?::\d{2})?/g, " ");
-  const matches = withoutClocks.toLowerCase().match(/\d+(?:[.,]\d+)*\s*(?:k|đ|₫|%|tr|triệu)?/g) || [];
+  const matches = withoutClocks.toLowerCase().match(/\d+(?:[.,]\d+)*(?:\s*(?:k|đ|₫|%|tr|triệu|m|b|฿|thb|rp|idr|rm|myr|₱|php|s\$|sgd|\$|€|nt\$))?/g) || [];
   return new Set(matches.map((m) => m.replace(/\s+/g, "")));
 }
 

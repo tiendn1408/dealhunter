@@ -212,7 +212,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         restoreTargetForUrl(nextUrl);
 
         const newHost = window.location.hostname.replace(/^www\./, "");
-        setServerDomain(newHost || "shopee.vn");
+        setServerDomain(newHost || window.location.hostname || "universal");
       }
     };
 
@@ -816,13 +816,39 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       }
     }
 
-    if (typeof window !== "undefined" && window.location.hostname.includes("shopee.")) {
-      const path = window.location.pathname;
-      if (path.startsWith("/verify/") || path.startsWith("/buyer/login")) {
+    if (typeof window !== "undefined") {
+      const host = window.location.hostname.toLowerCase();
+      const path = window.location.pathname.toLowerCase();
+      if (host.includes("shopee.") && (path.startsWith("/verify/") || path.startsWith("/buyer/login"))) {
         setStatusMsg({
           text: path.startsWith("/verify/")
             ? "Shopee requires verification. Please verify and sign in first."
             : "Please sign in to Shopee first.",
+          tone: "error",
+        });
+        return;
+      }
+      if (host.includes("lazada.") && (path.includes("/verification/") || path.includes("/punish") || path.includes("/user/login") || path.includes("/member/login"))) {
+        setStatusMsg({
+          text: (path.includes("/verification/") || path.includes("/punish"))
+            ? "Lazada requires verification. Please verify and sign in first."
+            : "Please sign in to Lazada first.",
+          tone: "error",
+        });
+        return;
+      }
+      if (host.includes("tiki.vn") && (path.includes("/customer/account/login") || path.includes("/account/login"))) {
+        setStatusMsg({
+          text: "Please sign in to Tiki first.",
+          tone: "error",
+        });
+        return;
+      }
+      if (host.includes("tiktok.com") && (path.includes("/verify") || path.includes("/login"))) {
+        setStatusMsg({
+          text: path.includes("/verify")
+            ? "TikTok Shop requires verification. Please verify and sign in first."
+            : "Please sign in to TikTok Shop first.",
           tone: "error",
         });
         return;

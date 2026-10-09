@@ -5,7 +5,7 @@ export class ShopeeAdapter implements MarketplaceAdapter {
   platformName = "shopee";
 
   isMatchUrl(url: string): boolean {
-    return url.includes("shopee.vn");
+    return url.includes("shopee.");
   }
 
   findVoucherButtons(keyword?: string): HTMLElement[] {

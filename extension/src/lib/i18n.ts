@@ -17,7 +17,7 @@ const en = {
 
   // Live Sniper Tab
   startOnActiveTab: "START SNIPER ON THIS PAGE",
-  openShopeeAndStart: "OPEN SHOPEE & START SNIPER",
+  openShopeeAndStart: "OPEN STORE & START SNIPER",
   pageActive: (domain: string) => `${domain} active`,
   notOnPage: "No active webpage",
   launchHint: "Opens the in-page Sniper HUD with live millisecond clock & target button picker.",
@@ -30,7 +30,7 @@ const en = {
   syncedMinAgo: (min: number) => `Synced ${min} min ago`,
   syncing: "Syncing",
   resync: "Re-sync",
-  offsetVsShopee: "Offset vs. Shopee",
+  offsetVsShopee: "Offset vs. Server",
   offsetVsDomain: (domain?: string) => domain ? `Offset vs. ${domain}` : "Offset vs. Server",
   notSynced: "Not synced",
   roundTrip: "Network round trip",
@@ -74,7 +74,7 @@ const en = {
   },
 
   // Floating HUD
-  hudSubtitle: (domain?: string) => domain ? `Sniper · ${domain}` : "Voucher Sniper · Shopee",
+  hudSubtitle: (domain?: string) => domain ? `Sniper · ${domain}` : "Universal Deal Sniper",
   resyncClockTooltip: "Re-sync with server clock",
   syncingClock: "Syncing with server clock...",
   syncedClockSuccess: "Clock synced with server.",
@@ -180,7 +180,7 @@ const vi: TranslationCatalog = {
 
   // Live Sniper Tab
   startOnActiveTab: "BẮT ĐẦU SĂN TRÊN TRANG NÀY",
-  openShopeeAndStart: "MỞ SHOPEE & BẮT ĐẦU SĂN",
+  openShopeeAndStart: "MỞ SÀN & BẮT ĐẦU SĂN",
   pageActive: (domain: string) => `Đang mở ${domain}`,
   notOnPage: "Chưa mở trang web",
   launchHint: "Mở bảng Sniper HUD trên trang với đồng hồ mili-giây và con trỏ chọn nút.",
@@ -193,7 +193,7 @@ const vi: TranslationCatalog = {
   syncedMinAgo: (min: number) => `Đã đồng bộ ${min} phút trước`,
   syncing: "Đang đồng bộ",
   resync: "Đồng bộ lại",
-  offsetVsShopee: "Độ lệch so với Shopee",
+  offsetVsShopee: "Độ lệch so với máy chủ",
   offsetVsDomain: (domain?: string) => domain ? `Độ lệch so với ${domain}` : "Độ lệch so với máy chủ",
   notSynced: "Chưa đồng bộ",
   roundTrip: "Độ trễ mạng 2 chiều",
@@ -237,7 +237,7 @@ const vi: TranslationCatalog = {
   },
 
   // Floating HUD
-  hudSubtitle: (domain?: string) => domain ? `Bắn tỉa · ${domain}` : "Săn Voucher Shopee",
+  hudSubtitle: (domain?: string) => domain ? `Bắn tỉa · ${domain}` : "Săn Voucher Đa Nền Tảng",
   resyncClockTooltip: "Đồng bộ lại với giờ server",
   syncingClock: "Đang đồng bộ với giờ server...",
   syncedClockSuccess: "Đã đồng bộ với giờ server.",

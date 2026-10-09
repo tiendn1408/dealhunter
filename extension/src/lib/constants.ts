@@ -28,7 +28,15 @@ export const DEFAULT_SETTINGS = {
   dealHunterWebUrl: "http://localhost:3000",
 };
 
-export const SHOPEE_FLASH_HOURS = [0, 9, 12, 15, 18, 21];
+export const POPULAR_FLASH_HOURS = [0, 9, 12, 15, 18, 21];
+export const SHOPEE_FLASH_HOURS = POPULAR_FLASH_HOURS;
+
+export const POPULAR_SHOPPING_HUBS = [
+  { name: "Shopee", url: "https://shopee.vn/m/ma-giam-gia" },
+  { name: "Lazada", url: "https://www.lazada.vn/voucher" },
+  { name: "Tiki", url: "https://tiki.vn/khuyen-mai/ma-giam-gia" },
+  { name: "TikTok Shop", url: "https://shop.tiktok.com" },
+] as const;
 
 export const SHOPEE_URLS = {
   VOUCHER_HUB: "https://shopee.vn/m/ma-giam-gia",

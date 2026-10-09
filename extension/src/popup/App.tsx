@@ -3,7 +3,14 @@ import { TimeOffsetCard } from "./components/TimeOffsetCard";
 import { ScheduleForm } from "./components/ScheduleForm";
 import { TaskList } from "./components/TaskList";
 import { storage } from "../lib/storage";
-import { DEFAULT_SETTINGS, MESSAGE_ACTIONS, SHOPEE_FLASH_HOURS, SHOPEE_URLS } from "../lib/constants";
+import {
+  DEFAULT_SETTINGS,
+  MESSAGE_ACTIONS,
+  POPULAR_FLASH_HOURS,
+  POPULAR_SHOPPING_HUBS,
+  SHOPEE_FLASH_HOURS,
+  SHOPEE_URLS,
+} from "../lib/constants";
 import { ScheduledTask } from "../lib/types";
 import { Language, getTranslation } from "../lib/i18n";
 import { nextFlashDrop, formatCountdown } from "../lib/drop_time";
@@ -309,6 +316,23 @@ export const App: React.FC = () => {
                       : t.openShopeeAndStart}
                   </span>
                 </button>
+                {!isWebPage && (
+                  <div className="flex items-center justify-center gap-1.5 pt-0.5">
+                    {POPULAR_SHOPPING_HUBS.map((hub) => (
+                      <button
+                        key={hub.name}
+                        type="button"
+                        onClick={async () => {
+                          await chrome.tabs.create({ url: hub.url });
+                          window.close();
+                        }}
+                        className="rounded-lg bg-white/[0.05] hover:bg-white/[0.12] px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 transition active:scale-95"
+                      >
+                        {hub.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <p className="text-center text-[10px] leading-snug text-slate-400 px-2">
                   {t.launchHint}
                 </p>
