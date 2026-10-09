@@ -199,6 +199,7 @@ export class HuntCoordinator {
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
+      platformTier: diag?.platformTier,
       windowMs: (params as any).windowMs ?? 8000,
       onStatus: (msg) => {
         const isFiring = msg.includes("active") || msg.startsWith("Saving");

@@ -247,12 +247,113 @@ Tren cac trang React SPA khong co co che tu dong mo khoa nut theo thoi gian thuc
 3. **Cua so 3 giay quanh gio G ($[T - 750ms, T + 2250ms]$)**:
    - Ap dung co che reload lap lai co kiem soat qua `sessionStorage` (`dh_reload_count_${DROP}`):
    - Toi da 3 lan reload, moi lan cach nhau toi thieu 650ms de tranh spam may chu.
-   - **Vua phat hien nut kha dung (`isTargetClickable`) la lap tuc dung reload va click ngay (0ms tre)**.
+   - **Vua phat hien nut kha dung (`isTargetClickable && state !== "saved"`) la lap tuc dung reload va click ngay (0ms tre)**.
    - Khi co click thanh cong hoac deal hoan tat, tu dong don dep toan bo bien dem trong `sessionStorage`.
+
+### 8.3. Luong Xu Ly Chi Tiet Toan Dien (End-to-End Execution Flow)
+
+Duoi day la luong tuong tac chi tiet giua cac thanh phan tu luc khoi tao den khi hoan tat cu click Top 1:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Nguoi dung / Scheduler
+    participant C as HuntCoordinator
+    participant D as TargetDiagnostics
+    participant E as HuntEngine
+    participant R as ElementResolver
+    participant H as HumanClicker
+    participant S as Server (app.caffiliate.vn)
+
+    Note over U,C: T - 60s den T - 15s: Khoi tao va Dong bo
+    U->>C: Arm Sniper (hoac Scheduled Task trigger)
+    C->>D: inspect(targetElement)
+    D-->>C: platformTier = speed_priority
+    C->>C: Luu phien vao sessionStorage (ARMED_SESSION_KEY)
+    C->>E: startHunt(opts)
+    
+    Note over E,S: T - 5s: Giu am Socket TCP/TLS
+    E->>S: fetch(HEAD, cache: "no-store", keepalive: true)
+    S-->>E: 200 OK (TCP/TLS socket san sang)
+
+    Note over E,R: T - 750ms: Kiem tra trang thai nut cu
+    E->>R: resolve() & getButtonState()
+    R-->>E: disabled = true / state = "saved" (vet cu hom qua)
+    E->>U: window.location.reload() (dh_reload_count = 1)
+
+    Note over C,E: T - 750ms den T - 150ms: Trinh duyet tai lai trang
+    U->>C: Content Script nap lai, doc ARMED_SESSION_KEY
+    C->>E: startHunt() tiep tuc phien (isEmergencyReloaded = true)
+    E->>R: resolve() tim lai phan tu qua universalDescriptor
+
+    Note over E,H: T - 28ms: Ban don gio G (Pre-fire Lead)
+    E->>E: Cuong che go bo disabled, aria-disabled, class disabled
+    E->>H: dispatchClick(el, profile: hyper, skipApproach: true)
+    H->>S: Phat chuoi su kien chuot (0.1ms) -> Gui HTTP request qua Internet
+
+    Note over S: T = 00:00:00.000: Goi tin cham dich dung gio G
+    S-->>E: Server ghi nhan diem danh thanh cong (Top 1)
+    
+    Note over E,C: T + 50ms: Xac nhan hoan tat va don dep
+    E->>R: isTargetCompleted(el)
+    R-->>E: completed = true (state: saved)
+    E->>C: finish("saved", detail)
+    C->>C: Xoa sessionStorage (ARMED_SESSION_KEY, dh_reload_count)
+    C-->>U: Cap nhat HUD: Hoan tat / Saved
+```
+
+### 8.4. Ma Tran Tien Trinh Thoi Gian Mili-Giay (Chronological Timeline Matrix)
+
+Bang duoi day mo ta hanh vi cua he thong tai tung moc thoi gian xung quanh gio G doi voi cac nen tang `speed_priority`:
+
+| Moc Thoi Gian | Hanh Dong Chinh | Muc Dich Ky Thuat | Thanh Phan Xu Ly |
+| :--- | :--- | :--- | :--- |
+| **$T - 60s \to T - 20s$** | Pre-warm Tab & Calibration | Bat tab len front, focus window, dong bo dong ho 3 vong voi server qua tieu de `Date`. | `TaskScheduler`, `TimeCalibrator` |
+| **$T - 15s$** | Clean Tab & Arm Verify | Lam sach session/DOM tren tab cu neu can, kiem tra khoa nut va tao snapshot descriptor. | `TaskScheduler`, `HuntCoordinator` |
+| **$T - 5s$** | Socket Keep-Alive Ping | Gui request `HEAD` ngam giu ket noi TCP/TLS mo san, triet tieu 30ms-80ms bat tay TLS. | `HuntEngine` |
+| **$T - 750ms$** | Precision Pre-Reload | Neu nut muc tieu van bi khoa boi phien hom qua, reload truoc 750ms de DOM kip mount truoc gio G 150ms. | `HuntEngine` |
+| **$T - 750ms \to T - 150ms$** | Fast In-Memory Reload | Trinh duyet tai lai trang tu bo nho dem cache, content script khoi phuc phien tu `sessionStorage`. | `HuntCoordinator`, `ElementResolver` |
+| **$T - 28ms$** | Pre-fire Lead & DOM Unblock | Cuong che go `disabled`, bo qua quy dao chuot Bezier, dispatch chuoi su kien tuc thi trong 0.1ms. | `HuntEngine`, `HumanClicker` |
+| **$T - 28ms \to T = 0ms$** | Network Transit Window | Goi tin HTTP di chuyen qua ha tang mang Internet (~25-30ms ping RTT). | Internet / Network Layer |
+| **$T = 00:00:00.000$** | Server Arrival (Diem G) | Goi tin cham may chu dung tich tac server mo cong ngay moi, an tron moc 00:00:00. | Origin Server (`caffiliate.vn`) |
+| **$T + 250ms \to T + 2250ms$** | Guarded Reload Loop | Neu server cap nhat cham hoac chua mo nut, reload lap lai toi da 3 lan (cach nhau $\ge 650ms$). Vua co nut la click ngay. | `HuntEngine` |
+| **$T + 50ms \to T + 500ms$** | Completion Verification | Nhan dien nut bien doi sang da diem danh/saved, dung ban, cap nhat UI va don dep storage. | `ElementResolver`, `HuntCoordinator` |
 
 ---
 
-## 9. Quy Chuan Chat Luong va Kiem Thu
+## 9. So Sanh Phan Tang Nen Tang (Platform Tiering Matrix)
+
+He thong tu dong ap dung chien luoc rieng biet tuy thuoc vao do nhay cam cua he thong chong bot tren tung nen tang:
+
+| Dac Tinh Ky Thuat | Sàn Lớn (`major_marketplace`) | Trang Tốc Độ Cao (`speed_priority`) |
+| :--- | :--- | :--- |
+| **Nền tảng áp dụng** | Shopee, Lazada, TikTok Shop | `caffiliate.vn`, ticketbox, web đổi thưởng, điểm danh, mini-game |
+| **Hồ sơ nhấp chuột** | `adaptive` (Surge $\to$ Adaptation $\to$ Steady) | `hyper` (Cực đại 25ms, ~40 CPS, dwell 8ms) |
+| **Quỹ đạo chuột** | Đường cong Bezier Fitts's Law 4 bước | Bỏ qua hoàn toàn (`skipApproach: true`), tức thì 0.1ms |
+| **Bắn đón giờ G** | Không ($T - 0ms$) để tránh gửi request trước giờ bị sàn khóa | Có ($T - 28ms \approx RTT / 2$) bù đắp độ trễ mạng |
+| **Can thiệp DOM `disabled`** | Không can thiệp (tránh MutationObserver của DataDome quét) | Chủ động gỡ bỏ `disabled`, `aria-disabled`, class `disabled` tại giờ G |
+| **Pre-reload $T - 750ms$** | Tắt mặc định (trang SPA tự cập nhật qua WebSocket/Timer) | Bật tự động nếu nút vẫn mang trạng thái hôm qua |
+| **Guarded Reload Loop** | Chỉ reload khi cấu hình tường minh | Tự động lặp lại tối đa 3 lần trong cửa sổ $[T - 750ms, T + 2250ms]$ |
+| **Mục tiêu ưu tiên** | An toàn 100% trước WAF/Bot Filter | Tốc độ tối đa, đoạt Top 1 tuyệt đối tại $00:00:00.000$ |
+
+---
+
+## 10. Co Che Phong Thu va Xu Ly Ngoai Le (Fault Tolerance & Edge Case Recovery)
+
+1. **Bao toan trang thai qua Reload (Cross-Reload State Continuity)**:
+   - Moi thong tin san gom `targetTimestamp`, `universalDescriptor`, `diagnostics`, `clickProfileMode`, `dualDefenseReload` duoc luu tai `sessionStorage` (`ARMED_SESSION_KEY`).
+   - Khi trang web reload (du do F5 thu cong hay tu dong reload cua he thong), Content Script nap lai se doc ngay `ARMED_SESSION_KEY`, tu dong arm lai `HuntCoordinator` va dinh vi lai nut trong vong 10ms.
+2. **Tu dong tai dinh vi nut khi React re-render**:
+   - Khi React huy phan tu DOM cu va chen phan tu DOM moi vao cay tai gio G, `elementResolver.relocateUniversal(desc)` su dung chu ky noi dung (`matchesContentSignature`) va bo neo vi tri (`documentTop`, `ancestorSelector`) de tim lai nut moi trong 1 tick (10ms), khong lam dut gay chuoi click.
+3. **Chong click lap vao trang thai cu hom truoc**:
+   - Neu tai gio G nut tren man hinh van dang o trang thai `saved` tu ngay hom truoc, he thong kiem tra `state !== "saved"` truoc khi ban click, tranh lang phi luot click vao nut chua duoc lam moi.
+4. **Gioi han reload chong spam (Anti-Spam Reload Throttling)**:
+   - Moi lan reload duoc ghi nhan vao `dh_reload_count_${DROP}` va `dh_last_reload_time_${DROP}` trong `sessionStorage`.
+   - Chi cho phep reload cach nhau toi thieu 650ms va toi da 3 lan trong cua so 3 giay. Khi so luot click $\ge 1$, co che reload bi khoa hoan toan.
+
+---
+
+## 11. Quy Chuan Chat Luong va Kiem Thu
 
 - **Unit Tests**: 200/200 tests pass tren 18 test suites (`npx vitest run`).
 - **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.

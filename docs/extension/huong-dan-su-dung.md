@@ -30,6 +30,10 @@
   - **Pha 1 — But toc gio G (Clicks 1-3)**: Chu ky 60ms ± 10ms (~14-16 CPS) de giat deal trong cua so vang mili-giay dau tien.
   - **Pha 2 — Gian nhip thich ung (Clicks 4-8)**: Chu ky 95ms ± 16ms, bo sung vi nghi phuc hoi co hoc 65ms ± 15ms ngay truoc cu click thu 4 de pha vo hoan toan pho tu tuong quan (Autocorrelation) cua bo loc bot.
   - **Pha 3 — On dinh dai han (Clicks 9+)**: Chu ky 140ms ± 22ms kem vi nghi dinh ky sau moi 5 clicks nham bao ve tai khoan an toan khi cho may chu xu ly.
+- **Che do Hyper Strike & Phan tang nen tang tu dong (Tiered Platform Sniper)**:
+  - Tu dong nhan dien trang toc do cao (`caffiliate.vn`, diem danh doi thuong, dat ve): Kich hoat ho so `hyper` 25ms (~40 CPS), bo qua quy dao chuot, go bo thuoc tinh `disabled` tren DOM va ban don truoc 28ms de goi tin cham server dung 00:00:00.000.
+  - Tu dong bao ve san lon (Shopee, Lazada, TikTok Shop): Giu nguyen mo hinh sinh trac hoc tiep can Fitts's Law de tranh bi DataDome / Cloudflare quet bot.
+- **Reload don dau thong minh (Guarded Precision Pre-Reload Loop)**: Tu dong reload don dau truoc 750ms tren cac trang can phien moi va reload co kiem soat trong cua so 3 giay quanh gio G.
 - **Kich hoat som 150ms truoc gio G (Lead Time)**: Bat dau quy trinh click truoc gio G 150ms de hap thu do tre mang Internet, dam bao cu click dau tien cham vao may chu dung miligiay mo deal.
 - **May trang thai hanh vi (Behavioral State Machine)**: Loai bo 100% tu dien ngon ngu hardcode. Xac dinh ket qua san dua tren bien doi DOM thuc te (unmount, disabled state, text mutation, W3C ARIA, SVG icon injection).
 - **Price History Intelligence Badge**: Tu dong hien thi huy hieu lich su gia va so sanh deal tren cac trang san pham Shopee, ho tro xem bien dong gia va chuyen huong ve DealHunter Web.
@@ -171,7 +175,10 @@ Dung khi ban muon dat lich truoc va de trinh duyet tu dong mo trang, khoa muc ti
 | Thanh phan | File ma nguon | Co che hoat dong |
 |---|---|---|
 | **Hunt Coordinator (SSOT)** | [`hunt_coordinator.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_coordinator.ts) | Single Source of Truth quan ly phien san tap trung, thong nhat giua Arm manual tren HUD va Schedule tu dong tu Background. Xu ly ket noi lai phien qua reload. |
-| **Autonomous Adaptive Engine** | [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Dong co dinh hinh dong hoc 3 pha: 60ms but toc dau, 95ms kem vi nghi phuc hoi co 65ms truoc click 4, va 140ms on dinh dai han. Lead time 150ms truoc gio G. |
+| **Tiered Platform Engine** | [`target_diagnostics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/target_diagnostics.ts) | Tu dong phan tang: giu nguyen tiep can sinh trac hoc chuan tren Shopee/Lazada/TikTok, tu dong kich hoat che do Hyper Strike tren web nho/caffiliate.vn. |
+| **Hyper Strike & Pre-fire** | [`human_biometrics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/human_biometrics.ts), [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Cua so nhap chuot 25ms (~40 CPS), ban don gio G truoc 28ms bu tru mang Internet, cuong che go disabled tren DOM dung tich tac 00:00:00.000. |
+| **Guarded Precision Reload** | [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Socket Keep-Alive o T-5s, Precision Pre-Reload o T-750ms neu nut con vuong trang thai cu, va vong lap reload toi da 3 lan trong cua so 3 giay quanh gio G. |
+| **Autonomous Adaptive Engine** | [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Dong co dinh hinh dong hoc 3 pha tren san lon: 60ms but toc dau, 95ms kem vi nghi phuc hoi co 65ms truoc click 4, va 140ms on dinh dai han. |
 | **Behavioral State Machine** | [`element_resolver.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/element_resolver.ts) | Loai bo hoan toan regex tu dien. Xac dinh ket qua dua tren DOM detachment, disabled transition, text mutation, W3C ARIA contracts va SVG icon injection. |
 | **Target Diagnostics** | [`target_diagnostics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/target_diagnostics.ts) | Chuan doan phan tu muc tieu va tinh chat trang (SPA reactive vs Static). Tu dong tat phong thu kep reload tren ung dung React de tranh mat state trang. |
 | **Dual-Defense Reload** | [`scheduler.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/background/scheduler.ts), [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Pre-warm tab o T-60s tu Background; Emergency reload o T+250ms tren trang tinh neu nut bi stale DOM; cua so mo rong 10 giay sau reload voi khoa chong lap vo han. |
@@ -199,12 +206,16 @@ Chi tiet kien truc toan dien duoc tai lieu hoa tai: [`docs/extension/kien-truc-u
 ### Q4: May tinh dat mui gio khac (khong phai GMT+7) thi he thong co san dung gio khong?
 - **Tra loi**: Luon luon dung. Thuat toan gio cua DealHunter luon quy doi thoi gian ve chuan gio Viet Nam (GMT+7, khong DST), dam bao chay dung gio du ban dang o bat ky quoc gia nao tren the gioi.
 
+### Q5: Tai sao mo 3 cua so trinh duyet tren cung 1 may lai cham hon chay 1 cua so duy nhat?
+- **Tra loi**: Trinh duyet Chromium tu dong ap dung co che bop nghen tai nguyen nen (Background Tab / Inactive Window Throttling) doi voi cac cua so khong duoc nguoi dung focus truc tiep. Chay nhieu tai khoan song song tren cung 1 may khien timer bi cham tre va bang thong mang bi phan manh, dan den ket qua thap hon (Top 8, 9, 15). Khuyen nghi chi su dung **1 tai khoan chinh tren 1 cua so duy nhat duoc focus** de dat toc do Top 1 tuyet doi.
+
 ---
 
 ## 9. Luu Y Quan Trong Va An Toan Tai Khoan
 
 1. **Bao mat tuyet doi**: Tien ich hoat dong hoan toan tai phia client tren trinh duyet cua ban, su dung phien dang nhap co san cua chinh ban. Tien ich khong bao gio luu tru mat khau hay thong tin the tin dung.
-2. **Chuan bi truoc gio G**:
+2. **Uu tien 1 tai khoan / 1 cua so focus duy nhat**: Voi cac deal mili-giay khoc liet (nhu diem danh doi thuong caffiliate.vn), luon giu 1 cua so trinh duyet duy nhat tren man hinh va dam bao cua so dang duoc focus.
+3. **Chuan bi truoc gio G**:
    - Voi Shopee: Dang nhap san tai khoan, mo thu trang voucher truoc 5-10 phut de vuot qua captcha neu co.
    - Voi cac trang web khac: Dang nhap va chon san thong tin can thiet tren man hinh de san sang bam nut ngay khi gio G den.
-3. **Giu trinh duyet hoat dong**: Khong gap man hinh hoac de may tinh roi vao che do Sleep neu ban dat lich san tu dong khi khong ngoi truoc may.
+4. **Giu trinh duyet hoat dong**: Khong gap man hinh hoac de may tinh roi vao che do Sleep neu ban dat lich san tu dong khi khong ngoi truoc may.

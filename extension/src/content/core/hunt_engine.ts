@@ -358,10 +358,13 @@ export function startHunt(opts: HuntOptions): () => void {
         if (state === "saved") return finish("saved", "The page shows the target as saved");
         if (state === "exhausted") return finish("exhausted", "The target is fully claimed");
       } else if (t >= opts.targetTimestamp + 2000 && el) {
-        // If drop has passed by at least 2s, clicks === 0, and page already explicitly marks it exhausted
+        // If drop has passed by at least 2s, clicks === 0, and page already explicitly marks it exhausted or saved
         const state = elementResolver.getButtonState(el);
         if (state === "exhausted") {
           return finish("exhausted", "Target voucher is already exhausted or sold out");
+        }
+        if (state === "saved") {
+          return finish("saved", "Target is already confirmed saved for today");
         }
       }
 
@@ -403,6 +406,7 @@ export function startHunt(opts: HuntOptions): () => void {
       if (
         el &&
         isFireMoment &&
+        state !== "saved" &&
         (state === "collectable" || (isLockedTarget && isTargetClickable)) &&
         t - lastClickAt >= currentIntervalMs &&
         clicks < maxClicks
