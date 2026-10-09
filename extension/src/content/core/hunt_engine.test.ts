@@ -99,7 +99,10 @@ describe("startHunt", () => {
   it("reports exhausted, not success, when the voucher runs out", () => {
     document.body.innerHTML = voucherCard("v1", "Giảm 15% tối đa 100k");
     const btn = document.getElementById("v1")!;
-    btn.addEventListener("click", () => (btn.textContent = "Hết lượt"));
+    btn.addEventListener("click", () => {
+      btn.textContent = "Hết lượt";
+      btn.classList.add("exhausted");
+    });
     const h = setup(undefined, btn);
     h.advanceTo(DROP + 1000);
     expect(h.outcome?.result).toBe("exhausted");
@@ -210,4 +213,69 @@ describe("startHunt", () => {
     h.advanceTo(DROP + 500);
     expect(clicks).toHaveBeenCalled();
   });
+
+  it("relocates and clicks an arbitrary website button when React replaces the node at drop", () => {
+    document.body.innerHTML = `
+      <div id="checkin-container">
+        <button id="daily-btn" data-testid="daily-checkin" disabled>Điểm danh</button>
+      </div>
+    `;
+    const lockedBtn = document.getElementById("daily-btn")!;
+    const h = setup(undefined, lockedBtn);
+    h.advanceTo(DROP - 100);
+
+    // React replaces the node with a fresh enabled button at drop moment
+    document.body.innerHTML = `
+      <div id="checkin-container">
+        <button id="daily-btn-fresh" data-testid="daily-checkin">Điểm danh</button>
+      </div>
+    `;
+    const freshBtn = document.getElementById("daily-btn-fresh")!;
+    const freshClicks = vi.fn(() => {
+      freshBtn.setAttribute("disabled", "true");
+    });
+    freshBtn.addEventListener("click", freshClicks);
+
+    h.advanceTo(DROP + 500);
+    expect(freshClicks).toHaveBeenCalled();
+    expect(h.outcome?.result).toBe("saved");
+  });
+
+  it("completes immediately when a custom button text changes to completed after click", () => {
+    document.body.innerHTML = `<div class="event"><button id="claim-btn">Check In</button></div>`;
+    const btn = document.getElementById("claim-btn")!;
+    btn.addEventListener("click", () => {
+      btn.textContent = "Checked in";
+    });
+    const h = setup(undefined, btn);
+    h.advanceTo(DROP + 200);
+
+    expect(h.outcome?.result).toBe("saved");
+    expect(h.outcome?.clicks).toBe(1);
+  });
+
+  it("triggers emergency reload handler if locked button remains disabled after drop window with dualDefenseReload", () => {
+    document.body.innerHTML = `<div><button id="static-btn" disabled>Sắp mở</button></div>`;
+    const btn = document.getElementById("static-btn") as HTMLButtonElement;
+    let now = DROP - 1000;
+    const ticker = new ManualTicker();
+    const onEmergencyReload = vi.fn();
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      ticker,
+      dualDefenseReload: true,
+      onEmergencyReload,
+      onDone: () => {},
+    });
+
+    while (now < DROP + 350 && ticker.running) {
+      now += 10;
+      ticker.tick();
+    }
+
+    expect(onEmergencyReload).toHaveBeenCalled();
+  });
 });
+

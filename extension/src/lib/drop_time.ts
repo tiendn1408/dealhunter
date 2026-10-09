@@ -25,3 +25,12 @@ export function nextFlashDrop(hours: number[], nowMs: number): { at: number; hou
   }
   return best;
 }
+
+/** Timestamp (ms) of the exact hour:minute:second in Vietnam time at or after `nowMs`. */
+export function nextExactDropAt(hour: number, minute: number, second: number, nowMs: number): number {
+  const vnNow = new Date(nowMs + VN_OFFSET_MS);
+  const candidate =
+    Date.UTC(vnNow.getUTCFullYear(), vnNow.getUTCMonth(), vnNow.getUTCDate(), hour, minute, second, 0) - VN_OFFSET_MS;
+  return candidate >= nowMs ? candidate : candidate + 24 * 60 * 60 * 1000;
+}
+

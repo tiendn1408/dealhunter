@@ -40,11 +40,11 @@ export function estimateOffsetFromProbes(probes: ClockProbe[]): { offsetMs: numb
 }
 
 export class TimeCalibrator {
-  private targetUrl: string = SHOPEE_URLS.PING_TARGET;
+  private defaultTargetUrl: string = SHOPEE_URLS.PING_TARGET;
 
-  private async probe(): Promise<ClockProbe | null> {
+  private async probe(url: string): Promise<ClockProbe | null> {
     const sentAt = Date.now();
-    const res = await fetch(this.targetUrl, { method: "HEAD", cache: "no-store", credentials: "omit" });
+    const res = await fetch(url, { method: "HEAD", cache: "no-store", credentials: "omit" });
     const receivedAt = Date.now();
     const header = res.headers.get("Date");
     const serverSecondMs = header ? new Date(header).getTime() : NaN;
@@ -53,25 +53,52 @@ export class TimeCalibrator {
   }
 
   /**
-   * Probes Shopee back-to-back until `boundaries` second roll-overs were observed (or the time budget
-   * runs out) and stores the median offset. When no roll-over could be observed the calibration is
-   * marked as not calibrated instead of pretending an offset of 0 is accurate.
+   * Probes targetUrl back-to-back until `boundaries` second roll-overs were observed (or the time budget
+   * runs out) and stores the median offset. Falls back gracefully to default ping target if targetUrl fails.
    */
-  async calibrate(boundaries = 3, budgetMs = 6000): Promise<ClockCalibration> {
+  async calibrate(boundaries = 3, budgetMs = 6000, targetUrl?: string): Promise<ClockCalibration> {
+    let activeUrl = targetUrl || this.defaultTargetUrl;
+    let urlHost = "";
+    try {
+      urlHost = new URL(activeUrl).hostname.replace(/^www\./, "");
+    } catch {
+      urlHost = "server";
+    }
+
     const probes: ClockProbe[] = [];
     const deadline = Date.now() + budgetMs;
     let seen = 0;
+    let consecutiveFailures = 0;
 
     while (Date.now() < deadline && seen < boundaries) {
       try {
-        const p = await this.probe();
+        const p = await this.probe(activeUrl);
         if (p) {
+          consecutiveFailures = 0;
           const last = probes[probes.length - 1];
           if (last && p.serverSecondMs === last.serverSecondMs + 1000) seen++;
           probes.push(p);
+        } else {
+          consecutiveFailures++;
         }
       } catch (err) {
+        consecutiveFailures++;
         console.warn("[TimeCalibrator] Probe failed:", err);
+      }
+
+      // If custom domain fails 3 times, fallback to default target URL
+      if (consecutiveFailures >= 3 && activeUrl !== this.defaultTargetUrl) {
+        console.warn(`[TimeCalibrator] Probing ${activeUrl} failed, falling back to default ping target`);
+        activeUrl = this.defaultTargetUrl;
+        try {
+          urlHost = new URL(activeUrl).hostname.replace(/^www\./, "");
+        } catch {
+          urlHost = "server";
+        }
+        consecutiveFailures = 0;
+      }
+
+      if (consecutiveFailures > 0) {
         await new Promise((r) => setTimeout(r, 200));
       }
     }
@@ -87,8 +114,9 @@ export class TimeCalibrator {
           errorMs: estimate.errorMs,
           calibrated: true,
           lastCalibratedAt: Date.now(),
+          serverHost: urlHost,
         }
-      : { offsetMs: 0, rttMs: medianRtt, errorMs: 1000, calibrated: false, lastCalibratedAt: Date.now() };
+      : { offsetMs: 0, rttMs: medianRtt, errorMs: 1000, calibrated: false, lastCalibratedAt: Date.now(), serverHost: urlHost };
 
     await storage.saveCalibration(calibration);
     return calibration;

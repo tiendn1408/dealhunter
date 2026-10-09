@@ -78,13 +78,19 @@ Chay toan bo test suite:
 ```bash
 npm test
 ```
-Bao gom 35 unit tests kiem tra toan dien:
-- `human_clicker.test.ts`: Kiem tra chuoi su kien chuot va random coordinates.
-- `hunt_engine.test.ts`: Kiem tra co che san, relocate nut khi re-render, click nut tuy chon tren web bat ky.
-- `element_resolver.test.ts`: Kiem tra nhan dien va phan loai trang thai nut voucher.
-- `time_calibrator.test.ts`: Kiem tra thuat toan can chinh thoi gian qua RTT.
-- `drop_time.test.ts`: Kiem tra tinh toan moc gio Viet Nam (GMT+7).
-- `web_session.test.ts`: Kiem tra giao tiep session token voi Web app.
+Bao gom toan bo **89 unit tests** (12 suites) kiem tra toan dien:
+- `hunt_coordinator.ts`: Kiem tra quan ly phien san tap trung, dong bo giua HUD va Schedule.
+- `hunt_engine.test.ts` (15 tests): Kiem tra co che san, relocate nut khi re-render, click burst 35ms, fallback reload tai T+250ms, graceful timeout khi khong co nut.
+- `element_resolver.test.ts` (6 tests): Kiem tra may trang thai hanh vi (W3C ARIA, data attributes, disabled transition, text mutation, icon injection) loai bo 100% hardcoded text.
+- `target_diagnostics.test.ts` (7 tests): Kiem tra nhan dien framework SPA (React/Vue/Angular), dem nguoc toan hoc va chien luoc phong thu kep.
+- `scheduler.test.ts` (2 tests): Kiem tra Chrome alarm scheduler va pre-warm tab T-60s.
+- `human_clicker.test.ts` (2 tests): Kiem tra chuoi su kien chuot va random coordinates.
+- `time_calibrator.test.ts` (6 tests): Kiem tra thuat toan can chinh thoi gian qua RTT.
+- `timer_worker.test.ts` (1 test): Kiem tra Web Worker ticker khong tre.
+- `drop_time.test.ts` (6 tests): Kiem tra tinh toan moc gio Viet Nam (GMT+7).
+- `storage.test.ts` (6 tests): Kiem tra doc ghi chrome.storage local.
+- `web_session.test.ts` (12 tests): Kiem tra giao tiep session token voi Web app.
+- `endpoints.test.ts` (21 tests) va `api_client.test.ts` (5 tests): Kiem tra API client va endpoints.
 
 ---
 

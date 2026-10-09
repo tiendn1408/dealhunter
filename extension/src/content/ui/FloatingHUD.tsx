@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
 import { timeSyncClient } from "../core/time_sync_client";
 import { humanClicker } from "../core/human_clicker";
-import { elementResolver } from "../core/element_resolver";
-import { startHunt, HuntOutcome } from "../core/hunt_engine";
-import { formatVN, nextDropAt, nextFlashDrop } from "../../lib/drop_time";
-import { SHOPEE_FLASH_HOURS } from "../../lib/constants";
+import { elementResolver, UniversalTargetDescriptor } from "../core/element_resolver";
+import { HuntOutcome } from "../core/hunt_engine";
+import { huntCoordinator, ARMED_SESSION_KEY } from "../core/hunt_coordinator";
+import { targetDiagnostics } from "../core/target_diagnostics";
+import { formatVN, nextDropAt, nextExactDropAt } from "../../lib/drop_time";
 import { storage } from "../../lib/storage";
 import { Language, getTranslation } from "../../lib/i18n";
+import { MESSAGE_ACTIONS } from "../../lib/constants";
+import { ScheduledTask, TargetDiagnosticsSummary } from "../../lib/types";
 import {
   Crosshair,
   Zap,
@@ -21,15 +24,25 @@ import {
   CircleX,
   Timer,
   Languages,
+  GripHorizontal,
+  Bookmark,
+  BookmarkCheck,
+  Trash2,
+  CalendarClock,
+  Cpu,
+  ShieldCheck,
 } from "lucide-react";
 
 interface FloatingHUDProps {
   onClose?: () => void;
   /** The HUD's host element; clicks on the HUD itself are ignored while picking a target. */
   hostElement?: HTMLElement;
+  /** When true, automatically activates target picking mode upon mounting. */
+  autoPick?: boolean;
 }
 
 type Tone = "idle" | "armed" | "firing" | "success" | "warning" | "error";
+type TargetSlot = "quick_10s" | "quick_30s" | "midnight" | "next_minute" | "custom";
 
 const TONE_STYLES: Record<Tone, { dot: string; text: string; ring: string }> = {
   idle: { dot: "bg-slate-500", text: "text-slate-300", ring: "ring-slate-700/60" },
@@ -40,11 +53,11 @@ const TONE_STYLES: Record<Tone, { dot: string; text: string; ring: string }> = {
   error: { dot: "bg-rose-400", text: "text-rose-200", ring: "ring-rose-500/40" },
 };
 
-export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }) => {
+export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, autoPick }) => {
   const [lang, setLang] = useState<Language>("en");
   const [minimized, setMinimized] = useState(false);
   const [isArmed, setIsArmed] = useState(false);
-  const [shopeeTimeStr, setShopeeTimeStr] = useState("--:--:--.---");
+  const [serverTimeStr, setServerTimeStr] = useState("--:--:--.---");
   const [offsetMs, setOffsetMs] = useState(0);
   const [errorMs, setErrorMs] = useState(1000);
   const [calibrated, setCalibrated] = useState(false);
@@ -53,17 +66,152 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
     text: "",
     tone: "idle",
   });
-  const [targetSlot, setTargetSlot] = useState<"next_flash" | "midnight" | "next_minute">("next_flash");
+
+  const [targetSlot, setTargetSlot] = useState<TargetSlot>("quick_10s");
+  const [customTime, setCustomTime] = useState("00:00:00");
+  const armedTargetTimestampRef = useRef<number | null>(null);
   const [countdownStr, setCountdownStr] = useState("--:--.-");
   const [targetLabel, setTargetLabel] = useState("--:--:--");
   const [targetSummary, setTargetSummary] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const [isTargetSaved, setIsTargetSaved] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<TargetDiagnosticsSummary | null>(null);
+  const [analyzingTarget, setAnalyzingTarget] = useState(false);
+
+  // Dragging state
+  const [hudPos, setHudPos] = useState<{ x: number; y: number } | null>(null);
+  const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
 
   const targetElementRef = useRef<HTMLElement | null>(null);
-  const cancelHuntRef = useRef<(() => void) | null>(null);
+  const universalDescRef = useRef<UniversalTargetDescriptor | null>(null);
+  const savedTargetNameRef = useRef<string | null>(null);
 
   const t = getTranslation(lang);
   const currentHost = typeof window !== "undefined" ? window.location.hostname.replace(/^www\./, "") : "";
+  const [serverDomain, setServerDomain] = useState<string>(timeSyncClient.getServerHost() || currentHost);
+
+  // Auto-calibrate with current host on mount if needed & subscribe to calibration updates
+  useEffect(() => {
+    const isDomainMatch = timeSyncClient.getServerHost().replace(/^www\./, "").toLowerCase() === currentHost.toLowerCase();
+    if (!timeSyncClient.getIsCalibrated() || !isDomainMatch) {
+      setSyncing(true);
+      timeSyncClient.init().finally(() => setSyncing(false));
+    }
+
+    const unsubscribe = timeSyncClient.onCalibrationChange((cal) => {
+      setOffsetMs(cal.offsetMs);
+      setErrorMs(cal.errorMs ?? 1000);
+      setCalibrated(cal.calibrated);
+      if (cal.serverHost) {
+        setServerDomain(cal.serverHost.replace(/^www\./, ""));
+      }
+    });
+
+    return unsubscribe;
+  }, [currentHost]);
+
+  // Restore saved target for this page URL on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    storage.getSavedTargetForUrl(window.location.href).then((saved) => {
+      if (saved) {
+        universalDescRef.current = saved.descriptor;
+        savedTargetNameRef.current = saved.name;
+        setIsTargetSaved(true);
+        setTargetSlot(saved.targetSlot);
+        if (saved.customTime) setCustomTime(saved.customTime);
+
+        // Try relocating on the current DOM
+        const el = elementResolver.relocateUniversal(saved.descriptor);
+        if (el) {
+          targetElementRef.current = el;
+          el.classList.add("dh-target-highlight");
+          setTargetSummary(saved.name);
+        } else {
+          // Target is saved, but currently in standby / completed state
+          setTargetSummary(`${t.standbyPrefix}${saved.name}`);
+        }
+        setStatus({ text: getTranslation(lang).savedTargetRestored, tone: "idle" });
+      }
+    });
+  }, [lang]);
+
+  // Continuous target locator: observes DOM mutations & polls to ensure target highlight is NEVER lost on reload/SPAs
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const attemptRelocate = () => {
+      if (!universalDescRef.current) return;
+
+      if (targetElementRef.current && targetElementRef.current.isConnected) {
+        if (!targetElementRef.current.classList.contains("dh-target-highlight")) {
+          targetElementRef.current.classList.add("dh-target-highlight");
+        }
+        return;
+      }
+
+      const el = elementResolver.relocateUniversal(universalDescRef.current);
+      if (el) {
+        targetElementRef.current = el;
+        el.classList.add("dh-target-highlight");
+        const name = (savedTargetNameRef.current || elementResolver.text(el) || t.targetButtonDefault).trim();
+        setTargetSummary(name);
+      }
+    };
+
+    attemptRelocate();
+    const interval = setInterval(attemptRelocate, 350);
+
+    let observer: MutationObserver | null = null;
+    if (typeof MutationObserver !== "undefined" && document.body) {
+      observer = new MutationObserver(() => attemptRelocate());
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    return () => {
+      clearInterval(interval);
+      observer?.disconnect();
+    };
+  }, [t.targetButtonDefault]);
+
+  const getResultView = (result: HuntOutcome["result"]): { text: string; tone: Tone } => {
+    const tones: Record<HuntOutcome["result"], Tone> = {
+      saved: "success",
+      exhausted: "warning",
+      not_found: "error",
+      timeout: "warning",
+      cancelled: "idle",
+    };
+    return {
+      text: t.outcome[result],
+      tone: tones[result],
+    };
+  };
+
+  // Subscribe to unified huntCoordinator state (single source of truth for both manual Arm and Schedule)
+  useEffect(() => {
+    return huntCoordinator.subscribe((coordState) => {
+      setIsArmed(coordState.isArmed);
+      if (coordState.targetTimestamp) {
+        armedTargetTimestampRef.current = coordState.targetTimestamp;
+      } else if (!coordState.isArmed) {
+        armedTargetTimestampRef.current = null;
+      }
+      if (coordState.targetSummary) {
+        setTargetSummary(coordState.targetSummary);
+      }
+      if (coordState.outcome) {
+        const view = getResultView(coordState.outcome.result);
+        setStatus({ text: `${view.text} · ${coordState.outcome.clicks} clicks`, tone: view.tone });
+      } else if (coordState.statusText) {
+        if (coordState.statusText === "Disarmed") {
+          setStatus({ text: t.disarmedStatus, tone: "idle" });
+        } else {
+          setStatus({ text: coordState.statusText, tone: coordState.tone });
+        }
+      }
+    });
+  }, [t.disarmedStatus, t.outcome]);
 
   // Initialize language from settings & listen for changes
   useEffect(() => {
@@ -88,8 +236,27 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
     await storage.setLanguage(nextLang);
   };
 
-  // Drop time in Vietnam time (GMT+7)
-  const computeTargetTimestamp = (now: number, mode: "next_flash" | "midnight" | "next_minute") => {
+  // Switch target slot & clear any armed timestamp
+  const handleSelectSlot = (slot: TargetSlot) => {
+    if (isArmed) return;
+    setTargetSlot(slot);
+    armedTargetTimestampRef.current = null;
+  };
+
+  // Target timestamp calculation
+  const computeTargetTimestamp = (now: number, mode: TargetSlot): { timestamp: number; label: string } => {
+    if (isArmed && armedTargetTimestampRef.current) {
+      return {
+        timestamp: armedTargetTimestampRef.current,
+        label: formatVN(armedTargetTimestampRef.current).slice(0, 8),
+      };
+    }
+    if (mode === "quick_10s") {
+      return { timestamp: now + 10_000, label: "+10s" };
+    }
+    if (mode === "quick_30s") {
+      return { timestamp: now + 30_000, label: "+30s" };
+    }
     if (mode === "next_minute") {
       const at = Math.floor(now / 60000) * 60000 + 60000;
       return { timestamp: at, label: formatVN(at).slice(0, 8) };
@@ -98,75 +265,257 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
       const at = nextDropAt(0, 0, now, 0);
       return { timestamp: at, label: "00:00:00" };
     }
-    const { at } = nextFlashDrop(SHOPEE_FLASH_HOURS, now);
-    return { timestamp: at, label: formatVN(at).slice(0, 8) };
+    if (mode === "custom") {
+      const parts = customTime.split(":").map((p) => parseInt(p.trim(), 10));
+      const h = Number.isFinite(parts[0]) && parts[0] >= 0 && parts[0] < 24 ? parts[0] : 0;
+      const m = Number.isFinite(parts[1]) && parts[1] >= 0 && parts[1] < 60 ? parts[1] : 0;
+      const s = Number.isFinite(parts[2]) && parts[2] >= 0 && parts[2] < 60 ? parts[2] : 0;
+      const at = nextExactDropAt(h, m, s, now);
+      return { timestamp: at, label: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` };
+    }
+    return { timestamp: now + 10_000, label: "--:--:--" };
   };
 
-  // Clock display only; the hunt itself runs on the Web Worker ticker in the hunt engine
+  // Clock display loop (50ms interval)
   useEffect(() => {
     const updateClock = () => {
-      const now = timeSyncClient.getShopeeTime();
-      setShopeeTimeStr(formatVN(now));
+      const now = timeSyncClient.getServerTime();
+      setServerTimeStr(formatVN(now));
       setOffsetMs(timeSyncClient.getOffset());
       setErrorMs(timeSyncClient.getErrorMs());
       setCalibrated(timeSyncClient.getIsCalibrated());
+      const host = timeSyncClient.getServerHost();
+      if (host) setServerDomain(host.replace(/^www\./, ""));
 
       const { timestamp, label } = computeTargetTimestamp(now, targetSlot);
       setTargetLabel(label);
-      const diff = Math.max(0, timestamp - now);
+
+      let diff = 0;
+      if (!isArmed && targetSlot === "quick_10s") {
+        diff = 10_000;
+      } else if (!isArmed && targetSlot === "quick_30s") {
+        diff = 30_000;
+      } else {
+        diff = Math.max(0, timestamp - now);
+      }
+
       const h = Math.floor(diff / 3_600_000);
       const m = Math.floor((diff % 3_600_000) / 60000);
       const s = Math.floor((diff % 60000) / 1000);
       const tenth = Math.floor((diff % 1000) / 100);
       const mmss = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${tenth}`;
       setCountdownStr(h > 0 ? `${h}:${mmss}` : mmss);
+
+      // Auto-reconnect target element if disconnected or hydrating after reload / SPA navigation
+      if (universalDescRef.current && (!targetElementRef.current || !targetElementRef.current.isConnected)) {
+        const el = elementResolver.relocateUniversal(universalDescRef.current);
+        if (el) {
+          targetElementRef.current = el;
+          el.classList.add("dh-target-highlight");
+        }
+      }
     };
 
     updateClock();
     const interval = setInterval(updateClock, 50);
     return () => clearInterval(interval);
-  }, [targetSlot]);
+  }, [targetSlot, customTime, isArmed]);
 
-  useEffect(() => () => cancelHuntRef.current?.(), []);
+  useEffect(() => {
+    return () => {
+      cleanupPickerRef.current?.();
+    };
+  }, []);
 
+  const isOwnElement = (el: HTMLElement | null) => !!hostElement && (hostElement === el || hostElement.contains(el));
   const isOwnEvent = (e: Event) => !!hostElement && e.composedPath().includes(hostElement);
 
   const lockTarget = (el: HTMLElement) => {
     targetElementRef.current?.classList.remove("dh-target-highlight");
     el.classList.add("dh-target-highlight");
     targetElementRef.current = el;
-    const card = elementResolver.describe(el).cardText;
-    setTargetSummary(card ? card.slice(0, 60) : (el.innerText || "Save button").trim());
+    universalDescRef.current = elementResolver.describeUniversal(el);
+
+    const desc = universalDescRef.current;
+    setTargetSummary(desc.initialText || desc.id || (el.innerText || t.lockedButtonDefault).trim().slice(0, 40));
+    setIsTargetSaved(false);
+
+    // Fast synchronous inspection
+    const instant = targetDiagnostics.inspect(el);
+    setDiagnostics(instant);
+
+    // Comprehensive async analysis (samples countdown ticking)
+    setAnalyzingTarget(true);
+    targetDiagnostics.analyze(el).then((diag) => {
+      setDiagnostics(diag);
+      setAnalyzingTarget(false);
+    });
   };
 
-  // Pick a target: lock on pointerdown because Chrome does not fire click on a disabled button,
-  // and Shopee's "Lưu" is usually disabled until the drop.
-  const handleSelectTarget = () => {
-    setPicking(true);
-    setStatus({ text: t.pickInstruction, tone: "armed" });
+  const handleSaveTarget = async () => {
+    if (!universalDescRef.current || typeof window === "undefined") return;
+    const desc = universalDescRef.current;
+    const name = (targetSummary?.replace(/^\[.*?\]\s*/, "") || desc.initialText || t.targetButtonDefault).trim();
+    const existing = await storage.getSavedTargetForUrl(window.location.href);
+    await storage.savePageTarget({
+      id: existing ? existing.id : `target_${Date.now()}`,
+      url: window.location.href,
+      origin: window.location.origin,
+      name,
+      targetSlot,
+      customTime: targetSlot === "custom" ? customTime : undefined,
+      descriptor: desc,
+      dualDefenseReload: true,
+      diagnostics: diagnostics || undefined,
+      updatedAt: Date.now(),
+    });
+    setIsTargetSaved(true);
+    setStatus({ text: t.targetSavedSuccess, tone: "success" });
+  };
 
-    const onMouseOver = (e: MouseEvent) => {
-      if (!isOwnEvent(e)) (e.target as HTMLElement).classList.add("dh-target-hover");
+  const handleForgetSavedTarget = async () => {
+    if (typeof window === "undefined") return;
+    const existing = await storage.getSavedTargetForUrl(window.location.href);
+    if (existing) {
+      await storage.removePageTarget(existing.id);
+      setIsTargetSaved(false);
+      setStatus({ text: t.targetForgotten, tone: "idle" });
+    }
+  };
+
+  const handleScheduleFromHUD = async () => {
+    if (!universalDescRef.current || typeof window === "undefined") return;
+    const now = timeSyncClient.getServerTime();
+    const { timestamp, label: timeLabel } = computeTargetTimestamp(now, targetSlot);
+    const date = new Date(timestamp + 7 * 3600 * 1000); // VN time
+    const h = date.getUTCHours();
+    const m = date.getUTCMinutes();
+    const s = date.getUTCSeconds();
+
+    if (!isTargetSaved) {
+      await handleSaveTarget();
+    }
+
+    const saved = await storage.getSavedTargetForUrl(window.location.href);
+    const name = (targetSummary?.replace(/^\[.*?\]\s*/, "") || t.targetButtonDefault).trim();
+
+    const task: ScheduledTask = {
+      id: Math.random().toString(36).substring(2, 9),
+      targetHour: h,
+      targetMinute: m,
+      targetSecond: s,
+      targetUrl: window.location.href,
+      label: `${timeLabel} · ${name}`,
+      mode: "full_auto",
+      savedTargetId: saved?.id,
+      descriptor: universalDescRef.current,
+      preWarmSeconds: 60,
+      dualDefenseReload: true,
+      diagnostics: diagnostics || undefined,
+      status: "pending",
+      createdAt: Date.now(),
     };
-    const onMouseOut = (e: MouseEvent) => {
-      (e.target as HTMLElement).classList?.remove("dh-target-hover");
+
+    try {
+      await chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.SCHEDULE_TASK,
+        task,
+      });
+      setStatus({ text: t.quickScheduleSuccess, tone: "success" });
+    } catch (err) {
+      console.warn("Schedule from HUD failed:", err);
+    }
+  };
+
+  const cleanupPickerRef = useRef<(() => void) | null>(null);
+
+  // Pick target with pointerdown and visual hover overlay
+  const handleSelectTarget = () => {
+    if (picking) {
+      cleanupPickerRef.current?.();
+      return;
+    }
+
+    setPicking(true);
+    document.body.classList.add("dh-picking-active");
+    setStatus({
+      text: t.pickInstruction,
+      tone: "armed",
+    });
+
+    let overlayEl = document.getElementById("dh-picker-overlay");
+    if (!overlayEl) {
+      overlayEl = document.createElement("div");
+      overlayEl.id = "dh-picker-overlay";
+      document.body.appendChild(overlayEl);
+    }
+    overlayEl.style.display = "none";
+
+    const cleanup = () => {
+      setPicking(false);
+      document.body.classList.remove("dh-picking-active");
+      if (overlayEl) {
+        overlayEl.remove();
+      }
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("pointerdown", onPick, true);
+      window.removeEventListener("keydown", onKeyDown);
+      cleanupPickerRef.current = null;
     };
+    cleanupPickerRef.current = cleanup;
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (isOwnEvent(e)) {
+        if (overlayEl) overlayEl.style.display = "none";
+        return;
+      }
+
+      const rawTarget = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      if (!rawTarget || isOwnElement(rawTarget) || rawTarget === document.body || rawTarget === document.documentElement) {
+        if (overlayEl) overlayEl.style.display = "none";
+        return;
+      }
+
+      const target = elementResolver.normalizeTarget(rawTarget);
+      const rect = target.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        if (overlayEl) overlayEl.style.display = "none";
+        return;
+      }
+
+      overlayEl.style.display = "block";
+      overlayEl.style.top = `${rect.top}px`;
+      overlayEl.style.left = `${rect.left}px`;
+      overlayEl.style.width = `${rect.width}px`;
+      overlayEl.style.height = `${rect.height}px`;
+
+      const text = elementResolver.text(target);
+      const tag = target.tagName.toLowerCase();
+      const displayLabel = text ? (text.length > 20 ? text.slice(0, 20) + "..." : text) : (target.id ? `#${target.id}` : tag);
+      const badgeTop = rect.top < 30 ? "bottom: -26px;" : "top: -26px;";
+
+      overlayEl.innerHTML = `<div id="dh-picker-badge" style="${badgeTop}">${t.pickerBadgePrefix} · ${tag} "${displayLabel}"</div>`;
+
+      setStatus({
+        text: t.targetingBadge(tag, displayLabel),
+        tone: "armed",
+      });
+    };
+
     const onPick = (e: PointerEvent) => {
       if (isOwnEvent(e)) return;
       e.preventDefault();
       e.stopPropagation();
-      (e.target as HTMLElement).classList?.remove("dh-target-hover");
 
-      const el = elementResolver.normalizeTarget(e.target as HTMLElement);
+      const rawTarget = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const el = rawTarget ? elementResolver.normalizeTarget(rawTarget) : null;
+      if (!el || isOwnElement(el)) return;
+
       lockTarget(el);
-      setPicking(false);
+      cleanup();
       setStatus({ text: t.targetLockedInstruction, tone: "idle" });
 
-      window.removeEventListener("mouseover", onMouseOver);
-      window.removeEventListener("mouseout", onMouseOut);
-      window.removeEventListener("pointerdown", onPick, true);
-
-      // Swallow the click that follows on an enabled button so picking it does not save the voucher early
+      // Swallow the click event following pointerdown to prevent accidental early triggering
       const swallow = (ev: MouseEvent) => {
         if (!el.contains(ev.target as Node)) return;
         ev.preventDefault();
@@ -177,12 +526,29 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
       setTimeout(() => window.removeEventListener("click", swallow, true), 600);
     };
 
-    window.addEventListener("mouseover", onMouseOver);
-    window.addEventListener("mouseout", onMouseOut);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cleanup();
+        setStatus({ text: t.initialHUDPrompt, tone: "idle" });
+      }
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("pointerdown", onPick, true);
+    window.addEventListener("keydown", onKeyDown);
   };
 
-  // Auto-detect: lock the first voucher Save button that can be clicked right now
+  useEffect(() => {
+    if (autoPick) {
+      const timer = setTimeout(() => {
+        handleSelectTarget();
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [autoPick]);
+
+  // Auto-detect collect buttons
   const handleAutoDetect = () => {
     const buttons = elementResolver.findCollectButtons();
     if (buttons.length > 0) {
@@ -195,45 +561,40 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
       setStatus({ text: t.noButtonFound, tone: "error" });
     }
   };
+  // Arm Sniper: delegates to unified HuntCoordinator (single engine pipeline)
+  const armHunt = (overrideTimestamp?: number) => {
+    const now = timeSyncClient.getServerTime();
 
-  const getResultView = (result: HuntOutcome["result"]): { text: string; tone: Tone } => {
-    const tones: Record<HuntOutcome["result"], Tone> = {
-      saved: "success",
-      exhausted: "warning",
-      not_found: "error",
-      timeout: "warning",
-      cancelled: "idle",
-    };
-    return {
-      text: t.outcome[result],
-      tone: tones[result],
-    };
-  };
+    let timestamp: number;
+    if (overrideTimestamp) {
+      timestamp = overrideTimestamp;
+    } else if (targetSlot === "quick_10s") {
+      timestamp = now + 10_000;
+    } else if (targetSlot === "quick_30s") {
+      timestamp = now + 30_000;
+    } else {
+      timestamp = computeTargetTimestamp(now, targetSlot).timestamp;
+    }
 
-  // Arm: the hunt engine waits for the drop, re-finds the button and reports what the page shows
-  const armHunt = () => {
-    const now = timeSyncClient.getShopeeTime();
-    const { timestamp } = computeTargetTimestamp(now, targetSlot);
+    armedTargetTimestampRef.current = timestamp;
     setIsArmed(true);
     setStatus({ text: t.armedWaitingDrop, tone: "armed" });
-    cancelHuntRef.current = startHunt({
+
+    huntCoordinator.arm({
       targetTimestamp: timestamp,
-      now: () => timeSyncClient.getShopeeTime(),
-      locked: targetElementRef.current,
-      onStatus: (msg) => setStatus({ text: msg, tone: msg.startsWith("Saving") ? "firing" : "armed" }),
-      onDone: (outcome) => {
-        cancelHuntRef.current = null;
-        setIsArmed(false);
-        const view = getResultView(outcome.result);
-        setStatus({ text: `${view.text} · ${outcome.clicks} clicks`, tone: view.tone });
-      },
+      targetElement: targetElementRef.current,
+      descriptor: universalDescRef.current,
+      targetSlot,
+      customTime: targetSlot === "custom" ? customTime : undefined,
+      label: targetSummary || undefined,
     });
   };
 
   const disarmHunt = () => {
-    cancelHuntRef.current?.();
-    cancelHuntRef.current = null;
+    huntCoordinator.disarm();
+    armedTargetTimestampRef.current = null;
     setIsArmed(false);
+    setStatus({ text: t.disarmedStatus, tone: "idle" });
   };
 
   const handleManualTestClick = () => {
@@ -256,9 +617,48 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
     });
   };
 
+  // Draggable header handler
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("input")) return;
+    e.preventDefault();
+
+    const hudCard = (e.currentTarget as HTMLElement).closest(".dh-floating-card") as HTMLElement | null;
+    const rect = hudCard?.getBoundingClientRect() || (hostElement?.getBoundingClientRect());
+    if (!rect) return;
+
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      startX: rect.left,
+      startY: rect.top,
+    };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragStartRef.current) return;
+      const dx = ev.clientX - dragStartRef.current.mouseX;
+      const dy = ev.clientY - dragStartRef.current.mouseY;
+      const newX = Math.max(12, Math.min(window.innerWidth - 352, dragStartRef.current.startX + dx));
+      const newY = Math.max(12, Math.min(window.innerHeight - 100, dragStartRef.current.startY + dy));
+      setHudPos({ x: newX, y: newY });
+    };
+
+    const onMouseUp = () => {
+      dragStartRef.current = null;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
   const tone = TONE_STYLES[status.tone];
   const StatusIcon =
     status.tone === "success" ? CircleCheck : status.tone === "error" ? CircleX : status.tone === "warning" ? CircleAlert : null;
+
+  const clockTitle = timeSyncClient.getIsCalibrated()
+    ? (t.serverClockTitle ? t.serverClockTitle(serverDomain) : `${serverDomain} time`)
+    : t.localDeviceTime;
 
   if (minimized) {
     return (
@@ -268,7 +668,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
         className="flex items-center gap-2.5 rounded-full bg-slate-950/95 px-4 py-2 text-white shadow-2xl ring-1 ring-white/10 transition hover:ring-emerald-400/50"
       >
         <span className={`h-2 w-2 rounded-full ${isArmed ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
-        <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">{shopeeTimeStr}</span>
+        <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">{serverTimeStr}</span>
         {isArmed && <span className="font-mono text-xs tabular-nums text-amber-300">T-{countdownStr}</span>}
         <Maximize2 className="h-3.5 w-3.5 text-slate-400" />
       </button>
@@ -276,9 +676,16 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
   }
 
   return (
-    <div className="w-[340px] select-none overflow-hidden rounded-3xl bg-slate-950/95 text-slate-100 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.6)] ring-1 ring-white/10 backdrop-blur-xl">
-      {/* Header */}
-      <div className="flex items-center justify-between bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-transparent px-4 py-3">
+    <div
+      className="dh-floating-card w-[340px] select-none overflow-hidden rounded-3xl bg-slate-950/95 text-slate-100 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.6)] ring-1 ring-white/10 backdrop-blur-xl"
+      style={hudPos ? { position: "fixed", left: `${hudPos.x}px`, top: `${hudPos.y}px`, bottom: "auto", right: "auto" } : undefined}
+    >
+      {/* Draggable Header */}
+      <div
+        onMouseDown={handleHeaderMouseDown}
+        className="flex cursor-grab items-center justify-between bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-transparent px-4 py-3 active:cursor-grabbing"
+        title={t.dragHudTooltip}
+      >
         <div className="flex items-center gap-2.5">
           {typeof chrome !== "undefined" && chrome.runtime?.getURL ? (
             <img
@@ -292,8 +699,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
             </div>
           )}
           <div className="leading-tight">
-            <div className="text-[13px] font-bold tracking-tight">DealHunter</div>
-            <div className="text-[10px] font-medium text-slate-400">
+            <div className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight">
+              <span>DealHunter</span>
+              <GripHorizontal className="h-3 w-3 text-slate-500 opacity-60" />
+            </div>
+            <div className="truncate text-[10px] font-medium text-slate-400">
               {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
             </div>
           </div>
@@ -303,7 +713,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
             type="button"
             onClick={handleToggleLang}
             className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-white/10 transition hover:bg-white/10"
-            title={lang === "en" ? "Đổi sang Tiếng Việt" : "Switch to English"}
+            title={t.toggleLanguageTooltip(lang === "en" ? "vi" : "en")}
           >
             <Languages className="h-3 w-3" />
             <span>{lang.toUpperCase()}</span>
@@ -330,18 +740,20 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
       </div>
 
       <div className="space-y-3 px-4 pb-4 pt-1">
-        {/* Shopee clock */}
+        {/* Universal Server clock */}
         <div className="rounded-2xl bg-white/[0.03] p-3 ring-1 ring-white/5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t.shopeeServerTime}</span>
+            <span className="truncate pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {clockTitle}
+            </span>
             <button
               type="button"
               onClick={handleRecalibrate}
               disabled={syncing}
-              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 transition ${
+              className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 transition ${
                 calibrated
                   ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30 hover:bg-emerald-500/20"
-                  : "bg-rose-500/10 text-rose-300 ring-rose-500/30 hover:bg-rose-500/20"
+                  : "bg-amber-500/10 text-amber-300 ring-amber-500/30 hover:bg-amber-500/20"
               }`}
               title={t.resyncClockTooltip}
             >
@@ -354,66 +766,109 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
             </button>
           </div>
           <div className="mt-1 text-center font-mono text-[28px] font-bold leading-none tabular-nums tracking-tight text-emerald-300">
-            {shopeeTimeStr}
+            {serverTimeStr}
           </div>
         </div>
 
-        {/* Drop target */}
+        {/* Drop target with Quick Testing and Custom Time */}
         <div className="rounded-2xl bg-white/[0.03] p-3 ring-1 ring-white/5">
-          <div className="flex items-center justify-between">
-            <div className="flex rounded-lg bg-black/30 p-0.5 ring-1 ring-white/5">
-              {(
-                [
-                  ["next_flash", t.nextFlashSale],
-                  ["midnight", "00:00"],
-                  ["next_minute", t.nextMinute],
-                ] as const
-              ).map(([slot, label]) => (
+          {/* Slot selector grid */}
+          <div className="grid grid-cols-5 gap-1 rounded-xl bg-black/30 p-1 ring-1 ring-white/5">
+            {(
+              [
+                ["quick_10s", t.quickTest10s || "+10s"],
+                ["quick_30s", t.quickTest30s || "+30s"],
+                ["00:00", "00:00"],
+                ["next_minute", t.nextMinute || "Next min"],
+                ["custom", t.customTime || "Custom"],
+              ] as const
+            ).map(([slotKey, label]) => {
+              const actualSlot: TargetSlot =
+                slotKey === "00:00" ? "midnight" : (slotKey as TargetSlot);
+              const isActive = targetSlot === actualSlot;
+              return (
                 <button
-                  key={slot}
+                  key={slotKey}
                   type="button"
                   disabled={isArmed}
-                  onClick={() => setTargetSlot(slot)}
-                  className={`rounded-md px-2 py-1 text-[10px] font-semibold transition ${
-                    targetSlot === slot ? "bg-emerald-500 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                  onClick={() => handleSelectSlot(actualSlot)}
+                  className={`dh-slot-btn rounded-lg py-1 px-0.5 text-center font-mono text-[10px] font-semibold transition whitespace-nowrap overflow-hidden text-ellipsis ${
+                    isActive
+                      ? "dh-slot-active bg-emerald-500 text-white shadow"
+                      : "dh-slot-inactive text-slate-400 hover:text-slate-200"
                   } disabled:cursor-not-allowed`}
                 >
                   {label}
                 </button>
-              ))}
-            </div>
-            <span className="font-mono text-xs font-semibold tabular-nums text-slate-300">{targetLabel}</span>
+              );
+            })}
           </div>
-          <div className="mt-2.5 flex items-end justify-between">
-            <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              <Timer className="h-3 w-3" /> {t.dropIn}
-            </span>
-            <span
-              className={`font-mono text-xl font-bold leading-none tabular-nums ${
-                isArmed ? "text-amber-300" : "text-slate-100"
-              }`}
-            >
-              {countdownStr}
-            </span>
+
+          {/* Custom Time input field */}
+          {targetSlot === "custom" && (
+            <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/10">
+              <span className="text-[10px] font-medium text-slate-400">{t.customTargetPrompt || "Target time:"}</span>
+              <input
+                type="text"
+                disabled={isArmed}
+                value={customTime}
+                onChange={(e) => setCustomTime(e.target.value)}
+                placeholder="HH:mm:ss"
+                className="w-24 rounded-lg bg-white/10 px-2 py-0.5 text-center font-mono text-xs font-bold text-emerald-300 outline-none ring-1 ring-emerald-500/30 focus:ring-emerald-400 disabled:opacity-50"
+              />
+            </div>
+          )}
+
+          {/* Target & Countdown Box */}
+          <div className="mt-2.5 flex items-center justify-between rounded-xl bg-black/20 px-3 py-2 ring-1 ring-white/5">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                <Timer className={`h-3.5 w-3.5 ${isArmed ? "text-amber-400 animate-spin" : "text-emerald-400"}`} />
+                <span>{t.dropIn}</span>
+              </div>
+              <div className="font-mono text-[11px] text-slate-400">
+                <span className="text-slate-500">{t.targetPrefix}</span>
+                <span className="font-semibold text-slate-300">{targetLabel}</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div
+                className={`font-mono text-xl font-bold leading-none tabular-nums ${
+                  isArmed ? "text-amber-300 animate-pulse" : "text-slate-100"
+                }`}
+              >
+                {countdownStr}
+              </div>
+              <div className="mt-1 text-[9px] font-medium uppercase tracking-wider text-slate-500">
+                {isArmed ? t.armedCountdown : t.standbyReady}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Target voucher */}
+        {/* Universal Target locking */}
         <div className="rounded-2xl bg-white/[0.03] p-3 ring-1 ring-white/5">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t.targetVoucher}</span>
-            {targetSummary ? (
-              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-                {t.locked}
-              </span>
-            ) : (
-              <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-400 ring-1 ring-white/10">
-                {t.opensAtDrop}
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {isTargetSaved ? (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
+                  <BookmarkCheck className="h-2.5 w-2.5" />
+                  {t.savedTarget}
+                </span>
+              ) : targetSummary ? (
+                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
+                  {t.locked}
+                </span>
+              ) : (
+                <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-400 ring-1 ring-white/10">
+                  {t.opensAtDrop}
+                </span>
+              )}
+            </div>
           </div>
-          <p className="mb-2.5 truncate text-[11px] text-slate-300" title={targetSummary ?? undefined}>
-            {targetSummary ?? t.notPickedText}
+          <p className="mb-2.5 truncate font-mono text-[11px] text-slate-300" title={targetSummary ?? undefined}>
+            {targetSummary ? `[Locked] ${targetSummary}` : t.notPickedText}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -435,22 +890,62 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
               {t.autoDetect}
             </button>
           </div>
+          {targetSummary && (
+            <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-2">
+              <div className="flex items-center gap-1.5">
+                {isTargetSaved ? (
+                  <button
+                    type="button"
+                    onClick={handleForgetSavedTarget}
+                    disabled={isArmed}
+                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-slate-400 ring-1 ring-white/10 transition hover:bg-rose-500/10 hover:text-rose-300 hover:ring-rose-500/30 disabled:opacity-40"
+                    title={t.forgetTarget}
+                  >
+                    <Trash2 className="h-2.5 w-2.5" />
+                    {t.forgetTarget}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSaveTarget}
+                    disabled={isArmed || !universalDescRef.current}
+                    className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                    title={t.saveTarget}
+                  >
+                    <Bookmark className="h-2.5 w-2.5" />
+                    {t.saveTarget}
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleScheduleFromHUD}
+                disabled={isArmed || !universalDescRef.current}
+                className="flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 transition hover:bg-white/10 hover:text-emerald-300 disabled:opacity-40"
+                title={t.quickScheduleFromHUD}
+              >
+                <CalendarClock className="h-3 w-3 text-emerald-300" />
+                {t.quickScheduleFromHUD}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Arm */}
+        {/* Arm / Disarm */}
         <button
           type="button"
           onClick={() => (isArmed ? disarmHunt() : armHunt())}
           className={`flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold text-white shadow-lg transition ${
             isArmed
-              ? "bg-gradient-to-r from-rose-500 to-rose-600 shadow-rose-950/50 hover:from-rose-400 hover:to-rose-500"
-              : "bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-950/50 hover:from-emerald-400 hover:to-teal-400"
+              ? "dh-arm-btn-rose bg-gradient-to-r from-rose-500 to-rose-600 shadow-rose-950/50 hover:from-rose-400 hover:to-rose-500"
+              : "dh-arm-btn-emerald bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-950/50 hover:from-emerald-400 hover:to-teal-400"
           }`}
         >
           <Zap className="h-4 w-4" />
           {isArmed ? t.disarm : t.armSniper}
         </button>
 
+        {/* Manual Test Click */}
         <button
           type="button"
           onClick={handleManualTestClick}
@@ -463,15 +958,16 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement }
         </button>
 
         {/* Status */}
-        <div className={`flex items-start gap-2 rounded-xl bg-black/30 px-3 py-2 ring-1 ${tone.ring}`}>
+        <div className={`h-[44px] min-h-[44px] max-h-[44px] shrink-0 flex items-center gap-2 rounded-xl bg-black/30 px-3 py-1.5 ring-1 ${tone.ring}`}>
           {StatusIcon ? (
-            <StatusIcon className={`mt-px h-3.5 w-3.5 shrink-0 ${tone.text}`} />
+            <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
           ) : (
-            <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
+            <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
           )}
-          <span className={`text-[11px] leading-snug ${tone.text}`}>{status.text}</span>
+          <span className={`text-[11px] leading-snug line-clamp-2 ${tone.text}`}>{status.text}</span>
         </div>
       </div>
     </div>
   );
 };
+

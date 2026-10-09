@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextDropAt, nextFlashDrop, formatVN } from "./drop_time";
+import { nextDropAt, nextFlashDrop, formatVN, nextExactDropAt } from "./drop_time";
 
 const vn = (iso: string) => new Date(iso + "+07:00").getTime();
 
@@ -18,5 +18,9 @@ describe("drop time (Vietnam GMT+7)", () => {
   });
   it("formats Vietnam wall clock", () => {
     expect(formatVN(vn("2026-10-07T20:59:59.900"))).toBe("20:59:59.900");
+  });
+  it("calculates next exact second in Vietnam time", () => {
+    expect(nextExactDropAt(18, 30, 45, vn("2026-10-07T18:20:00"))).toBe(vn("2026-10-07T18:30:45"));
+    expect(nextExactDropAt(18, 20, 0, vn("2026-10-07T18:20:01"))).toBe(vn("2026-10-08T18:20:00"));
   });
 });

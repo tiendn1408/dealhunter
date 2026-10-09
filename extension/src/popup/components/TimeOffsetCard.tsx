@@ -7,26 +7,60 @@ import { Language, getTranslation } from "../../lib/i18n";
 
 interface TimeOffsetCardProps {
   lang?: Language;
+  activeDomain?: string;
+  activeUrl?: string;
 }
 
-export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({ lang = "en" }) => {
+export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({
+  lang = "en",
+  activeDomain,
+  activeUrl,
+}) => {
   const [calibration, setCalibration] = useState<ClockCalibration | null>(null);
   const [loading, setLoading] = useState(false);
   const t = getTranslation(lang);
 
-  useEffect(() => {
-    storage.getCalibration().then(setCalibration);
-  }, []);
+  const cleanDomain = (activeDomain || "").replace(/^www\./, "").toLowerCase();
 
   const handleRefresh = async () => {
     setLoading(true);
     try {
-      const res = await chrome.runtime.sendMessage({ action: MESSAGE_ACTIONS.CALIBRATE_TIME, samples: 5 });
+      let pingUrl: string | undefined;
+      if (activeUrl && (activeUrl.startsWith("http://") || activeUrl.startsWith("https://"))) {
+        try {
+          pingUrl = `${new URL(activeUrl).origin}/favicon.ico`;
+        } catch {
+          // ignore
+        }
+      }
+      const res = await chrome.runtime.sendMessage({
+        action: MESSAGE_ACTIONS.CALIBRATE_TIME,
+        samples: 5,
+        targetUrl: pingUrl,
+      });
       if (res?.calibration) setCalibration(res.calibration);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    storage.getCalibration(cleanDomain).then((cal) => {
+      const isDomainMatch = !!(
+        cal &&
+        cal.serverHost &&
+        cal.serverHost.replace(/^www\./, "").toLowerCase() === cleanDomain
+      );
+      if (cal && (!cleanDomain || isDomainMatch)) {
+        setCalibration(cal);
+      } else if (activeUrl && (activeUrl.startsWith("http://") || activeUrl.startsWith("https://"))) {
+        // Auto-calibrate for active tab domain if missing or mismatched
+        handleRefresh();
+      } else {
+        setCalibration(cal);
+      }
+    });
+  }, [cleanDomain, activeUrl]);
 
   const synced = !!calibration?.calibrated;
   const offset = calibration?.offsetMs ?? 0;
@@ -37,6 +71,9 @@ export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({ lang = "en" }) =
       : ageMin === 0
       ? t.syncedJustNow
       : t.syncedMinAgo(ageMin);
+
+  const targetHostName = activeDomain || calibration?.serverHost || "";
+  const offsetLabel = t.offsetVsDomain ? t.offsetVsDomain(targetHostName) : t.offsetVsShopee;
 
   return (
     <section className="rounded-2xl bg-white/[0.03] p-3.5 ring-1 ring-white/10">
@@ -63,7 +100,9 @@ export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({ lang = "en" }) =
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         <div className="rounded-xl bg-black/40 px-3 py-2 ring-1 ring-white/5">
-          <span className="block text-[10px] font-medium text-slate-400">{t.offsetVsShopee}</span>
+          <span className="block truncate text-[10px] font-medium text-slate-400" title={offsetLabel}>
+            {offsetLabel}
+          </span>
           {synced ? (
             <span className="font-mono text-sm font-bold tabular-nums text-emerald-400">
               {offset >= 0 ? "+" : ""}

@@ -15,7 +15,15 @@ export class HumanClicker {
     if (!element || !element.isConnected) return false;
 
     const rect = element.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return false;
+    if (rect.width === 0 || rect.height === 0) {
+      try {
+        element.click();
+        this.burstCount++;
+        return true;
+      } catch {
+        return false;
+      }
+    }
 
     // Random coordinates inside 30% to 70% of the button bounding box
     const clientX = rect.left + rect.width * (0.3 + Math.random() * 0.4);

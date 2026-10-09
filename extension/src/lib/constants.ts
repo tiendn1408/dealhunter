@@ -1,8 +1,10 @@
 export const STORAGE_KEYS = {
   SCHEDULED_TASKS: "dh_scheduled_tasks",
   CLOCK_CALIBRATION: "dh_clock_calibration",
+  DOMAIN_CALIBRATIONS: "dh_domain_calibrations",
   SETTINGS: "dh_settings",
   WEB_SESSION: "dh_web_session", // chrome.storage.session: cleared when the browser closes
+  SAVED_PAGE_TARGETS: "dh_saved_page_targets",
 } as const;
 
 /** DealHunter web origins allowed to hand their sign-in session to the extension (externally_connectable). */
@@ -39,6 +41,8 @@ export const MESSAGE_ACTIONS = {
   GET_PRICE_CONTEXT: "GET_PRICE_CONTEXT",
   GET_WEB_SESSION: "GET_WEB_SESSION",
   ACTIVATE_HUD: "ACTIVATE_HUD",
+  SCHEDULE_TASK: "SCHEDULE_TASK",
+  CANCEL_TASK: "CANCEL_TASK",
 } as const;
 
 /** Message the DealHunter web app sends (chrome.runtime.sendMessage from the page) on sign-in, token refresh and sign-out. */

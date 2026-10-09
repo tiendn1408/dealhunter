@@ -1,11 +1,28 @@
 export interface ScheduledTask {
   id: string;
-  targetHour: number; // 0, 9, 12, 18, 21
-  targetMinute: number; // usually 0
+  targetHour: number; // 0..23
+  targetMinute: number; // 0..59
+  targetSecond?: number; // 0..59
   targetUrl: string;
   label: string;
   mode: "semi_auto" | "full_auto";
-  keyword?: string; // e.g. "500k", "15%"
+  keyword?: string; // fallback voucher keyword
+  savedTargetId?: string; // linked SavedPageTarget
+  descriptor?: {
+    id?: string;
+    uniqueSelector: string;
+    tagName: string;
+    attributes: Record<string, string>;
+    initialText: string;
+    childIndex?: number;
+    parentSelector?: string;
+    rect?: { top: number; left: number; width: number; height: number };
+    containerText?: string;
+    valueTokens?: string[];
+  };
+  preWarmSeconds?: number; // lead time before target to open/focus tab (default: 60)
+  dualDefenseReload?: boolean; // automatically executes pre-warm reload & emergency fallback if static
+  diagnostics?: TargetDiagnosticsSummary;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: number;
   /** What the page actually showed at the end of the hunt. */
@@ -18,11 +35,12 @@ export interface ScheduledTask {
 }
 
 export interface ClockCalibration {
-  offsetMs: number; // ShopeeServerTime - LocalDeviceTime
+  offsetMs: number; // ServerTime - LocalDeviceTime
   rttMs: number; // Round-trip time
   errorMs: number; // Estimated accuracy of offsetMs (+/-)
   calibrated: boolean; // false when no server second roll-over could be observed
   lastCalibratedAt: number;
+  serverHost?: string; // Host domain probed, e.g. "shopee.vn" or "app.caffiliate.vn"
 }
 
 export interface ExtensionSettings {
@@ -65,3 +83,43 @@ export interface ProductPriceContext {
 export type PriceContextResponse =
   | { signedIn: false }
   | { signedIn: true; context: ProductPriceContext | null; webUrl: string };
+
+/** Persistent target configuration saved locally in browser per page URL */
+export interface SavedPageTarget {
+  id: string;
+  url: string;
+  origin: string;
+  name: string;
+  targetSlot: "quick_10s" | "quick_30s" | "midnight" | "next_minute" | "custom";
+  customTime?: string;
+  descriptor: {
+    id?: string;
+    uniqueSelector: string;
+    tagName: string;
+    attributes: Record<string, string>;
+    initialText: string;
+    childIndex?: number;
+    parentSelector?: string;
+    rect?: { top: number; left: number; width: number; height: number };
+    containerText?: string;
+    valueTokens?: string[];
+  };
+  dualDefenseReload?: boolean;
+  diagnostics?: TargetDiagnosticsSummary;
+  updatedAt: number;
+}
+
+export type PageFramework = "react" | "vue" | "angular" | "svelte" | "unknown";
+
+export type ReloadStrategy = "reactive_no_reload" | "static_dual_defense";
+
+export interface TargetDiagnosticsSummary {
+  framework: PageFramework;
+  hasCountdownTimer: boolean;
+  countdownSnippet?: string;
+  isTicking: boolean;
+  isStandby: boolean;
+  strategy: ReloadStrategy;
+  confidence: number;
+}
+

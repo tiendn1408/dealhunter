@@ -21,14 +21,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // 3. Message dispatcher across components
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === MESSAGE_ACTIONS.CALIBRATE_TIME) {
-    timeCalibrator.calibrate(message.samples || 5).then((cal) => {
+    timeCalibrator.calibrate(message.samples || 5, 6000, message.targetUrl).then((cal) => {
       sendResponse({ success: true, calibration: cal });
     });
     return true; // Keep message channel open for async response
   }
 
   if (message.action === MESSAGE_ACTIONS.GET_CALIBRATION) {
-    storage.getCalibration().then((cal) => {
+    storage.getCalibration(message.domain).then((cal) => {
       sendResponse({ calibration: cal });
     });
     return true;
@@ -38,6 +38,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.taskId && message.status) {
       const lastResult = message.result ? { ...message.result, finishedAt: Date.now() } : undefined;
       storage.updateTaskStatus(message.taskId, message.status, lastResult).then(() => {
+        sendResponse({ success: true });
+      });
+      return true;
+    }
+  }
+
+  if (message.action === MESSAGE_ACTIONS.SCHEDULE_TASK) {
+    if (message.task) {
+      taskScheduler.scheduleTask(message.task).then(() => {
+        sendResponse({ success: true });
+      });
+      return true;
+    }
+  }
+
+  if (message.action === MESSAGE_ACTIONS.CANCEL_TASK) {
+    if (message.taskId) {
+      taskScheduler.cancelTask(message.taskId).then(() => {
         sendResponse({ success: true });
       });
       return true;
@@ -82,4 +100,24 @@ async function getPriceContext(url: string): Promise<PriceContextResponse> {
     console.warn("[DealHunter] Price context unavailable:", err);
     return { signedIn: false };
   }
+}
+
+// 5. Track active tab switches and pre-calibrate domain clock
+if (typeof chrome !== "undefined" && chrome.tabs?.onActivated) {
+  chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+      const tab = await chrome.tabs.get(activeInfo.tabId);
+      if (!tab.url || !tab.url.startsWith("http")) return;
+      const url = new URL(tab.url);
+      const domain = url.hostname.replace(/^www\./, "").toLowerCase();
+      const cal = await storage.getCalibration(domain);
+      const isDomainMatch = !!(cal && cal.serverHost && cal.serverHost.replace(/^www\./, "").toLowerCase() === domain);
+      const isFresh = !!(cal && cal.calibrated && Date.now() - cal.lastCalibratedAt < 5 * 60 * 1000);
+      if (!isDomainMatch || !isFresh) {
+        await timeCalibrator.calibrate(3, 4000, `${url.origin}/favicon.ico`);
+      }
+    } catch {
+      // Ignore restricted or closed tabs
+    }
+  });
 }

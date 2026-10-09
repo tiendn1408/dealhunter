@@ -42,28 +42,38 @@ export const App: React.FC = () => {
     setTasks(await storage.getTasks());
   };
 
-  // 1. Detect current browser tab
+  // 1. Detect current browser tab & track tab switches
   useEffect(() => {
     if (typeof chrome !== "undefined" && chrome.tabs) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const active = tabs[0];
-        if (active?.id) {
-          setActiveTabId(active.id);
-          const url = active.url || "";
-          setActiveTabUrl(url);
-          if (url.startsWith("http://") || url.startsWith("https://")) {
-            setIsWebPage(true);
-            try {
-              setActiveTabDomain(new URL(url).hostname.replace(/^www\./, ""));
-            } catch {
-              setActiveTabDomain("web");
+      const updateActiveTab = () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          const active = tabs[0];
+          if (active?.id) {
+            setActiveTabId(active.id);
+            const url = active.url || "";
+            setActiveTabUrl(url);
+            if (url.startsWith("http://") || url.startsWith("https://")) {
+              setIsWebPage(true);
+              try {
+                setActiveTabDomain(new URL(url).hostname.replace(/^www\./, ""));
+              } catch {
+                setActiveTabDomain("web");
+              }
+            } else {
+              setIsWebPage(false);
+              setActiveTabDomain("");
             }
-          } else {
-            setIsWebPage(false);
-            setActiveTabDomain("");
           }
-        }
-      });
+        });
+      };
+
+      updateActiveTab();
+      chrome.tabs.onActivated.addListener(updateActiveTab);
+      chrome.tabs.onUpdated.addListener(updateActiveTab);
+      return () => {
+        chrome.tabs.onActivated.removeListener(updateActiveTab);
+        chrome.tabs.onUpdated.removeListener(updateActiveTab);
+      };
     }
   }, []);
 
@@ -155,9 +165,9 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#090d16] text-slate-100 select-none overflow-hidden">
+    <div className="flex h-[580px] w-[390px] max-h-[580px] min-h-[580px] flex-col bg-[#090d16] text-slate-100 select-none overflow-hidden">
       {/* 1. Header */}
-      <header className="relative flex items-center justify-between border-b border-white/[0.08] bg-black/40 px-4 py-3 backdrop-blur-md">
+      <header className="shrink-0 relative flex items-center justify-between border-b border-white/[0.08] bg-black/40 px-4 py-3 backdrop-blur-md">
         <div className="flex items-center gap-2.5">
           <img
             src="/icons/icon48.png"
@@ -193,7 +203,7 @@ export const App: React.FC = () => {
       </header>
 
       {/* 2. Navigation Tabs */}
-      <div className="grid grid-cols-3 border-b border-white/[0.06] bg-black/20 p-1.5 gap-1 text-[11px] font-semibold">
+      <nav className="shrink-0 grid grid-cols-3 border-b border-white/[0.06] bg-black/20 p-1.5 gap-1 text-[11px] font-semibold">
         <button
           type="button"
           onClick={() => setActiveTab("live")}
@@ -232,92 +242,96 @@ export const App: React.FC = () => {
           <ListTodo className="h-3.5 w-3.5" />
           <span>{t.tabTasks(tasks.length)}</span>
         </button>
-      </div>
+      </nav>
 
-      {/* 3. Tab Body Content (Scrollable) */}
-      <main className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3">
-        {activeTab === "live" && (
-          <div className="space-y-3">
-            {/* Target Drop Countdown Card */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-950/40 via-black/40 to-black/60 p-3.5 ring-1 ring-emerald-500/20 shadow-lg">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                  <Timer className="h-3.5 w-3.5" />
-                  {t.nextDropLabel} ({String(nextDropHour).padStart(2, "0")}:00)
-                </span>
-                <span
-                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold ring-1 ${
-                    isWebPage
-                      ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
-                      : "bg-amber-500/10 text-amber-300 ring-amber-500/30"
-                  }`}
-                >
+      {/* 3. Tab Body Content */}
+      {activeTab === "tasks" ? (
+        <main className="flex-1 min-h-0 flex flex-col px-3.5 pt-3 pb-2">
+          <TaskList tasks={tasks} onTasksChanged={loadTasks} lang={lang} />
+        </main>
+      ) : (
+        <main className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-3">
+          {activeTab === "live" && (
+            <div className="space-y-3">
+              {/* Target Drop Countdown Card */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-950/40 via-black/40 to-black/60 p-3.5 ring-1 ring-emerald-500/20 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    <Timer className="h-3.5 w-3.5" />
+                    {t.nextDropLabel} ({String(nextDropHour).padStart(2, "0")}:00)
+                  </span>
                   <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      isWebPage ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                    className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold ring-1 ${
+                      isWebPage
+                        ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30"
+                        : "bg-amber-500/10 text-amber-300 ring-amber-500/30"
                     }`}
-                  />
-                  {isWebPage ? t.pageActive(activeTabDomain) : t.notOnPage}
-                </span>
-              </div>
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        isWebPage ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                      }`}
+                    />
+                    {isWebPage ? t.pageActive(activeTabDomain) : t.notOnPage}
+                  </span>
+                </div>
 
-              <div className="mt-2 text-center">
-                <div className="font-mono text-[32px] font-black leading-none tracking-tight text-emerald-300 tabular-nums">
-                  {countdownStr}
+                <div className="mt-2 text-center">
+                  <div className="font-mono text-[32px] font-black leading-none tracking-tight text-emerald-300 tabular-nums">
+                    {countdownStr}
+                  </div>
                 </div>
               </div>
+
+              {/* HERO START ACTION BUTTON */}
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={handleStartSniper}
+                  className="group relative flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 py-3.5 px-4 font-black text-slate-950 shadow-xl shadow-emerald-500/25 transition hover:brightness-110 active:scale-[0.98]"
+                >
+                  <div className="absolute inset-0 bg-white/20 opacity-0 transition group-hover:opacity-100" />
+                  <Zap className="h-5 w-5 fill-slate-950 text-slate-950" />
+                  <span className="text-[13px] font-black tracking-wider uppercase">
+                    {launchedToast
+                      ? t.sniperActivated
+                      : isWebPage
+                      ? t.startOnActiveTab
+                      : t.openShopeeAndStart}
+                  </span>
+                </button>
+                <p className="text-center text-[10px] leading-snug text-slate-400 px-2">
+                  {t.launchHint}
+                </p>
+              </div>
+
+              {/* Clock Sync & Latency Status */}
+              <TimeOffsetCard
+                lang={lang}
+                activeDomain={activeTabDomain}
+                activeUrl={activeTabUrl}
+              />
             </div>
+          )}
 
-            {/* HERO START ACTION BUTTON */}
-            <div className="space-y-1.5">
-              <button
-                type="button"
-                onClick={handleStartSniper}
-                className="group relative flex w-full items-center justify-center gap-2.5 overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 py-3.5 px-4 font-black text-slate-950 shadow-xl shadow-emerald-500/25 transition hover:brightness-110 active:scale-[0.98]"
-              >
-                <div className="absolute inset-0 bg-white/20 opacity-0 transition group-hover:opacity-100" />
-                <Zap className="h-5 w-5 fill-slate-950 text-slate-950" />
-                <span className="text-[13px] font-black tracking-wider uppercase">
-                  {launchedToast
-                    ? "SNIPER ACTIVATED!"
-                    : isWebPage
-                    ? t.startOnActiveTab
-                    : t.openShopeeAndStart}
-                </span>
-              </button>
-              <p className="text-center text-[10px] leading-snug text-slate-400 px-2">
-                {t.launchHint}
-              </p>
+          {activeTab === "schedule" && (
+            <div className="space-y-3">
+              <ScheduleForm onTaskCreated={loadTasks} lang={lang} />
             </div>
-
-            {/* Clock Sync & Latency Status */}
-            <TimeOffsetCard lang={lang} />
-          </div>
-        )}
-
-        {activeTab === "schedule" && (
-          <div className="space-y-3">
-            <ScheduleForm onTaskCreated={loadTasks} lang={lang} />
-          </div>
-        )}
-
-        {activeTab === "tasks" && (
-          <div className="space-y-3">
-            <TaskList tasks={tasks} onTasksChanged={loadTasks} lang={lang} />
-          </div>
-        )}
-      </main>
+          )}
+        </main>
+      )}
 
       {/* 4. Footer */}
-      <footer className="border-t border-white/[0.06] bg-black/40 px-3.5 py-2">
+      <footer className="shrink-0 border-t border-white/[0.06] bg-black/40 px-3.5 py-2">
         <div className="flex items-center justify-between text-[10px] text-slate-400">
-          <div className="flex items-center gap-1 truncate">
+          <div className="flex items-center gap-1 min-w-0">
             {account?.signedIn ? (
               <span className="truncate text-emerald-400">
                 Member: {account.email || "DealHunter"}
               </span>
             ) : (
-              <span>
+              <span className="whitespace-nowrap">
                 {t.accountNotConnected}{" "}
                 <a
                   href={webUrl}

@@ -35,10 +35,17 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "DealHunter Assistant"
+    "default_title": "DealHunter Assistant",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "24": "icons/icon24.png",
+      "32": "icons/icon32.png"
+    }
   },
   "icons": {
     "16": "icons/icon16.png",
+    "24": "icons/icon24.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },

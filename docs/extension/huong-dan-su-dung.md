@@ -160,11 +160,15 @@ DealHunter Assistant duoc phat trien dua tren cac nguyen ly ky thuat cao cap dan
 
 | Thanh phan | File ma nguon | Co che hoat dong |
 |---|---|---|
+| **Hunt Coordinator (SSOT)** | `hunt_coordinator.ts` | Single Source of Truth quan ly phien san, thong nhat 100% giua Arm Sniper tren Floating HUD va Schedule tu dong tu Background. |
+| **Behavioral State Machine** | `element_resolver.ts` | Loai bo 100% tu dien hardcoded text. Xac dinh ket qua san dua tren su bien doi DOM (unmount, disabled transition, text mutation, SVG icon injection) va chuan W3C ARIA. |
+| **Dual-Defense Reload** | `hunt_engine.ts`, `target_diagnostics.ts` | Tu dong pre-warm tab o T-60s va emergency reload ngam o T+250ms tren trang tinh. Tu dong mo rong cua so 10s sau reload kem khoa chong lap vo han. |
 | **NTP Time Calibrator** | `time_calibrator.ts`, `time_sync_client.ts` | Do do tre 2 chieu (RTT) va can chinh dong ho cuc bo theo thoi gian thuc cua server. Loai bo hoan toan do lech gio may tinh. |
 | **Web Worker Ticker** | `timer_worker.ts` | Tranh tinh trang Chrome giam hieu nang tab nen xuong 1000ms. Chay tren luong Worker rieng voi tan so 10ms. |
-| **Dynamic Resolver** | `element_resolver.ts`, `hunt_engine.ts` | Ghi nho dac trung phan tu DOM. Tu dong tim lai va bam tiep neu React render lai component nut khi het gio dem nguoc. |
 | **Human Clicker** | `human_clicker.ts` | Phat chuoi pointer/mouse day du voi toa do ngau nhien (random jitter). Khong dung `el.click()` tho giup tranh bi bot-detector chan. |
-| **Full-Auto Scheduler** | `scheduler.ts` | Dung `chrome.alarms` MV3 de danh thuc tien ich truoc 60 giay, pre-warm socket va chuan bi tieu diem truoc gio G. |
+| **Full-Auto Scheduler** | `scheduler.ts` | Dung `chrome.alarms` MV3 de danh thuc tien ich truoc gio G, tai moi tab va chuan bi phien san. |
+
+Chi tiet kien truc toan dien duoc tai lieu hoa tai: [`docs/extension/kien-truc-universal-sniper-va-state-machine.md`](kien-truc-universal-sniper-va-state-machine.md).
 
 ---
 
