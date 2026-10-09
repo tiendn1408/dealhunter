@@ -246,10 +246,23 @@
   gap: 4px !important;
   border-radius: 9999px !important;
   padding: 2px 8px !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
   font-size: 10px !important;
   font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: normal !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
+  box-sizing: border-box !important;
+}
+
+#dealhunter-hud-root .dh-recalibrate-btn *,
+#dealhunter-hud-root .dh-recalibrate-btn span {
+  font-family: inherit !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: normal !important;
 }
 
 #dealhunter-hud-root .dh-recalibrate-btn.dh-calibrated {
@@ -270,6 +283,30 @@
 
 #dealhunter-hud-root .dh-recalibrate-btn.dh-uncalibrated:hover {
   background-color: rgba(245, 158, 11, 0.2) !important;
+}
+
+/* Card header status badges (Armed, Saved) */
+#dealhunter-hud-root .dh-card-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  border-radius: 9999px !important;
+  padding: 2px 8px !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: normal !important;
+  box-sizing: border-box !important;
+}
+
+#dealhunter-hud-root .dh-card-badge *,
+#dealhunter-hud-root .dh-card-badge span {
+  font-family: inherit !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: normal !important;
 }
 
 /* Slot buttons: guaranteed sizing, zero squishing/ellipsis */
