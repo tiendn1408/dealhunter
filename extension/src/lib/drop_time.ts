@@ -39,7 +39,7 @@ export function nextExactDropAt(hour: number, minute: number, second: number, no
 }
 
 /**
- * Formats a duration in milliseconds into standardized "HH:mm:ss.S" (e.g. "00:26:27.5").
+ * Formats a duration in milliseconds into standardized "HH:mm:ss.SS" (e.g. "00:26:27.50").
  * Uses dynamic modulo calculations and 2-digit padding with zero hardcoding.
  */
 export function formatCountdown(diffMs: number): string {
@@ -47,8 +47,8 @@ export function formatCountdown(diffMs: number): string {
   const h = Math.floor(diff / 3_600_000);
   const m = Math.floor((diff % 3_600_000) / 60_000);
   const s = Math.floor((diff % 60_000) / 1_000);
-  const tenth = Math.floor((diff % 1_000) / 100);
+  const hundredth = Math.floor((diff % 1_000) / 10);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(h)}:${pad(m)}:${pad(s)}.${tenth}`;
+  return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(hundredth)}`;
 }
 

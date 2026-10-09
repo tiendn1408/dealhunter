@@ -24,21 +24,21 @@ describe("drop time (Vietnam GMT+7)", () => {
     expect(nextExactDropAt(18, 30, 45, vn("2026-10-07T18:20:00"))).toBe(vn("2026-10-07T18:30:45"));
     expect(nextExactDropAt(18, 20, 0, vn("2026-10-07T18:20:01"))).toBe(vn("2026-10-08T18:20:00"));
   });
-  it("formats countdown in consistent HH:mm:ss.S format", () => {
-    // 26m 27.5s -> 00:26:27.5
+  it("formats countdown in consistent HH:mm:ss.SS format", () => {
+    // 26m 27.5s -> 00:26:27.50
     const ms26m = 26 * 60_000 + 27 * 1_000 + 500;
-    expect(formatCountdown(ms26m)).toBe("00:26:27.5");
+    expect(formatCountdown(ms26m)).toBe("00:26:27.50");
 
-    // 0ms -> 00:00:00.0
-    expect(formatCountdown(0)).toBe("00:00:00.0");
-    expect(formatCountdown(-500)).toBe("00:00:00.0");
+    // 0ms -> 00:00:00.00
+    expect(formatCountdown(0)).toBe("00:00:00.00");
+    expect(formatCountdown(-500)).toBe("00:00:00.00");
 
-    // 1h 2m 3.4s -> 01:02:03.4
+    // 1h 2m 3.4s -> 01:02:03.40
     const ms1h = 1 * 3_600_000 + 2 * 60_000 + 3 * 1_000 + 400;
-    expect(formatCountdown(ms1h)).toBe("01:02:03.4");
+    expect(formatCountdown(ms1h)).toBe("01:02:03.40");
 
-    // 12h 45m 30.9s -> 12:45:30.9
+    // 12h 45m 30.9s -> 12:45:30.90
     const ms12h = 12 * 3_600_000 + 45 * 60_000 + 30 * 1_000 + 900;
-    expect(formatCountdown(ms12h)).toBe("12:45:30.9");
+    expect(formatCountdown(ms12h)).toBe("12:45:30.90");
   });
 });

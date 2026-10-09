@@ -46,7 +46,7 @@ type TargetSlot = "quick_10s" | "quick_30s" | "midnight" | "next_minute" | "cust
 const TONE_STYLES: Record<Tone, { dot: string; text: string; ring: string }> = {
   idle: { dot: "bg-slate-500", text: "text-slate-300", ring: "ring-slate-700/60" },
   armed: { dot: "bg-amber-400 animate-pulse", text: "text-amber-200", ring: "ring-amber-500/30" },
-  firing: { dot: "bg-orange-400 animate-ping", text: "text-orange-200", ring: "ring-orange-500/40" },
+  firing: { dot: "bg-amber-400 shadow-sm shadow-amber-400/80 animate-pulse", text: "text-amber-200 font-bold", ring: "ring-amber-500/50" },
   success: { dot: "bg-emerald-400", text: "text-emerald-200", ring: "ring-emerald-500/40" },
   warning: { dot: "bg-amber-400", text: "text-amber-200", ring: "ring-amber-500/40" },
   error: { dot: "bg-rose-400", text: "text-rose-200", ring: "ring-rose-500/40" },
@@ -231,12 +231,23 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       } else if (coordState.statusText) {
         if (coordState.statusText === "Disarmed") {
           setStatus({ text: t.disarmedStatus, tone: "idle" });
+        } else if (coordState.statusText.startsWith("Target active · ")) {
+          const clicks = coordState.statusText.replace("Target active · ", "").replace(" clicks", "").replace(" click", "");
+          setStatus({
+            text: lang === "vi" ? `Đang săn · ${clicks} click` : `Target active · ${clicks} clicks`,
+            tone: coordState.tone,
+          });
+        } else if (coordState.statusText === "Waiting for target button...") {
+          setStatus({
+            text: lang === "vi" ? "Đang chờ nút xuất hiện..." : "Waiting for target button...",
+            tone: coordState.tone,
+          });
         } else {
           setStatus({ text: coordState.statusText, tone: coordState.tone });
         }
       }
     });
-  }, [t.disarmedStatus, t.outcome]);
+  }, [lang, t.disarmedStatus, t.outcome]);
 
   // Initialize language from settings & listen for changes
   useEffect(() => {
@@ -975,41 +986,39 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             </button>
           </div>
           {targetSummary && (
-            <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-2">
-              <div className="flex items-center gap-1.5">
-                {isTargetSaved ? (
-                  <button
-                    type="button"
-                    onClick={handleForgetSavedTarget}
-                    disabled={isArmed}
-                    className="dh-sub-btn dh-sub-btn-danger flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium disabled:opacity-40"
-                    title={t.forgetTarget}
-                  >
-                    <Trash2 className="h-2.5 w-2.5" />
-                    {t.forgetTarget}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSaveTarget}
-                    disabled={isArmed || !universalDescRef.current}
-                    className="dh-sub-btn dh-sub-btn-emerald flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold disabled:opacity-40"
-                    title={t.saveTarget}
-                  >
-                    <Bookmark className="h-2.5 w-2.5" />
-                    {t.saveTarget}
-                  </button>
-                )}
-              </div>
+            <div className="mt-2.5 grid grid-cols-2 gap-2 border-t border-white/5 pt-2">
+              {isTargetSaved ? (
+                <button
+                  type="button"
+                  onClick={handleForgetSavedTarget}
+                  disabled={isArmed}
+                  className="dh-sub-btn dh-sub-btn-danger flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-semibold transition disabled:opacity-50"
+                  title={t.forgetTarget}
+                >
+                  <Trash2 className="h-2.5 w-2.5" />
+                  <span>{t.forgetTarget}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSaveTarget}
+                  disabled={isArmed || !universalDescRef.current}
+                  className="dh-sub-btn dh-sub-btn-emerald flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-semibold transition disabled:opacity-50"
+                  title={t.saveTarget}
+                >
+                  <Bookmark className="h-2.5 w-2.5" />
+                  <span>{t.saveTarget}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleScheduleFromHUD}
                 disabled={isArmed || !universalDescRef.current}
-                className="dh-sub-btn flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold disabled:opacity-40"
+                className="dh-sub-btn flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-semibold transition disabled:opacity-50"
                 title={t.quickScheduleFromHUD}
               >
                 <CalendarClock className="h-3 w-3 text-emerald-300" />
-                {t.quickScheduleFromHUD}
+                <span>{t.quickScheduleFromHUD}</span>
               </button>
             </div>
           )}
