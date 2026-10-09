@@ -761,8 +761,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         </div>
       </div>
 
-      <div className="space-y-3 px-4 pb-4 pt-1">
-        {/* Universal Server clock */}
+      <div className="space-y-2.5 px-3.5 pb-3.5 pt-2">
+        {/* Card 1: Universal Server clock */}
         <div className="dh-inner-card rounded-2xl p-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5" title={serverDomain ? `${t.offsetVsDomain(serverDomain)} (${serverDomain})` : t.localDeviceTime}>
@@ -790,21 +790,30 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 : t.notSyncedRetry}
             </button>
           </div>
-          {(() => {
-            const [clockMain, clockMs] = serverTimeStr.includes(".")
-              ? serverTimeStr.split(".")
-              : [serverTimeStr, "000"];
-            return (
-              <div className="mt-1 flex items-baseline justify-center font-mono tabular-nums leading-none tracking-tight text-emerald-400">
-                <span className="text-[30px] font-bold">{clockMain}</span>
-                <span className="text-base font-medium text-emerald-400/75">.{clockMs}</span>
-              </div>
-            );
-          })()}
+          <div className="my-1.5 text-center font-mono text-[28px] font-bold tracking-tight text-emerald-400 tabular-nums">
+            {serverTimeStr}
+          </div>
         </div>
 
-        {/* Drop target with Quick Testing and Custom Time */}
+        {/* Card 2: Timing & Countdown */}
         <div className="dh-inner-card rounded-2xl p-3">
+          {/* Card Header matching Card 1 and Card 3 */}
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {t.timingAndCountdown || "Timing & Countdown"}
+            </span>
+            <span
+              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                isArmed
+                  ? "bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30"
+                  : "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20"
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${isArmed ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
+              <span>{isArmed ? t.armedCountdown : t.standbyReady}</span>
+            </span>
+          </div>
+
           {/* Slot selector grid */}
           <div className="grid grid-cols-5 gap-1 rounded-xl bg-black/40 p-1 ring-1 ring-white/5">
             {(
@@ -826,10 +835,10 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                   disabled={isArmed}
                   onClick={() => handleSelectSlot(actualSlot)}
                   title={fullTitle}
-                  className={`dh-slot-btn rounded-lg py-1 px-0.5 text-center font-mono text-[10px] font-semibold transition ${
+                  className={`dh-slot-btn ${
                     isActive
-                      ? "dh-slot-active bg-emerald-500 text-white shadow"
-                      : "dh-slot-inactive text-slate-400 hover:text-slate-200"
+                      ? "dh-slot-active"
+                      : "dh-slot-inactive"
                   } disabled:cursor-not-allowed`}
                 >
                   {shortLabel}
@@ -840,7 +849,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
           {/* Custom Time input field */}
           {targetSlot === "custom" && (
-            <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/10">
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/10">
               <span className="text-[10px] font-medium text-slate-400">{t.customTargetPrompt || "Target time:"}</span>
               <input
                 type="text"
@@ -853,54 +862,35 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             </div>
           )}
 
-          {/* Target & Countdown Box */}
-          {(() => {
-            const [cdMain, cdTenth] = countdownStr.includes(".")
-              ? countdownStr.split(".")
-              : [countdownStr, "0"];
-            return (
-              <div className="mt-2.5 flex items-center justify-between rounded-xl bg-black/30 px-3 py-2.5 ring-1 ring-white/5">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    {t.targetDropLabel || "Target drop"}
+          {/* Balanced 2-Column Info Display (Equal 2 lines on each side) */}
+          <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-black/30 p-2.5 ring-1 ring-white/5">
+            <div className="flex flex-col justify-center border-r border-white/5 pr-2">
+              <span className="text-[10px] font-medium text-slate-400">
+                {t.targetTimeLabel || "Target time"}
+              </span>
+              <div className="mt-0.5 flex items-baseline gap-1.5">
+                <span className="font-mono text-base font-bold text-emerald-400">
+                  {targetLabel}
+                </span>
+                {(targetSlot === "quick_10s" || targetSlot === "quick_30s") && (
+                  <span className="rounded bg-emerald-500/10 px-1 py-0.2 text-[9px] font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
+                    test
                   </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-sm font-bold text-emerald-400">
-                      {targetLabel}
-                    </span>
-                    {(targetSlot === "quick_10s" || targetSlot === "quick_30s") && (
-                      <span className="rounded bg-emerald-500/10 px-1 py-0.2 text-[9px] font-semibold text-emerald-400/90 ring-1 ring-emerald-500/20">
-                        test
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-0.5">
-                  <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    <Timer className={`h-3 w-3 ${isArmed ? "text-amber-400 animate-spin" : "text-emerald-400"}`} />
-                    <span>{t.dropIn}</span>
-                  </div>
-                  <div className="flex items-baseline font-mono tabular-nums leading-none">
-                    <span className={`text-xl font-bold ${isArmed ? "text-amber-300 animate-pulse" : "text-slate-100"}`}>
-                      {cdMain}
-                    </span>
-                    <span className={`text-xs font-semibold ${isArmed ? "text-amber-400/80" : "text-slate-400"}`}>
-                      .{cdTenth}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1">
-                    <span className={`h-1.5 w-1.5 rounded-full ${isArmed ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
-                    <span className={`text-[9px] font-semibold uppercase tracking-wider ${isArmed ? "text-amber-300" : "text-slate-400"}`}>
-                      {isArmed ? t.armedCountdown : t.standbyReady}
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
-            );
-          })()}
+            </div>
+            <div className="flex flex-col justify-center pl-2">
+              <span className="text-[10px] font-medium text-slate-400">
+                {t.countdownLabel || "Countdown"}
+              </span>
+              <div className={`mt-0.5 font-mono text-base font-bold tabular-nums ${isArmed ? "text-amber-300 animate-pulse" : "text-white"}`}>
+                {countdownStr}
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Universal Target locking */}
+        {/* Card 3: Universal Target locking */}
         <div className="dh-inner-card rounded-2xl p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t.targetVoucher}</span>
@@ -914,11 +904,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
                   {t.locked}
                 </span>
-              ) : (
-                <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-400 ring-1 ring-white/10">
-                  {t.opensAtDrop}
-                </span>
-              )}
+              ) : null}
             </div>
           </div>
           {targetSummary ? (
@@ -1036,7 +1022,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         </button>
 
         {/* Status */}
-        <div className={`h-[44px] min-h-[44px] max-h-[44px] shrink-0 flex items-center gap-2 rounded-xl bg-black/30 px-3 py-1.5 ring-1 ${tone.ring}`}>
+        <div className={`flex min-h-[38px] items-center gap-2 rounded-xl bg-black/30 px-3 py-1.5 ring-1 ${tone.ring}`}>
           {StatusIcon ? (
             <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
           ) : (

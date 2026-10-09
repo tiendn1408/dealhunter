@@ -232,11 +232,12 @@
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   line-height: 1 !important;
-  padding: 6px 2px !important;
+  height: 28px !important;
+  padding: 0 4px !important;
   border-radius: 8px !important;
   white-space: nowrap !important;
   text-align: center !important;
