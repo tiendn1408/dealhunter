@@ -6,7 +6,7 @@ import { storage } from "../lib/storage";
 import { DEFAULT_SETTINGS, MESSAGE_ACTIONS, SHOPEE_FLASH_HOURS, SHOPEE_URLS } from "../lib/constants";
 import { ScheduledTask } from "../lib/types";
 import { Language, getTranslation } from "../lib/i18n";
-import { nextFlashDrop, formatVN } from "../lib/drop_time";
+import { nextFlashDrop, formatVN, formatCountdown } from "../lib/drop_time";
 import {
   Crosshair,
   CalendarClock,
@@ -30,7 +30,7 @@ export const App: React.FC = () => {
   const [activeTabUrl, setActiveTabUrl] = useState<string>("");
   const [activeTabDomain, setActiveTabDomain] = useState<string>("");
   const [isWebPage, setIsWebPage] = useState<boolean>(false);
-  const [countdownStr, setCountdownStr] = useState("--:--.-");
+  const [countdownStr, setCountdownStr] = useState("--:--:--.-");
   const [nextDropHour, setNextDropHour] = useState<number>(0);
   const [account, setAccount] = useState<{ signedIn: boolean; email?: string } | null>(null);
   const [launchedToast, setLaunchedToast] = useState(false);
@@ -82,13 +82,7 @@ export const App: React.FC = () => {
       const now = Date.now();
       const nextDrop = nextFlashDrop(SHOPEE_FLASH_HOURS, now);
       setNextDropHour(nextDrop.hour);
-      const diff = Math.max(0, nextDrop.at - now);
-      const h = Math.floor(diff / 3_600_000);
-      const m = Math.floor((diff % 3_600_000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      const tenth = Math.floor((diff % 1000) / 100);
-      const mmss = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${tenth}`;
-      setCountdownStr(h > 0 ? `${h}:${mmss}` : mmss);
+      setCountdownStr(formatCountdown(nextDrop.at - now));
     };
 
     updateCountdown();

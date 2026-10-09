@@ -5,7 +5,7 @@ import { elementResolver, UniversalTargetDescriptor } from "../core/element_reso
 import { HuntOutcome } from "../core/hunt_engine";
 import { huntCoordinator, ARMED_SESSION_KEY } from "../core/hunt_coordinator";
 import { targetDiagnostics } from "../core/target_diagnostics";
-import { formatVN, nextDropAt, nextExactDropAt } from "../../lib/drop_time";
+import { formatVN, nextDropAt, nextExactDropAt, formatCountdown } from "../../lib/drop_time";
 import { storage } from "../../lib/storage";
 import { Language, getTranslation } from "../../lib/i18n";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
@@ -70,7 +70,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const [targetSlot, setTargetSlot] = useState<TargetSlot>("quick_10s");
   const [customTime, setCustomTime] = useState("00:00:00");
   const armedTargetTimestampRef = useRef<number | null>(null);
-  const [countdownStr, setCountdownStr] = useState("--:--.-");
+  const [countdownStr, setCountdownStr] = useState("--:--:--.-");
   const [targetLabel, setTargetLabel] = useState("--:--:--");
   const [targetSummary, setTargetSummary] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
@@ -299,12 +299,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         diff = Math.max(0, timestamp - now);
       }
 
-      const h = Math.floor(diff / 3_600_000);
-      const m = Math.floor((diff % 3_600_000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      const tenth = Math.floor((diff % 1000) / 100);
-      const mmss = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${tenth}`;
-      setCountdownStr(h > 0 ? `${h}:${mmss}` : mmss);
+      setCountdownStr(formatCountdown(diff));
 
       // Auto-reconnect target element if disconnected or hydrating after reload / SPA navigation
       if (universalDescRef.current && (!targetElementRef.current || !targetElementRef.current.isConnected)) {

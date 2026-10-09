@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextDropAt, nextFlashDrop, formatVN, nextExactDropAt } from "./drop_time";
+import { nextDropAt, nextFlashDrop, formatVN, nextExactDropAt, formatCountdown } from "./drop_time";
 
 const vn = (iso: string) => new Date(iso + "+07:00").getTime();
 
@@ -22,5 +22,22 @@ describe("drop time (Vietnam GMT+7)", () => {
   it("calculates next exact second in Vietnam time", () => {
     expect(nextExactDropAt(18, 30, 45, vn("2026-10-07T18:20:00"))).toBe(vn("2026-10-07T18:30:45"));
     expect(nextExactDropAt(18, 20, 0, vn("2026-10-07T18:20:01"))).toBe(vn("2026-10-08T18:20:00"));
+  });
+  it("formats countdown in consistent HH:mm:ss.S format", () => {
+    // 26m 27.5s -> 00:26:27.5
+    const ms26m = 26 * 60_000 + 27 * 1_000 + 500;
+    expect(formatCountdown(ms26m)).toBe("00:26:27.5");
+
+    // 0ms -> 00:00:00.0
+    expect(formatCountdown(0)).toBe("00:00:00.0");
+    expect(formatCountdown(-500)).toBe("00:00:00.0");
+
+    // 1h 2m 3.4s -> 01:02:03.4
+    const ms1h = 1 * 3_600_000 + 2 * 60_000 + 3 * 1_000 + 400;
+    expect(formatCountdown(ms1h)).toBe("01:02:03.4");
+
+    // 12h 45m 30.9s -> 12:45:30.9
+    const ms12h = 12 * 3_600_000 + 45 * 60_000 + 30 * 1_000 + 900;
+    expect(formatCountdown(ms12h)).toBe("12:45:30.9");
   });
 });
