@@ -707,45 +707,48 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       {/* Draggable Header */}
       <div
         onMouseDown={handleHeaderMouseDown}
-        className="dh-header flex cursor-grab items-center justify-between px-4 py-3 active:cursor-grabbing"
+        className="dh-header flex cursor-grab items-center justify-between gap-2 px-3.5 py-2.5 active:cursor-grabbing select-none"
         title={t.dragHudTooltip}
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {typeof chrome !== "undefined" && chrome.runtime?.getURL ? (
             <img
               src={chrome.runtime.getURL("icons/icon48.png")}
               alt="DealHunter"
-              className="h-8 w-8 rounded-xl object-cover shadow-lg shadow-emerald-900/50"
+              className="h-8 w-8 shrink-0 rounded-xl object-cover shadow-lg shadow-emerald-900/50"
             />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[11px] font-black text-white shadow-lg shadow-emerald-900/50">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-[11px] font-black text-white shadow-lg shadow-emerald-900/50">
               DH
             </div>
           )}
-          <div className="leading-tight">
-            <div className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight">
-              <span>DealHunter</span>
-              <GripHorizontal className="h-3 w-3 text-slate-500 opacity-60" />
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-white">
+              <span className="shrink-0">DealHunter</span>
+              <GripHorizontal className="h-3 w-3 shrink-0 text-slate-500 opacity-60" />
             </div>
-            <div className="truncate text-[10px] font-medium text-slate-400">
+            <div
+              className="truncate text-[10px] font-medium text-slate-400"
+              title={typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
+            >
               {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={handleToggleLang}
-            className="dh-icon-btn dh-lang-btn flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-white/10 transition hover:bg-white/10"
+            className="dh-icon-btn dh-lang-btn flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-white/10 transition hover:bg-white/10"
             title={t.toggleLanguageTooltip(lang === "en" ? "vi" : "en")}
           >
-            <Languages className="h-3 w-3" />
+            <Languages className="h-3 w-3 shrink-0" />
             <span>{lang.toUpperCase()}</span>
           </button>
           <button
             type="button"
             onClick={() => setMinimized(true)}
-            className="dh-icon-btn rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+            className="dh-icon-btn shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
             title="Minimize"
           >
             <Minus className="h-3.5 w-3.5" />
@@ -754,7 +757,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             <button
               type="button"
               onClick={onClose}
-              className="dh-icon-btn rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+              className="dh-icon-btn shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
               title="Close"
             >
               <X className="h-3.5 w-3.5" />

@@ -112,8 +112,21 @@
 
 /* Draggable Header */
 #dealhunter-hud-root .dh-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
   background: linear-gradient(to right, rgba(16, 185, 129, 0.18), rgba(20, 184, 166, 0.1), transparent) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  overflow: hidden !important;
+}
+
+#dealhunter-hud-root .dh-header .truncate {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 
 /* Minimized Floating Pill */
