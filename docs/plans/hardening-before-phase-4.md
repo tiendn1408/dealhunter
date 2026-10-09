@@ -172,6 +172,14 @@
 - [x] Web/extension: xem báo cáo cùng đợt (thống kê 90 ngày và "Tất cả" lấy đúng khoảng; mũi tên ở trang danh sách; banner hết phiên khi đăng xuất chủ động; chặn gửi mã theo từng số; extension so giá cùng cơ sở và lưu token cùng URL API nguyên tử; preflight E2E kiểm cả Redis).
 - Ghi chú: script Lua của OTP và rate limiter dùng nhiều key ⇒ sẽ lỗi `CROSSSLOT` nếu chuyển sang Redis Cluster (hiện dùng Redis 1 node). `GetUserMultiSourceProducts` dùng giá có ship nếu biết — lệch với best deal khi có nguồn chưa rõ ship (hiện phí ship luôn chưa rõ).
 
+**Rà soát cuối (2026-10-09)** — chỉ trên thay đổi của "Rà soát lần 5"; không còn lỗi nghiêm trọng (không hỏng dữ liệu, không lỗ hổng, không hồi quy). Các lỗi thấp đã sửa, mỗi lỗi có test fail trước khi sửa:
+- [x] Deadlock còn lại ở đường gắn **nguồn mới** (`ON CONFLICT DO UPDATE` chờ dòng nguồn trong khi giữ khoá nhóm): `InsertProductSourceIfAbsent` (`ON CONFLICT DO NOTHING`, không khoá dòng có sẵn); nguồn vừa được tạo song song ⇒ làm lại bước khoá-ghi (không đọc lại trang sàn), lần sau khoá nguồn trước. Test `TestLinkNewSourceVsTrackingNoDeadlock`.
+- [x] Rate limit: kiểm tra giới hạn người dùng trước (người đã hết hạn mức không làm đầy hạn mức IP dùng chung NAT/CGNAT); bị chặn theo IP ⇒ hoàn lượt người dùng (`RateLimiter.Refund`).
+- [x] Auto-match: làm mới được gợi ý cũ nhưng một ứng viên lỗi ⇒ kết quả `incomplete` thay vì 500; danh sách luôn là `[]`, không `null`.
+- [x] Shopee: `items: null` kèm `total_count`/`nomore` là kết quả rỗng thật; chỉ mã lỗi hoặc phản hồi không có trường tìm kiếm nào mới là "bị chặn".
+- [x] Cẩm nang deploy: `TRUSTED_PROXIES` cho systemd (chỉ bỏ comment khi dùng systemd — đặt trong `.env` khi dùng compose sẽ làm mất gateway); `docker compose down` trước lần `up` đầu tiên với subnet cố định, kèm lệnh kiểm tra gateway.
+- [x] Web: tab "Tất cả" cắt tại ngày tạo tracking cả với tracking dưới 90 ngày; `CreatedAt` không đọc được ⇒ lỗi hiện ngay (không retry); preflight E2E chỉ dựa vào Redis DB 15 (traffic dev đồng thời không gây báo nhầm, không đề nghị xoá entry không chứng minh được), `E2E_DB` được kiểm tra và `psql` chạy không qua shell. Extension: không so giá khi nguồn Shopee đang xem chưa rõ phí ship mà best deal đã gồm ship.
+
 **Chỉ dùng dữ liệu thật (2026-10-08)** — dự án đang phát triển, toàn bộ dữ liệu local là dữ liệu test/mock:
 - [x] **Nguyên nhân dữ liệu mock quay lại**: integration test ghi thẳng vào DB dev (`DATABASE_URL`, mặc định `dealdb`) và Redis DB 0 — sau migration `000010` DB dev vẫn có 645 user test (`*@dealhunter.vn`) và 132 sản phẩm, phần lớn `mock.dealhunter.vn`. Nay test dùng `TEST_DATABASE_URL` / `TEST_REDIS_URL` (mặc định `dealdb_test`, Redis DB 15) và **từ chối chạy** nếu tên DB không kết thúc bằng `_test` hoặc Redis là DB 0. `make test-integration` tự tạo + migrate `dealdb_test`.
 - [ ] **Xoá dữ liệu dev**: `make db-reset` (drop mọi bảng, migrate lại, `FLUSHDB` Redis DB 0) — cần chạy thủ công.
