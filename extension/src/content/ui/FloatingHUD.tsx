@@ -72,6 +72,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const armedTargetTimestampRef = useRef<number | null>(null);
   const [countdownStr, setCountdownStr] = useState("--:--:--.-");
   const [targetLabel, setTargetLabel] = useState("--:--:--");
+  const [targetWallClock, setTargetWallClock] = useState("--:--:--");
   const [targetSummary, setTargetSummary] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [isTargetSaved, setIsTargetSaved] = useState(false);
@@ -296,6 +297,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
       const { timestamp, label } = computeTargetTimestamp(now, targetSlot);
       setTargetLabel(label);
+      setTargetWallClock(formatVN(timestamp).slice(0, 8));
 
       let diff = 0;
       if (!isArmed && targetSlot === "quick_10s") {
@@ -790,8 +792,17 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 : t.notSyncedRetry}
             </button>
           </div>
-          <div className="my-1.5 text-center font-mono text-[28px] font-bold tracking-tight text-emerald-400 tabular-nums">
-            {serverTimeStr}
+          <div className="my-1.5 text-center font-mono text-[28px] font-bold tracking-tight tabular-nums">
+            {(() => {
+              const dotIdx = serverTimeStr.lastIndexOf(".");
+              if (dotIdx === -1) return <span className="text-white">{serverTimeStr}</span>;
+              return (
+                <>
+                  <span className="text-white">{serverTimeStr.slice(0, dotIdx)}</span>
+                  <span className="text-emerald-400">{serverTimeStr.slice(dotIdx)}</span>
+                </>
+              );
+            })()}
           </div>
         </div>
 
@@ -863,27 +874,25 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           )}
 
           {/* Balanced 2-Column Info Display (Equal 2 lines on each side) */}
-          <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-black/30 p-2.5 ring-1 ring-white/5">
-            <div className="flex flex-col justify-center border-r border-white/5 pr-2">
-              <span className="text-[10px] font-medium text-slate-400">
-                {t.targetTimeLabel || "Target time"}
-              </span>
-              <div className="mt-0.5 flex items-baseline gap-1.5">
-                <span className="font-mono text-base font-bold text-emerald-400">
-                  {targetLabel}
-                </span>
+          <div className="mt-2.5 grid grid-cols-2 gap-2 rounded-xl bg-black/40 p-2.5 ring-1 ring-white/5">
+            <div className="flex flex-col justify-center border-r border-white/10 pr-2">
+              <div className="flex items-center gap-1 text-[10px] font-medium text-slate-400">
+                <span>{t.dropAtLabel || "Drop time"}</span>
                 {(targetSlot === "quick_10s" || targetSlot === "quick_30s") && (
-                  <span className="rounded bg-emerald-500/10 px-1 py-0.2 text-[9px] font-semibold text-emerald-400 ring-1 ring-emerald-500/20">
-                    test
+                  <span className="rounded bg-emerald-500/10 px-1 text-[9px] font-bold text-emerald-400 ring-1 ring-emerald-500/20">
+                    {targetLabel}
                   </span>
                 )}
+              </div>
+              <div className="mt-0.5 font-mono text-[15px] font-bold text-white tabular-nums">
+                {targetWallClock}
               </div>
             </div>
             <div className="flex flex-col justify-center pl-2">
               <span className="text-[10px] font-medium text-slate-400">
                 {t.countdownLabel || "Countdown"}
               </span>
-              <div className={`mt-0.5 font-mono text-base font-bold tabular-nums ${isArmed ? "text-amber-300 animate-pulse" : "text-white"}`}>
+              <div className={`mt-0.5 font-mono text-[15px] font-bold tabular-nums ${isArmed ? "text-amber-300 animate-pulse" : "text-emerald-400"}`}>
                 {countdownStr}
               </div>
             </div>
@@ -904,21 +913,18 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
                   {t.locked}
                 </span>
-              ) : null}
+              ) : (
+                <span className="text-[10px] font-medium text-slate-500">
+                  {t.standbyReady || "Ready"}
+                </span>
+              )}
             </div>
           </div>
-          {targetSummary ? (
+          {targetSummary && (
             <div className="mb-2.5 flex items-center gap-2 rounded-xl bg-emerald-500/10 px-2.5 py-1.5 ring-1 ring-emerald-500/20">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
               <span className="truncate font-mono text-xs font-semibold text-emerald-300" title={targetSummary}>
                 {targetSummary}
-              </span>
-            </div>
-          ) : (
-            <div className="mb-2.5 flex items-center gap-2 rounded-xl bg-white/5 px-2.5 py-1.5 ring-1 ring-white/5">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-500" />
-              <span className="truncate text-[11px] font-medium text-slate-400">
-                {t.notPickedText}
               </span>
             </div>
           )}
@@ -954,6 +960,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               {t.autoDetect}
             </button>
           </div>
+          {!targetSummary && (
+            <p className="mt-2 text-center text-[10px] text-slate-400">
+              {t.notPickedText}
+            </p>
+          )}
           {targetSummary && (
             <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-2">
               <div className="flex items-center gap-1.5">
