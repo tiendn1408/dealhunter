@@ -206,7 +206,8 @@ export function startHunt(opts: HuntOptions): () => void {
           }
         }
       }
-      status(t, `Waiting for the drop: ${(untilDrop / 1000).toFixed(1)}s`);
+      const waitSeconds = Math.max(1, Math.round(untilDrop / 1000));
+      status(t, `Waiting for the drop: ${waitSeconds}s`);
       return;
     }
 

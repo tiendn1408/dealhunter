@@ -343,6 +343,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               currentLang === "vi" ? "Đang chờ nút xuất hiện..." : "Waiting for target button...",
             tone: coordState.tone,
           });
+        } else if (coordState.statusText.startsWith("Waiting for the drop: ")) {
+          const secs = coordState.statusText.replace("Waiting for the drop: ", "");
+          setStatusMsg({
+            render: (_trans, currentLang) =>
+              currentLang === "vi" ? `Đang chờ đến giờ săn: ${secs}` : `Waiting for the drop: ${secs}`,
+            tone: coordState.tone,
+          });
         } else {
           setStatusMsg({ text: coordState.statusText, tone: coordState.tone });
         }
