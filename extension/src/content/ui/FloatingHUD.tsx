@@ -742,45 +742,44 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               </span>
             </div>
             <div className="group relative min-w-0">
-              <div
-                className="truncate text-[10px] font-medium text-slate-400 cursor-help"
-                title={typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
-              >
+              <div className="truncate text-[10px] font-medium text-slate-400 cursor-default">
                 {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
               </div>
-              {/* Instant high-contrast tooltip on hover */}
-              <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden whitespace-nowrap rounded-lg bg-slate-900/95 px-2.5 py-1 text-[10px] font-semibold text-emerald-300 shadow-2xl ring-1 ring-white/15 backdrop-blur-md group-hover:flex">
-                {currentHost ? `Host: ${currentHost}` : "Shopee Sniper"}
-              </div>
+              {/* Sleek dark capsule tooltip on hover, zero OS title conflict */}
+              {currentHost && (
+                <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden whitespace-nowrap rounded-lg bg-slate-900/95 px-2.5 py-1 font-mono text-[10px] text-slate-200 shadow-xl ring-1 ring-white/10 backdrop-blur-md group-hover:flex">
+                  {currentHost}
+                </div>
+              )}
             </div>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={handleToggleLang}
-            className="dh-icon-btn dh-lang-btn flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-white/10 transition hover:bg-white/10"
+            className="dh-header-btn dh-header-btn-lang"
             title={t.toggleLanguageTooltip(lang === "en" ? "vi" : "en")}
           >
-            <Languages className="h-3 w-3 shrink-0" />
+            <Languages className="h-3.5 w-3.5 shrink-0" />
             <span>{lang.toUpperCase()}</span>
           </button>
           <button
             type="button"
             onClick={() => setMinimized(true)}
-            className="dh-icon-btn shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+            className="dh-header-btn dh-header-btn-square"
             title="Minimize"
           >
-            <Minus className="h-3.5 w-3.5" />
+            <Minus className="h-3.5 w-3.5 shrink-0" />
           </button>
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              className="dh-icon-btn shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+              className="dh-header-btn dh-header-btn-square dh-header-btn-close"
               title="Close"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-3.5 w-3.5 shrink-0" />
             </button>
           )}
         </div>
