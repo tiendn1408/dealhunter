@@ -39,6 +39,15 @@ var errFakeNotFound = fmt.Errorf("not found: %w", pgx.ErrNoRows)
 
 // product.ProductRepository
 func (f *fakeStore) UpsertProduct(context.Context, *product.Product) error { return nil }
+func (f *fakeStore) InsertProductSourceIfAbsent(_ context.Context, _ pgx.Tx, ps *product.ProductSource) (bool, error) {
+	for _, existing := range f.sources {
+		if ps.ExternalProductID != nil && existing.ExternalProductID != nil && existing.Platform == ps.Platform && *existing.ExternalProductID == *ps.ExternalProductID {
+			return false, nil
+		}
+	}
+	f.sources[ps.ID] = ps
+	return true, nil
+}
 func (f *fakeStore) UpsertProductSource(_ context.Context, _ pgx.Tx, ps *product.ProductSource) error {
 	f.sources[ps.ID] = ps
 	return nil

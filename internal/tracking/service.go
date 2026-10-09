@@ -163,6 +163,9 @@ func (s *TrackingService) GetProductSource(ctx context.Context, id uuid.UUID) (*
 	return s.productRepo.GetProductSource(ctx, id)
 }
 
+// errSourceAppeared: the source was created by someone else while a link was running (internal; retried).
+var errSourceAppeared = errors.New("product source appeared concurrently")
+
 var (
 	ErrProductNotFound     = errors.New("product not found")
 	ErrSourceAlreadyLinked = errors.New("source already linked to this product")
@@ -286,102 +289,119 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 			return nil, fmt.Errorf("check existing source: %w", err)
 		}
 	}
-	if source != nil && source.ProductID == targetProductID {
-		return nil, ErrSourceAlreadyLinked
-	}
-
-	groups := []uuid.UUID{targetProductID}
-	var lockedSources []uuid.UUID // an existing source is locked before the groups (see WithGroupLock)
-	callerTracksSource := false
-	if source != nil {
-		groups = append(groups, source.ProductID)
-		lockedSources = append(lockedSources, source.ID)
-		tracked, err := s.trackingRepo.GetTrackingBySource(ctx, userID, source.ID)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("check caller tracking: %w", err)
+	for attempt := 0; ; attempt++ {
+		if source != nil && source.ProductID == targetProductID {
+			return nil, ErrSourceAlreadyLinked
 		}
-		callerTracksSource = tracked != nil
-	}
-	// The caller tracks the linked source too, in the same transaction as the link: both happen or neither
-	trackSource := func(tx pgx.Tx) error {
-		if callerTracksSource {
+
+		groups := []uuid.UUID{targetProductID}
+		var lockedSources []uuid.UUID // an existing source is locked before the groups (see WithGroupLock)
+		callerTracksSource := false
+		if source != nil {
+			groups = append(groups, source.ProductID)
+			lockedSources = append(lockedSources, source.ID)
+			tracked, err := s.trackingRepo.GetTrackingBySource(ctx, userID, source.ID)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return nil, fmt.Errorf("check caller tracking: %w", err)
+			}
+			callerTracksSource = tracked != nil
+		}
+		// The caller tracks the linked source too, in the same transaction as the link: both happen or neither
+		trackSource := func(tx pgx.Tx) error {
+			if callerTracksSource {
+				return nil
+			}
+			pollInterval := 1800
+			if err := s.trackingRepo.CreateTracking(ctx, tx, &domain.TrackedProduct{
+				ID:                     uuid.New(),
+				UserID:                 userID,
+				ProductSourceID:        source.ID,
+				Active:                 true,
+				PollingIntervalSeconds: pollInterval,
+				NextFetchAt:            time.Now().Add(time.Duration(pollInterval) * time.Second),
+				CreatedAt:              time.Now(),
+				UpdatedAt:              time.Now(),
+				IsPrimary:              false,
+			}); err != nil {
+				return fmt.Errorf("track linked source: %w", err)
+			}
 			return nil
 		}
-		pollInterval := 1800
-		if err := s.trackingRepo.CreateTracking(ctx, tx, &domain.TrackedProduct{
-			ID:                     uuid.New(),
-			UserID:                 userID,
-			ProductSourceID:        source.ID,
-			Active:                 true,
-			PollingIntervalSeconds: pollInterval,
-			NextFetchAt:            time.Now().Add(time.Duration(pollInterval) * time.Second),
-			CreatedAt:              time.Now(),
-			UpdatedAt:              time.Now(),
-			IsPrimary:              false,
-		}); err != nil {
-			return fmt.Errorf("track linked source: %w", err)
-		}
-		return nil
-	}
-	err = s.trackingRepo.WithGroupLock(ctx, lockedSources, groups, func(tx pgx.Tx) error {
-		// Re-checked under the locks: the group may have changed since the checks above
-		if ok, err := s.trackingRepo.UserTracksProduct(ctx, tx, userID, targetProductID); err != nil {
-			return fmt.Errorf("check target product: %w", err)
-		} else if !ok {
-			return ErrProductNotFound
-		}
-		if byUser {
-			if shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, tx, targetProductID, userID); err != nil {
-				return fmt.Errorf("check target group: %w", err)
-			} else if shared {
-				return ErrGroupShared
+		err = s.trackingRepo.WithGroupLock(ctx, lockedSources, groups, func(tx pgx.Tx) error {
+			// Re-checked under the locks: the group may have changed since the checks above
+			if ok, err := s.trackingRepo.UserTracksProduct(ctx, tx, userID, targetProductID); err != nil {
+				return fmt.Errorf("check target product: %w", err)
+			} else if !ok {
+				return ErrProductNotFound
 			}
-		}
+			if byUser {
+				if shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, tx, targetProductID, userID); err != nil {
+					return fmt.Errorf("check target group: %w", err)
+				} else if shared {
+					return ErrGroupShared
+				}
+			}
 
-		if source != nil {
-			if shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, tx, source.ProductID, userID); err != nil {
-				return fmt.Errorf("check source group: %w", err)
-			} else if shared {
-				return ErrSourceInOtherGroup
-			}
-			if err := s.productRepo.AssignProductSource(ctx, tx, source.ID, source.ProductID, targetProductID); err != nil {
-				if errors.Is(err, product.ErrSourceMoved) {
+			if source != nil {
+				if shared, err := s.trackingRepo.OtherUsersTrackProduct(ctx, tx, source.ProductID, userID); err != nil {
+					return fmt.Errorf("check source group: %w", err)
+				} else if shared {
 					return ErrSourceInOtherGroup
 				}
-				return fmt.Errorf("reassign source: %w", err)
+				if err := s.productRepo.AssignProductSource(ctx, tx, source.ID, source.ProductID, targetProductID); err != nil {
+					if errors.Is(err, product.ErrSourceMoved) {
+						return ErrSourceInOtherGroup
+					}
+					return fmt.Errorf("reassign source: %w", err)
+				}
+				source.ProductID = targetProductID
+				return trackSource(tx)
 			}
-			source.ProductID = targetProductID
-			return trackSource(tx)
-		}
 
-		var extID *string
-		if data.ExternalProductID != "" {
-			extID = &data.ExternalProductID
+			var extID *string
+			if data.ExternalProductID != "" {
+				extID = &data.ExternalProductID
+			}
+			source = &product.ProductSource{
+				ID:                uuid.New(),
+				ProductID:         targetProductID,
+				Platform:          adapter.Name(),
+				ExternalProductID: extID,
+				CanonicalURL:      data.CanonicalURL,
+				SellerName:        optionalString(data.SellerName),
+				RawTitle:          &data.RawTitle,
+				Currency:          "VND",
+				Active:            true,
+				CreatedAt:         time.Now(),
+				UpdatedAt:         time.Now(),
+			}
+			// Insert only if absent: on a conflict, ON CONFLICT DO UPDATE would wait on the existing row while
+			// holding the group lock (the reverse of the source-then-group order, so it could deadlock with a
+			// new tracking of it). Instead the whole step is redone, now locking that source first.
+			inserted, err := s.productRepo.InsertProductSourceIfAbsent(ctx, tx, source)
+			if err != nil {
+				return fmt.Errorf("insert source: %w", err)
+			}
+			if !inserted {
+				return errSourceAppeared
+			}
+			return trackSource(tx)
+		})
+		if errors.Is(err, errSourceAppeared) && attempt == 0 {
+			// Created concurrently since it was looked up: redo the step with the source as it now exists
+			source, err = s.productRepo.GetProductSourceByExternalID(ctx, adapter.Name(), data.ExternalProductID)
+			if err != nil {
+				return nil, fmt.Errorf("check existing source: %w", err)
+			}
+			continue
 		}
-		source = &product.ProductSource{
-			ID:                uuid.New(),
-			ProductID:         targetProductID,
-			Platform:          adapter.Name(),
-			ExternalProductID: extID,
-			CanonicalURL:      data.CanonicalURL,
-			SellerName:        optionalString(data.SellerName),
-			RawTitle:          &data.RawTitle,
-			Currency:          "VND",
-			Active:            true,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
+		if errors.Is(err, errSourceAppeared) {
+			return nil, ErrSourceInOtherGroup
 		}
-		if err := s.productRepo.UpsertProductSource(ctx, tx, source); err != nil {
-			return fmt.Errorf("insert source: %w", err)
+		if err != nil {
+			return nil, err
 		}
-		// Someone created this source concurrently in another group: never move it implicitly
-		if source.ProductID != targetProductID {
-			return ErrSourceInOtherGroup
-		}
-		return trackSource(tx)
-	})
-	if err != nil {
-		return nil, err
+		break
 	}
 
 	// Create and enqueue initial fetch job

@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { savingVsViewedSource } from "./api_client";
 
-const shopee = { source_id: "s-shopee", platform: "shopee", canonical_url: "https://shopee.vn/x-i.1.2", effective_price: 200_000 };
-const other = { source_id: "s-shopee-2", platform: "shopee", canonical_url: "https://shopee.vn/y-i.3.4", effective_price: 400_000 };
-const lazada = { source_id: "s-laz", platform: "lazada", canonical_url: "https://lazada.vn/p", effective_price: 150_000 };
+const shopee = { source_id: "s-shopee", platform: "shopee", canonical_url: "https://shopee.vn/x-i.1.2", shipping_fee: 0, effective_price: 200_000 };
+const other = { source_id: "s-shopee-2", platform: "shopee", canonical_url: "https://shopee.vn/y-i.3.4", shipping_fee: 0, effective_price: 400_000 };
+const lazada = { source_id: "s-laz", platform: "lazada", canonical_url: "https://lazada.vn/p", shipping_fee: 0, effective_price: 150_000 };
 
 describe("savingVsViewedSource", () => {
   it("is relative to the viewed Shopee source, not the most expensive one", () => {
@@ -55,6 +55,22 @@ describe("savingVsViewedSource", () => {
     it("is unknown when the viewed item price cannot be known", () => {
       const unknownItem = { ...viewed, listed_price: null, shipping_fee: null };
       expect(savingVsViewedSource([unknownItem, lazada], { ProductSourceID: "s-shopee" }, 162_000, false)).toBeUndefined();
+    });
+
+    it("is unknown when the best deal includes shipping but the viewed source's shipping fee is unknown", () => {
+      // Viewed Shopee source is out of stock (not eligible for the best deal), shipping fee not stated: its
+      // effective_price is the item price only and must not be compared with a best price including shipping.
+      const viewedNoShip = { ...shopee, listed_price: 100_000, shipping_fee: null, effective_price: 100_000 };
+      const laz = { source_id: "s-laz", platform: "lazada", listed_price: 90_000, shipping_fee: 15_000, effective_price: 105_000 };
+      const tiktok = { source_id: "s-tt", platform: "tiktok", listed_price: 80_000, shipping_fee: 15_000, effective_price: 95_000 };
+      expect(savingVsViewedSource([viewedNoShip, laz, tiktok], { ProductSourceID: "s-shopee" }, 95_000, true)).toBeUndefined();
+      const viewedMissingShip = { source_id: "s-shopee", platform: "shopee", listed_price: 100_000, effective_price: 100_000 };
+      expect(savingVsViewedSource([viewedMissingShip, laz, tiktok], { ProductSourceID: "s-shopee" }, 95_000, true)).toBeUndefined();
+    });
+
+    it("compares effective prices when the viewed source's shipping fee is known (free shipping counts)", () => {
+      const viewedFree = { ...shopee, listed_price: 100_000, shipping_fee: 0, effective_price: 100_000 };
+      expect(savingVsViewedSource([viewedFree], { ProductSourceID: "s-shopee" }, 95_000, true)).toBeCloseTo(5);
     });
 
     it("is unknown when the basis of the best price is not stated", () => {

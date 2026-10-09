@@ -10,6 +10,7 @@ import (
 type ProductRepository interface {
 	UpsertProduct(ctx context.Context, p *Product) error
 	UpsertProductSource(ctx context.Context, tx pgx.Tx, ps *ProductSource) error
+	InsertProductSourceIfAbsent(ctx context.Context, tx pgx.Tx, ps *ProductSource) (bool, error)
 	GetProductSource(ctx context.Context, id uuid.UUID) (*ProductSource, error)
 	GetProductSourceByExternalID(ctx context.Context, platform, externalID string) (*ProductSource, error)
 	UpdateProductSourcePrice(ctx context.Context, tx pgx.Tx, update *ProductSource) error

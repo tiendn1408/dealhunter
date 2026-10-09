@@ -57,7 +57,8 @@ function itemPrice(s: ComparisonSource): number | undefined {
  * comparison sources. The viewed source is the Shopee source of the tracking (same source ID, or the same
  * shop/item IDs when the ID is not available). Like is compared with like: with `shippingIncluded` the
  * effective prices (item + shipping), without it the item prices (as the best price then is one).
- * Undefined when the viewed price or the basis of the best price is unknown, or the viewed price is not higher.
+ * Undefined when the viewed price (with shippingIncluded: also its shipping fee) or the basis of the best price is
+ * unknown, or the viewed price is not higher.
  */
 export function savingVsViewedSource(
   sources: ComparisonSource[] | undefined,
@@ -74,6 +75,9 @@ export function savingVsViewedSource(
     return !!ids && !!trackedIds && ids.shopId === trackedIds.shopId && ids.itemId === trackedIds.itemId;
   });
   if (!viewed) return undefined;
+  // With shipping included the viewed effective price must include a known shipping fee: a source whose fee is
+  // unknown (e.g. out of stock, so not part of the best deal's "all fees known" basis) has an item-only effective_price.
+  if (shippingIncluded && typeof viewed.shipping_fee !== "number") return undefined;
   const viewedPrice = shippingIncluded ? viewed.effective_price : itemPrice(viewed);
   if (!isPositive(viewedPrice) || viewedPrice <= bestPrice) return undefined;
   return ((viewedPrice - bestPrice) / viewedPrice) * 100;

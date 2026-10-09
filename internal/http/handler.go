@@ -108,22 +108,37 @@ func (h *Handler) SetPhoneVerifier(v PhoneVerifier) {
 // allowScrape enforces the per-user scrape limit; it answers 429 itself when the user is over it.
 // A limiter outage lets the request through (logged), like the guest limiter.
 func (h *Handler) allowScrape(w http.ResponseWriter, r *http.Request, userID uuid.UUID) bool {
-	for _, check := range []struct {
-		limiter RateLimiter
-		key     string
-	}{{h.scrapeIPLimiter, rateLimitKey(r)}, {h.scrapeLimiter, userID.String()}} { // IP first: a refusal there must not use up the user's allowance
-		if check.limiter == nil {
-			continue
+	refuse := func(retryAfter time.Duration) bool {
+		writeRetryAfter(w, retryAfter)
+		http.Error(w, "Bạn thao tác quá nhanh (mỗi thao tác này phải truy cập sàn). Vui lòng thử lại sau.", http.StatusTooManyRequests)
+		return false
+	}
+	// The user's own limit first: a user over it must not fill the per-IP bucket shared with everyone
+	// behind the same address (NAT/CGNAT). A limiter outage lets the request through (logged).
+	userCharged := false
+	if h.scrapeLimiter != nil {
+		allowed, retryAfter, err := h.scrapeLimiter.Allow(r.Context(), userID.String())
+		switch {
+		case err != nil:
+			h.log().Warn("scrape rate limiter unavailable", "err", err)
+		case !allowed:
+			return refuse(retryAfter)
+		default:
+			userCharged = true
 		}
-		allowed, retryAfter, err := check.limiter.Allow(r.Context(), check.key)
+	}
+	if h.scrapeIPLimiter != nil {
+		allowed, retryAfter, err := h.scrapeIPLimiter.Allow(r.Context(), rateLimitKey(r))
 		if err != nil {
 			h.log().Warn("scrape rate limiter unavailable", "err", err)
-			continue
-		}
-		if !allowed {
-			writeRetryAfter(w, retryAfter)
-			http.Error(w, "Bạn thao tác quá nhanh (mỗi thao tác này phải truy cập sàn). Vui lòng thử lại sau.", http.StatusTooManyRequests)
-			return false
+		} else if !allowed {
+			// Refused per IP: the user's slot is given back, nothing was done for it
+			if userCharged {
+				if err := h.scrapeLimiter.Refund(r.Context(), userID.String()); err != nil {
+					h.log().Warn("scrape rate limiter refund failed", "err", err)
+				}
+			}
+			return refuse(retryAfter)
 		}
 	}
 	return true

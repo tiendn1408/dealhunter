@@ -228,6 +228,35 @@ func (r *PostgresRepository) ProductExists(ctx context.Context, productID uuid.U
 	return exists, err
 }
 
+// InsertProductSourceIfAbsent inserts ps unless a source with the same platform and external ID exists.
+// Unlike UpsertProductSource it never touches (and so never waits on) an existing row, which keeps the
+// source-then-group lock order of group changes intact. inserted reports whether ps was written.
+func (r *PostgresRepository) InsertProductSourceIfAbsent(ctx context.Context, tx pgx.Tx, ps *ProductSource) (bool, error) {
+	now := time.Now()
+	if ps.CreatedAt.IsZero() {
+		ps.CreatedAt = now
+	}
+	ps.UpdatedAt = now
+	query := `
+		INSERT INTO product_sources (
+			id, product_id, platform, external_product_id, canonical_url,
+			seller_name, raw_title, currency, active, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (platform, external_product_id) DO NOTHING;
+	`
+	exec := r.pool.Exec
+	if tx != nil {
+		exec = tx.Exec
+	}
+	tag, err := exec(ctx, query, ps.ID, ps.ProductID, ps.Platform, ps.ExternalProductID, ps.CanonicalURL,
+		ps.SellerName, ps.RawTitle, ps.Currency, ps.Active, ps.CreatedAt, ps.UpdatedAt)
+	if err != nil {
+		return false, fmt.Errorf("insert product source: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // ErrSourceMoved means the source no longer belongs to the group the caller checked.
 var ErrSourceMoved = errors.New("product source moved to another group")
 

@@ -23,6 +23,8 @@ func TestSearchShopee_BlockedIsAnError(t *testing.T) {
 		{"anti-bot error code", `{"error":90309999}`, true, 0},
 		{"items missing", `{"error":0}`, true, 0},
 		{"items null", `{"error":0,"items":null}`, true, 0},
+		{"empty answer with items null but a count", `{"error":0,"items":null,"total_count":0,"nomore":true}`, false, 0},
+		{"empty answer with only nomore", `{"error":0,"items":null,"nomore":true}`, false, 0},
 		{"not JSON", `<html>verify</html>`, true, 0},
 	}
 	for _, tc := range cases {

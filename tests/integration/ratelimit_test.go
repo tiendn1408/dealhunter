@@ -45,3 +45,28 @@ func TestRedisRateLimiter_SlidingWindow(t *testing.T) {
 		t.Fatal("a slot must free up once the oldest request leaves the window")
 	}
 }
+
+// A refunded request frees its slot again.
+func TestRedisRateLimiter_Refund(t *testing.T) {
+	ctx := context.Background()
+	rdb := getTestRedisClient(t)
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		t.Skipf("Skipping integration test: Redis not reachable: %v", err)
+	}
+	defer rdb.Close()
+	l := router.NewRedisRateLimiter(rdb, "dh:test:rl:"+uuid.NewString(), 2, time.Minute)
+	for i := 0; i < 2; i++ {
+		if ok, _, _ := l.Allow(ctx, "u"); !ok {
+			t.Fatal("expected allowed")
+		}
+	}
+	if ok, _, _ := l.Allow(ctx, "u"); ok {
+		t.Fatal("expected the limit to be reached")
+	}
+	if err := l.Refund(ctx, "u"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _, _ := l.Allow(ctx, "u"); !ok {
+		t.Fatal("a refunded slot must be usable again")
+	}
+}

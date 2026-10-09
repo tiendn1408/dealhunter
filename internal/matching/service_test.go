@@ -2,7 +2,9 @@ package matching
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,8 +13,9 @@ import (
 )
 
 type mockMatchingRepo struct {
-	suggestions map[uuid.UUID]*MatchSuggestion
-	lookupErr   error // returned by GetSuggestionByProductAndURL
+	suggestions  map[uuid.UUID]*MatchSuggestion
+	lookupErr    error  // returned by GetSuggestionByProductAndURL
+	lookupErrFor string // only for this candidate URL
 }
 
 func newMockMatchingRepo() *mockMatchingRepo {
@@ -43,6 +46,9 @@ func (m *mockMatchingRepo) GetSuggestionByID(_ context.Context, id uuid.UUID) (*
 func (m *mockMatchingRepo) GetSuggestionByProductAndURL(_ context.Context, pid uuid.UUID, url string) (*MatchSuggestion, error) {
 	if m.lookupErr != nil {
 		return nil, m.lookupErr
+	}
+	if m.lookupErrFor != "" && url == m.lookupErrFor {
+		return nil, errors.New("db down")
 	}
 	for _, s := range m.suggestions {
 		if s.ProductID == pid && s.CandidateURL == url {
@@ -277,5 +283,34 @@ func TestMatchingService_LookupFailureIsNotSwallowed(t *testing.T) {
 	}
 	if len(repo.suggestions) != 0 || len(linker.linkedURLs) != 0 {
 		t.Fatalf("nothing may be saved or linked for an unchecked candidate, got %d suggestions, %d links", len(repo.suggestions), len(linker.linkedURLs))
+	}
+}
+
+// Refreshing pending suggestions while one candidate could not be checked is a partial success
+// (incomplete), not an error; and the result's lists are never null in JSON.
+func TestMatchingService_PartialRunIsIncompleteNotError(t *testing.T) {
+	productID := uuid.New()
+	repo := newMockMatchingRepo()
+	pendingURL := "https://lazada.vn/products/known-i1.html"
+	repo.suggestions[uuid.New()] = &MatchSuggestion{ID: uuid.New(), ProductID: productID, CandidateURL: pendingURL, Status: StatusPending}
+	repo.lookupErrFor = "https://lazada.vn/products/broken-i2.html"
+	searcher := &mockSearcher{candidates: []*MatchCandidate{
+		{Platform: "lazada", URL: pendingURL, Title: "Tai nghe Sony WH-1000XM5", Price: 6200000},
+		{Platform: "lazada", URL: repo.lookupErrFor, Title: "Tai nghe Sony WH-1000XM5", Price: 6100000},
+	}}
+	svc := NewMatchingService(repo, searcher, nil, &mockComparisonProvider{})
+
+	res, err := svc.DiscoverAndMatch(context.Background(), uuid.New(), productID, "shopee", "Tai nghe Sony WH-1000XM5", 6290000)
+	if err != nil || res == nil || !res.Incomplete {
+		t.Fatalf("expected a partial (incomplete) result, got %+v, %v", res, err)
+	}
+
+	empty, err := NewMatchingService(newMockMatchingRepo(), &mockSearcher{}, nil, nil).DiscoverAndMatch(context.Background(), uuid.New(), uuid.New(), "shopee", "!!!", 6290000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(empty)
+	if strings.Contains(string(raw), "null") {
+		t.Fatalf("lists must be [] not null: %s", raw)
 	}
 }

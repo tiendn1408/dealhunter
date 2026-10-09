@@ -55,7 +55,7 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 
 	norm := NormalizeTitle(refTitle)
 	if norm.CleanTitle == "" {
-		return &AutoMatchResult{ProductID: productID}, nil
+		return &AutoMatchResult{ProductID: productID, AutoLinkedSources: []string{}, NewSuggestions: []*MatchSuggestion{}}, nil
 	}
 
 	allPlatforms := []string{"shopee", "lazada", "tiktok"}
@@ -96,6 +96,7 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 	canAutoLink := s.linker != nil && s.linker.CanEditGroup(ctx, userID, productID) == nil
 
 	var searchErr, storeErr error
+	handled := 0 // candidates linked or (re)suggested successfully
 
 	for _, targetPlatform := range targetPlatforms {
 		candidates, err := s.searcher.Search(ctx, targetPlatform, norm.SearchQuery)
@@ -142,6 +143,7 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 				err := s.linker.LinkSource(ctx, userID, productID, cand.URL, true)
 				if err == nil {
 					result.AutoLinkedSources = append(result.AutoLinkedSources, cand.URL)
+					handled++
 					existingURLs[cand.URL] = true
 					if s.comparison != nil {
 						_ = s.comparison.Invalidate(ctx, productID)
@@ -191,8 +193,11 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 				if err := s.repo.SaveSuggestion(ctx, sugg); err != nil {
 					storeErr = fmt.Errorf("save suggestion: %w", err)
 					result.Incomplete = true
-				} else if existing == nil {
-					result.NewSuggestions = append(result.NewSuggestions, sugg)
+				} else {
+					handled++
+					if existing == nil {
+						result.NewSuggestions = append(result.NewSuggestions, sugg)
+					}
 				}
 			}
 		}
@@ -204,7 +209,7 @@ func (s *MatchingService) DiscoverAndMatch(ctx context.Context, userID, productI
 		return nil, searchErr
 	}
 	// Candidates were found but none could be checked or stored: a failure, not "nothing to suggest"
-	if storeErr != nil && len(result.AutoLinkedSources) == 0 && len(result.NewSuggestions) == 0 {
+	if storeErr != nil && handled == 0 {
 		return nil, storeErr
 	}
 	if searchErr != nil {

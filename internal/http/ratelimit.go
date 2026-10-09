@@ -17,6 +17,8 @@ import (
 // RateLimiter decides whether one more request for key is allowed and, if not, how long to wait.
 type RateLimiter interface {
 	Allow(ctx context.Context, key string) (allowed bool, retryAfter time.Duration, err error)
+	// Refund gives back the most recent admitted request for key (it was refused by another limit).
+	Refund(ctx context.Context, key string) error
 }
 
 // RedisRateLimiter is a sliding-window log shared by every API instance: at most `limit` requests in any
@@ -56,6 +58,13 @@ func (l *RedisRateLimiter) Allow(ctx context.Context, key string) (bool, time.Du
 		return false, time.Duration(wait) * time.Millisecond, nil
 	}
 	return true, 0, nil
+}
+
+func (l *RedisRateLimiter) Refund(ctx context.Context, key string) error {
+	if err := l.rdb.ZPopMax(ctx, l.prefix+":"+key).Err(); err != nil {
+		return fmt.Errorf("rate limiter refund: %w", err)
+	}
+	return nil
 }
 
 // writeRetryAfter sets Retry-After in whole seconds (rounded up, at least 1).

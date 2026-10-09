@@ -51,6 +51,12 @@ APP_ENV=production
 HTTP_PORT=8080
 LOG_LEVEL=info
 CORS_ALLOWED_ORIGINS=https://dealhunter.vn,https://www.dealhunter.vn
+# Reverse proxy duoc tin header X-Forwarded-For (IP client cho rate limit). Thieu bien nay thi moi client
+# deu la IP cua nginx => ca site dung chung mot han muc tao guest / goi san.
+#   - Docker Compose: KHONG dat bien nay. Compose tu dung localhost + gateway mang Docker (DEALHUNTER_GATEWAY);
+#     dat 127.0.0.1 o day se khien compose bo qua gateway va moi client bi gom ve mot IP.
+#   - Systemd (nginx cung may, API nghe 127.0.0.1): bo comment dong duoi.
+# TRUSTED_PROXIES=127.0.0.1/32,::1/128
 
 # 2. AUTHENTICATION & SECURITY (BAT BUOC THAY DOI)
 # Tao chuoi ngau nhien it nhat 32 bytes: openssl rand -base64 32
@@ -133,6 +139,13 @@ Phuong an nay dong goi toan bo 6 thanh phan vao container rieng biet tren mang c
    ```bash
    docker compose -f docker-compose.prod.yml up -d --build
    ```
+   **Nang cap tu ban truoc khi mang Docker co subnet co dinh** (`DEALHUNTER_SUBNET`): chay
+   `docker compose -f docker-compose.prod.yml down` truoc lan `up` dau tien de mang `dealhunter-prod-network`
+   duoc tao lai voi gateway `DEALHUNTER_GATEWAY` (mac dinh `172.30.240.1`). Neu mang cu con ton tai, gateway
+   khac voi `TRUSTED_PROXIES` va moi client bi gom ve mot IP. Kiem tra:
+   `docker network inspect dealhunter-prod-network -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}'`.
+   Khong dat `TRUSTED_PROXIES` trong `.env` khi dung compose (xem muc 2): compose chi dung gia tri mac dinh
+   (localhost + gateway) khi bien nay khong co hoac rong.
 
 4. Kiem tra trang thai hoat dong cua cac container:
    ```bash

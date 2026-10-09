@@ -71,6 +71,9 @@ func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) 
 	{
 		var apiResp struct {
 			Error int `json:"error"`
+			// Present on a real search answer even when nothing matched (items may then be null)
+			TotalCount *int  `json:"total_count"`
+			NoMore     *bool `json:"nomore"`
 			// A pointer tells "no items field" (blocked / changed answer) from a real empty list
 			Items *[]struct {
 				ItemBasic struct {
@@ -88,9 +91,10 @@ func (s *MultiPlatformSearcher) searchShopee(ctx context.Context, query string) 
 		if jErr := json.Unmarshal(resp.Body, &apiResp); jErr != nil {
 			// An anti-bot page answered with 200 instead of the search JSON
 			return nil, fmt.Errorf("%w: shopee: unreadable search response: %w", ErrSearchUnavailable, jErr)
-		} else if apiResp.Error != 0 || apiResp.Items == nil {
+		} else if apiResp.Error != 0 || (apiResp.Items == nil && apiResp.TotalCount == nil && apiResp.NoMore == nil) {
+			// An error code, or an answer without any search fields at all: blocked or changed, not "no results"
 			return nil, fmt.Errorf("%w: shopee: search answered error %d without results", ErrSearchUnavailable, apiResp.Error)
-		} else {
+		} else if apiResp.Items != nil {
 			for _, item := range *apiResp.Items {
 				b := item.ItemBasic
 				if b.ItemID <= 0 || b.Name == "" {

@@ -146,6 +146,8 @@ func (denyLimiter) Allow(context.Context, string) (bool, time.Duration, error) {
 	return false, 90 * time.Second, nil
 }
 
+func (denyLimiter) Refund(context.Context, string) error { return nil }
+
 // Every request that makes the server call a marketplace is rate limited per user (429 + Retry-After)
 // before any marketplace traffic.
 func TestScrapeEndpointsRateLimited(t *testing.T) {
@@ -181,6 +183,8 @@ func (l keyLimiter) Allow(_ context.Context, key string) (bool, time.Duration, e
 	return key != l.deny, time.Minute, nil
 }
 
+func (keyLimiter) Refund(context.Context, string) error { return nil }
+
 // The per-IP scrape limit applies whatever the user: many guest accounts from one address share it.
 func TestScrapeLimitedPerClientIP(t *testing.T) {
 	h := newTestHandler()
@@ -202,10 +206,11 @@ func TestScrapeLimitedPerClientIP(t *testing.T) {
 	}
 }
 
-// countingLimiter records which keys it was asked about.
+// countingLimiter records which keys it was asked about and which slots were given back.
 type countingLimiter struct {
-	deny  bool
-	asked []string
+	deny     bool
+	asked    []string
+	refunded []string
 }
 
 func (l *countingLimiter) Allow(_ context.Context, key string) (bool, time.Duration, error) {
@@ -213,21 +218,36 @@ func (l *countingLimiter) Allow(_ context.Context, key string) (bool, time.Durat
 	return !l.deny, time.Minute, nil
 }
 
-// A request refused by the per-IP limit must not also use up the user's own allowance.
-func TestScrapeIPLimitCheckedFirst(t *testing.T) {
-	h := newTestHandler()
-	h.trackingService = newFakeStore().trackingService()
-	userLimiter, ipLimiter := &countingLimiter{}, &countingLimiter{deny: true}
-	h.SetScrapeRateLimiter(userLimiter)
-	h.SetScrapeIPRateLimiter(ipLimiter)
-	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), h)
+func (l *countingLimiter) Refund(_ context.Context, key string) error {
+	l.refunded = append(l.refunded, key)
+	return nil
+}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tracked-products", strings.NewReader(`{"url":"https://shopee.vn/x-i.1.2"}`))
-	req.Header.Set("Content-Type", "application/json")
-	authAs(req, uuid.New())
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusTooManyRequests || len(userLimiter.asked) != 0 {
-		t.Fatalf("expected 429 without touching the user limit, got %d, user limiter asked %v", w.Code, userLimiter.asked)
+// The scrape limits never charge one bucket for a request the other refused: a user over their own
+// limit does not fill the shared per-IP bucket (other users behind the same NAT), and a request refused
+// per IP gives the user's slot back.
+func TestScrapeLimitsChargeOnlyAdmittedRequests(t *testing.T) {
+	run := func(user, ip *countingLimiter) int {
+		h := newTestHandler()
+		h.trackingService = newFakeStore().trackingService()
+		h.SetScrapeRateLimiter(user)
+		h.SetScrapeIPRateLimiter(ip)
+		r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), h)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tracked-products", strings.NewReader(`{"url":"https://shopee.vn/x-i.1.2"}`))
+		req.Header.Set("Content-Type", "application/json")
+		authAs(req, uuid.New())
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	user, ip := &countingLimiter{deny: true}, &countingLimiter{}
+	if code := run(user, ip); code != http.StatusTooManyRequests || len(ip.asked) != 0 {
+		t.Fatalf("user over limit: expected 429 without touching the IP bucket, got %d, IP asked %v", code, ip.asked)
+	}
+
+	user, ip = &countingLimiter{}, &countingLimiter{deny: true}
+	if code := run(user, ip); code != http.StatusTooManyRequests || len(user.refunded) != 1 {
+		t.Fatalf("IP over limit: expected 429 and the user's slot given back, got %d, refunded %v", code, user.refunded)
 	}
 }
