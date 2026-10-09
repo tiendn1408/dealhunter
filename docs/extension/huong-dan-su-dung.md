@@ -26,8 +26,9 @@
 - **Universal Web Sniper**: Khong chi gioi han tren Shopee, tien ich ho tro san ve, dang ky su kien, giat slot, dat cho, hoac bam bat ky nut nao tren **moi trang web** (Shopee, Ticketbox, Lazada, Tiki, cong dang ky hoc phan, v.v.).
 - **Do gio sieu chinh xac (NTP Time Sync)**: Tinh toan do lech giua dong ho may tinh va may chu qua nhieu mau ping RTT, loai bo hoan toan sai so gio he thong.
 - **Bo dem khong tre (Web Worker Timer)**: Trinh duyet Chrome luon lam cham tab nen xuong 1000ms. DealHunter dung Web Worker rieng de duy tri nhip tick 10ms chinh xac tuyet doi.
-- **Mo phong chuot nguoi that (Anti-Bot Human Clicker)**: Phat day du chuoi su kien `pointerover` -> `pointerenter` -> `pointerdown` -> `mousedown` -> `focus` -> `pointerup` -> `mouseup` -> `click` voi toa do ngau nhien ben trong nut (jitter 30% - 70%) de vuot qua he thong phong ve chong bot (Cloudflare, Shopee F02/M04).
-- **Bam bat dau 150ms truoc gio G**: Bup click don dap moi 35ms de hap thu do tre mang va giat ma ngay miligiay dau tien.
+- **Mo phong chuot nguoi that sinh trac hoc (Anti-Bot Human Biometrics)**: Phat day du chuoi su kien W3C Pointer Events Level 3 (`pointerover` -> `pointerenter` -> `pointerdown` -> `mousedown` -> `focus` -> `pointerup` -> `mouseup` -> `click`) voi toa do Gauss 2 chieu tap trung trong tam, quy dao tiep can chuot Cubic Bezier theo Dinh luat Fitts, va thoi gian giu nut vat ly (dwell time).
+- **3 Che do click thich ung linh hoat (Click Profiles)**: Nguoi that (Stealth Human ~7 CPS), Game thu (Pro Gamer Jitter ~14 CPS), va Sieu toc (Turbo Blitz ~23 CPS) voi bien thien thoi gian Box-Muller Gaussian va ngat nhip sinh hoc (micro-pauses) loai bo hoan toan dau vet bot.
+- **Bam bat dau 150ms truoc gio G**: Kich hoat click nhip nhang de hap thu do tre mang va giat ma ngay miligiay dau tien.
 
 ---
 
@@ -98,14 +99,18 @@ Dung khi ban dang ngoi truoc may tinh va can bam mot nut vao dung gio G (vi du: 
 3. **Kiem tra dong bo dong ho**:
    - Bang HUD hien thi thoi gian may chu chuan xac den tung miligiay.
    - Neu can dong bo lai, bam nut lam moi ben canh do lech mili-giay.
-4. **Bam thu nghiem (Tuy chon)**:
-   - Bam **`Send one test click`** (**`Bam thu 1 phat click`**) de kiem tra xem click co truyen dung vao nut hay khong.
+4. **Chon che do click sinh hoc (Biometric Click Mode)**:
+   - **`Stealth Human`** (**`Nguoi that`**): Toc do ~7 CPS (140ms/click). Mo phong 100% toc do sinh hoc nguoi that, khuyen dung cho cac trang co Cloudflare Turnstile, DataDome hoac anti-bot gat gao.
+   - **`Pro Gamer`** (**`Game thu`** - Mac dinh): Toc do ~14 CPS (72ms/click). Mo phong ky thuat jitter clicking thi dau co phuong sai Gauss va ngat nhip phuc hoi co, vua toc do cao de giat deal vua nam trong bien do vat ly cua ban tay.
+   - **`Turbo Blitz`** (**`Sieu toc`**): Toc do ~23 CPS (40ms/click). Bup click sieu toc dua mili-giay cho deal cuc nong, van giu do lech chuan thoi gian de tranh chu ky phang.
+5. **Bam thu nghiem (Tuy chon)**:
+   - Bam **`Send one test click`** (**`Bam thu 1 phat click`**) de kiem tra xem click va quy dao co truyen dung vao nut hay khong.
 
 ### Buoc 4: Kich hoat truc chien (Arm Sniper)
 - Bam nut lon: **`Arm sniper`** (**`Kich hoat san`**).
 - Nut chuyen sang mau do cam **`Disarm`** (**`Huy kich hoat`**) va he thong vao trang thai truc chien dem nguoc miligiay.
 - Ban co the thu nho HUD (nut dau tru `-`) thanh mot vien thu gon nho gon.
-- Dung moc gio da dinh, he thong se tu dong ban burst click don dap vao nut da khoa cho den khi trang xac nhan thanh cong.
+- Dung moc gio da dinh, he thong se tu dong ban chuoi click theo dung che do sinh hoc da chon cho den khi trang xac nhan hoan tat.
 
 ---
 
@@ -161,11 +166,12 @@ DealHunter Assistant duoc phat trien dua tren cac nguyen ly ky thuat cao cap dan
 | Thanh phan | File ma nguon | Co che hoat dong |
 |---|---|---|
 | **Hunt Coordinator (SSOT)** | `hunt_coordinator.ts` | Single Source of Truth quan ly phien san, thong nhat 100% giua Arm Sniper tren Floating HUD va Schedule tu dong tu Background. |
+| **Human Biometrics Engine** | `human_biometrics.ts` | Bo thuat toan sinh trac hoc: bien doi Box-Muller Gaussian cho thoi gian, toa do Gauss 2 chieu tap trung trong tam, quy dao Cubic Bezier theo Dinh luat Fitts, chuan hoa phan cung W3C Pointer Events Level 3, va co che ngat nhip sinh hoc (micro-pauses). |
 | **Behavioral State Machine** | `element_resolver.ts` | Loai bo 100% tu dien hardcoded text. Xac dinh ket qua san dua tren su bien doi DOM (unmount, disabled transition, text mutation, SVG icon injection) va chuan W3C ARIA. |
 | **Dual-Defense Reload** | `hunt_engine.ts`, `target_diagnostics.ts` | Tu dong pre-warm tab o T-60s va emergency reload ngam o T+250ms tren trang tinh. Tu dong mo rong cua so 10s sau reload kem khoa chong lap vo han. |
 | **NTP Time Calibrator** | `time_calibrator.ts`, `time_sync_client.ts` | Do do tre 2 chieu (RTT) va can chinh dong ho cuc bo theo thoi gian thuc cua server. Loai bo hoan toan do lech gio may tinh. |
 | **Web Worker Ticker** | `timer_worker.ts` | Tranh tinh trang Chrome giam hieu nang tab nen xuong 1000ms. Chay tren luong Worker rieng voi tan so 10ms. |
-| **Human Clicker** | `human_clicker.ts` | Phat chuoi pointer/mouse day du voi toa do ngau nhien (random jitter). Khong dung `el.click()` tho giup tranh bi bot-detector chan. |
+| **Human Clicker** | `human_clicker.ts` | Phat chuoi pointer/mouse day du voi toa do ngau nhien va thoi gian giu nut vat ly (dwell time). Khong dung `el.click()` tho giup tranh bi bot-detector chan. |
 | **Full-Auto Scheduler** | `scheduler.ts` | Dung `chrome.alarms` MV3 de danh thuc tien ich truoc gio G, tai moi tab va chuan bi phien san. |
 
 Chi tiet kien truc toan dien duoc tai lieu hoa tai: [`docs/extension/kien-truc-universal-sniper-va-state-machine.md`](kien-truc-universal-sniper-va-state-machine.md).

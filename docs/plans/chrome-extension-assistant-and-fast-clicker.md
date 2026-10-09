@@ -132,23 +132,26 @@ extension/
 │   ├── content/
 │   │   ├── core/
 │   │   │   ├── element_resolver.ts # Quet, trich xuat descriptor va relocate nut DOM
-│   │   │   ├── human_clicker.ts    # Chuoi su kien chuot nguoi that voi random jitter
-│   │   │   ├── hunt_engine.ts      # Vong lap truc chien miligiay, ho tro user-locked target
+│   │   │   ├── human_biometrics.ts # Thuat toan Box-Muller, Gauss 2D, Bezier Fitts, micro-pauses
+│   │   │   ├── human_clicker.ts    # Chuoi su kien chuot nguoi that voi dwell time va Bezier approach
+│   │   │   ├── hunt_coordinator.ts # SSOT quan ly phien san, dong bo HUD va Background
+│   │   │   ├── hunt_engine.ts      # Vong lap truc chien miligiay, ho tro click profiles
+│   │   │   ├── target_diagnostics.ts # Chuan doan phan ung DOM va co che phong thu kep
 │   │   │   ├── time_sync_client.ts # Client dong bo gio miligiay
 │   │   │   └── timer_worker.ts     # Web Worker Ticker 10ms khong bi throttle
 │   │   ├── ui/
-│   │   │   ├── FloatingHUD.tsx     # Bang dieu khien Sniper noi tren trang (00:00, pick button)
+│   │   │   ├── FloatingHUD.tsx     # Bang dieu khien Sniper noi tren trang (00:00, pick button, Biometric Mode)
 │   │   │   └── PriceHistoryBadge.tsx # Huy hieu gia tren trang san pham
 │   │   └── index.tsx            # Content script entrypoint, lang nghe ACTIVATE_HUD
 │   ├── popup/
 │   │   ├── components/
-│   │   │   ├── ScheduleForm.tsx    # Form dat lich hen (ho tro Custom URL)
+│   │   │   ├── ScheduleForm.tsx    # Form dat lich hen (ho tro Custom URL va ClickProfile)
 │   │   │   ├── TaskList.tsx        # Danh sach lich hen va ket qua
 │   │   │   └── TimeOffsetCard.tsx  # The trang thai dong bo gio va ping RTT
 │   │   ├── App.tsx              # Popup giao dien 3 tab, nhan dien domain active
 │   │   └── index.tsx            # Popup mount
 │   └── lib/
-│       ├── constants.ts         # Hang so he thong
+│       ├── constants.ts         # Hang so he thong va cau hinh click profiles
 │       ├── drop_time.ts         # Tinh toan moc gio Viet Nam (GMT+7)
 │       ├── i18n.ts              # Tu dien song ngu EN (mac dinh) / VI co dau
 │       ├── storage.ts           # Wrapper chrome.storage
@@ -159,21 +162,30 @@ extension/
 
 ## 5. Cac Co Che Phong Ve & Chong Chan Bot (Anti-Bot Defenses)
 
-1. **Synthetic Pointer/Mouse Event Chain**:
-   Khong bao gio goi `element.click()` don thuan. Thay vao do, `human_clicker.ts` phat day du 7 su kien lien tiep:
-   `pointerover` -> `pointerenter` -> `pointerdown` -> `mousedown` -> `focus` -> `pointerup` -> `mouseup` -> `click`
-2. **Random Coordinate Jitter (30% - 70%)**:
-   Toa do moi cu click duoc tinh toan ngau nhien trong pham vi an toan ben trong khung nut, tranh bi he thong an ninh phat hien toa do co dinh bat thuong.
-3. **Tu dong ngat va gioi han an toan**:
-   Moi phien burst click gioi han toi da 80 clicks trong vong 3 giay. He thong tu dong dung ngay lap tuc khi nut chuyen sang trang thai hoan tat (Da luu, Het luot, hoac bien mat).
+1. **Thuat toan bien doi Box-Muller (Gaussian Temporal Jitter)**:
+   Thay vi giu chu ky click co dinh 35ms lam xuat hien dau vet tu dong hoa ($\sigma \approx 0$), he thong tinh toan $\Delta t \sim \mathcal{N}(\mu, \sigma^2)$ cho moi phat click bang bien doi Box-Muller.
+2. **Phan bo diem cham Gauss 2 chieu (2D Bivariate Gaussian Spatial Jitter)**:
+   Toa do moi cu click tap trung quanh trong tam nut voi $\mu = 0.5, \sigma = 0.10$ trong vung an toan $25\% - 75\%$, loai bo hinh chu nhat rai deu phi tu nhien.
+3. **Quy dao tiep can Cubic Bezier tuan theo Dinh luat Fitts (Fitts's Law)**:
+   Khong click dot ngot (teleportation). He thong tao duong cong Bezier bac ba giam toc dan khi tien sat vieng nut (Ease-Out) va phat cac su kien `pointermove`/`mousemove` trung gian.
+4. **Chuan hoa phan cung W3C Pointer Events Level 3**:
+   Phat day du cac truong phan cung chuot vat ly: `pointerId: 1`, `pointerType: "mouse"`, `isPrimary: true`, `pressure: 0.5/0.0`, `buttons: 1/0`, `button: 0`, `which: 1`, `detail: 1`.
+5. **Thoi gian giu nut vat ly (Dwell Time)**:
+   Mo phong thoi gian ngon tay de tren switch chuot truoc khi nha ($\tau \sim \mathcal{N}(35, 8)\text{ms}$), tranh signature `mouseup.timeStamp - mousedown.timeStamp === 0`.
+6. **Co che moi co va ngat nhip sinh hoc (Micro-pauses)**:
+   Tu dong ngat nhip 40ms - 80ms sau moi chuoi burst 4 - 7 clicks de pha vo bat ky thuat toan phan tich chu ky tuan hoan nao.
+7. **Ba che do click thich ung (Adaptive Click Profiles)**:
+   - **Stealth Human (~7 CPS / 140ms)**: 100% tu nhien cho Cloudflare Turnstile, DataDome.
+   - **Pro Gamer Jitter (~14 CPS / 72ms - Mac dinh)**: Mo phong game thu thi dau, can bang toi uu giua toc do va an toan.
+   - **Turbo Blitz (~23 CPS / 40ms)**: Bup click sieu toc van co Gaussian jitter.
 
 ---
 
 ## 6. Quy Chuan Chat Luong & Kiem Thu
 
-- **35/35 Unit Tests Vitest Pass**:
-  Bao phu toan dien tu thuat toan NTP time calibrator, drop time GMT+7, human clicker jitter, element resolver den hunt engine ho tro universal locked target tren moi trang web.
+- **119/119 Unit Tests Vitest Pass (13 Suites)**:
+  Bao phu toan dien tu thuat toan Box-Muller, Bezier curve, W3C pointer events, NTP time calibrator, drop time GMT+7, behavioral state machine den dual-defense reload.
 - **Zero-Emoji Policy**:
   Toan bo ma nguon, giao dien nguoi dung (UI) va tai lieu he thong tuan thu tuyet doi 100% quy chuan Zero-Emoji.
 - **Song ngu chuan muc**:
-  Giao dien tieng Anh mac dinh toan cau, kem ho tro tieng Viet co dau chuan xac 100% co the chuyen doi tuc thi.
+  Giao dien tieng Anh mac dinh toan cau, kem ho tro tieng Viet co dau chuan xac 100% co the chuyen doi tuc thi tren ca Popup va Floating HUD.
