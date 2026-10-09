@@ -114,6 +114,17 @@ describe("human_biometrics", () => {
       expect(click9.phase).toBe("steady");
       expect(click9.intervalMs).toBeGreaterThanOrEqual(95);
     });
+
+    it("supports hyper strike profile for ultra-low latency execution", () => {
+      const hyper = CLICK_PROFILES.hyper;
+      expect(hyper).toBeDefined();
+      expect(hyper.meanIntervalMs).toBe(25);
+      expect(hyper.dwellMeanMs).toBe(8);
+
+      const res = computeNextInterval(hyper, 1);
+      expect(res.intervalMs).toBeGreaterThanOrEqual(hyper.minIntervalMs);
+      expect(res.intervalMs).toBeLessThanOrEqual(hyper.maxIntervalMs);
+    });
   });
 
   describe("generateBezierTrajectory", () => {

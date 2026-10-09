@@ -224,9 +224,37 @@ He thong khong gioi han o Shopee ma ho tro dong nhat tren moi san thuong mai die
 
 ---
 
-## 8. Quy Chuan Chat Luong va Kiem Thu
+## 8. Chien Luoc Phan Tang Nen Tang & Toi Uu Hyper-Strike
 
-- **Unit Tests**: 192/192 tests pass tren 18 test suites (`npx vitest run`).
+De can bang giua hai muc tieu: (1) An toan tuyet doi truoc he thong quet bot cua cac san lon, va (2) Toc do toi da de chien thang Top 1 tren cac trang diem danh / doi thuong / ban ve toc do cao (`caffiliate.vn`, v.v.), he thong trien khai kien truc **Phan tang nen tang tu dong (Tiered Platform Strategy)**:
+
+### 8.1. Phan tang tu dong (`isMajorMarketplace`)
+Ham `isMajorMarketplace` phan chia pham vi hoat dong:
+- **`major_marketplace` (Shopee, Lazada, TikTok Shop)**:
+  - Giu nguyen mo hinh sinh trac hoc chuan: quy dao tiep can chuot cong Bezier Fitts's Law o click dau tien, duong bao dong hoc Gaussian 3 pha (`adaptive`), khong can thiep DOM tho bao de tranh kich hoat MutationObserver cua DataDome / Cloudflare / Shopee Risk Engine.
+- **`speed_priority` (Trang diem danh `caffiliate.vn`, web dat ve, mini-game, v.v.)**:
+  - Tu dong chuyen sang ho so nhap chuot `hyper` (khoang cach 25ms, ~40 CPS, dwell time 8ms).
+  - Bo qua quy dao chuot Bezier o click dau tien (`skipApproach: true`), dispatch su kien tuc thi trong 0.1ms.
+  - Co che **Ban don gio G (Pre-fire Lead Offset)**: Tinh toan do tre mang Internet ($RTT / 2 \approx 28ms$), kich no chuoi click tu $T - 28ms$ de goi tin HTTP cham cong may chu dung vao tich tac $00:00:00.000$.
+  - **Cuong che thao do `disabled` tren DOM**: Tai thoi diem ban don ($T - 28ms$), neu muc tieu da duoc khoa boi nguoi dung, extension chu dong go bo thuoc tinh `disabled`, `aria-disabled="false"`, va class `.disabled` tren DOM ma khong thu dong ngoi cho React re-render cycle (tiet kiem 30ms - 80ms).
+
+### 8.2. Chien luoc Reload don dau co kiem soat (Guarded Precision Pre-Reload Loop)
+Tren cac trang React SPA khong co co che tu dong mo khoa nut theo thoi gian thuc ma can reload trang de lay session ngay moi (`caffiliate.vn`):
+1. **T - 5s (Keep-Alive Socket Pre-warming)**:
+   - Ngam gui request `HEAD` voi `cache: "no-store"` va `keepalive: true` toi origin server de giu am socket TCP/TLS, tranh ton thoi gian bat tay TLS handshake khi click.
+2. **T - 750ms (Precision Pre-Reload)**:
+   - Neu nut muc tieu van o trang thai khoa cua ngay hom truoc (`disabled` hoac `saved`), tu dong kich hoat reload truoc 750ms de trang kip hoan tat tai lai ma va CSS truoc gio G 100ms - 200ms.
+3. **Cua so 3 giay quanh gio G ($[T - 750ms, T + 2250ms]$)**:
+   - Ap dung co che reload lap lai co kiem soat qua `sessionStorage` (`dh_reload_count_${DROP}`):
+   - Toi da 3 lan reload, moi lan cach nhau toi thieu 650ms de tranh spam may chu.
+   - **Vua phat hien nut kha dung (`isTargetClickable`) la lap tuc dung reload va click ngay (0ms tre)**.
+   - Khi co click thanh cong hoac deal hoan tat, tu dong don dep toan bo bien dem trong `sessionStorage`.
+
+---
+
+## 9. Quy Chuan Chat Luong va Kiem Thu
+
+- **Unit Tests**: 200/200 tests pass tren 18 test suites (`npx vitest run`).
 - **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.
 - **Production Build**: Bien dich hoan tat sach se `popup.js`, `background.js`, `content.js` va `content.css`.
 - **Zero-Emoji**: Tuyet doi khong su dung emoji trong ma nguon, log, test va tai lieu.

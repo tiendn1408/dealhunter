@@ -1,6 +1,8 @@
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "missed";
 
-export type ClickProfileMode = "adaptive" | "stealth" | "pro_gamer" | "turbo";
+export type ClickProfileMode = "adaptive" | "stealth" | "pro_gamer" | "turbo" | "hyper";
+
+export type PlatformTier = "major_marketplace" | "speed_priority";
 
 export interface ScheduledTask {
   id: string;
@@ -132,5 +134,6 @@ export interface TargetDiagnosticsSummary {
   isStandby: boolean;
   strategy: ReloadStrategy;
   confidence: number;
+  platformTier?: PlatformTier;
 }
 

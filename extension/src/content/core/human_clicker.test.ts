@@ -185,4 +185,34 @@ describe("HumanClicker", () => {
     expect(success).toBe(true);
     expect(clickSpy).toHaveBeenCalled();
   });
+
+  it("skips approach trajectory when skipApproach is true or profileMode is hyper", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Điểm danh";
+    document.body.appendChild(btn);
+    btn.getBoundingClientRect = () => ({
+      left: 150,
+      top: 200,
+      width: 80,
+      height: 36,
+      right: 230,
+      bottom: 236,
+      x: 150,
+      y: 200,
+      toJSON: () => {},
+    });
+
+    clicker.setCursorPosition({ x: 50, y: 50 });
+    const moveEvents: PointerEvent[] = [];
+    btn.addEventListener("pointermove", (e) => moveEvents.push(e as PointerEvent));
+
+    // Test with skipApproach: true
+    clicker.dispatchClick(btn, { approach: true, skipApproach: true });
+    expect(moveEvents.length).toBe(0);
+
+    // Test with profileMode: "hyper"
+    clicker.setCursorPosition({ x: 50, y: 50 });
+    clicker.dispatchClick(btn, { approach: true, profileMode: "hyper" });
+    expect(moveEvents.length).toBe(0);
+  });
 });

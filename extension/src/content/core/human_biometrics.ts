@@ -85,6 +85,20 @@ export const CLICK_PROFILES: Record<ClickProfileMode, ClickProfile> = {
     microPauseDurationMeanMs: 35,
     microPauseDurationStdDevMs: 10,
   },
+  hyper: {
+    mode: "hyper",
+    name: "Hyper Strike",
+    description: "Maximum zero-overhead strike (~35-45 CPS) with minimal dwell time for non-bot-filtered target endpoints",
+    meanIntervalMs: 25,
+    stdDevIntervalMs: 4,
+    minIntervalMs: 18,
+    maxIntervalMs: 40,
+    dwellMeanMs: 8,
+    dwellStdDevMs: 2,
+    microPauseAfterClicks: 12,
+    microPauseDurationMeanMs: 20,
+    microPauseDurationStdDevMs: 5,
+  },
 };
 
 export interface Point2D {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { targetDiagnostics } from "./target_diagnostics";
+import { targetDiagnostics, isMajorMarketplace } from "./target_diagnostics";
 
 describe("targetDiagnostics", () => {
   beforeEach(() => {
@@ -102,4 +102,26 @@ describe("targetDiagnostics", () => {
     const ticking = await targetDiagnostics.sampleTicking(btn, 100);
     expect(ticking).toBe(true);
   });
+
+  it("classifies major marketplaces vs speed priority platforms", () => {
+    expect(isMajorMarketplace("https://shopee.vn/m/voucher-giam-gia")).toBe(true);
+    expect(isMajorMarketplace("https://shopee.sg/flash_deals")).toBe(true);
+    expect(isMajorMarketplace("https://www.lazada.vn/flash-sale")).toBe(true);
+    expect(isMajorMarketplace("https://shop.tiktok.com/view/voucher")).toBe(true);
+
+    expect(isMajorMarketplace("https://app.caffiliate.vn/rewards")).toBe(false);
+    expect(isMajorMarketplace("https://tiki.vn/khuyen-mai")).toBe(false);
+    expect(isMajorMarketplace("https://example.com/checkin")).toBe(false);
+  });
+
+  it("inspects and assigns platformTier correctly", () => {
+    const btn = document.createElement("button");
+    btn.textContent = "Điểm danh";
+    document.body.appendChild(btn);
+
+    const result = targetDiagnostics.inspect(btn);
+    expect(result.platformTier).toBeDefined();
+    expect(["major_marketplace", "speed_priority"]).toContain(result.platformTier);
+  });
 });
+

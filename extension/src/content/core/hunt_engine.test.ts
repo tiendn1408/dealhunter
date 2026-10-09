@@ -124,7 +124,7 @@ describe("startHunt", () => {
     h.advanceTo(DROP + 4000);
     expect(h.outcome?.result).toBe("timeout");
     expect(h.outcome!.clicks).toBeGreaterThan(0);
-    expect(h.outcome!.clicks).toBeLessThanOrEqual(80);
+    expect(h.outcome!.clicks).toBeLessThanOrEqual(200);
   });
 
   it("only clicks the voucher matching the keyword", () => {
@@ -560,6 +560,131 @@ describe("startHunt", () => {
     expect((outcome as HuntOutcome | null)?.result).toBe("saved");
     expect((outcome as HuntOutcome | null)?.detail).toContain("Page notification confirmed success via structural icon or data contract");
   });
+
+  it("pre-warms socket via keepalive HEAD ping at T - 5s in speed priority mode", () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response());
+    vi.stubGlobal("fetch", fetchSpy);
+
+    let now = DROP - 4000; // T - 4s (within [5000, 1000])
+    const ticker = new ManualTicker();
+    const btn = document.createElement("button");
+    btn.textContent = "Điểm danh";
+    document.body.appendChild(btn);
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      platformTier: "speed_priority",
+      ticker,
+      onDone: () => {},
+    });
+
+    ticker.tick();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ method: "HEAD", cache: "no-store", keepalive: true })
+    );
+
+    vi.unstubAllGlobals();
+  });
+
+  it("triggers precision pre-reload at T - 750ms if button is still disabled in speed priority", () => {
+    let now = DROP - 700; // T - 700ms
+    const ticker = new ManualTicker();
+    const btn = document.createElement("button");
+    btn.setAttribute("disabled", "true");
+    btn.textContent = "Điểm danh";
+    document.body.appendChild(btn);
+
+    const reloadSpy = vi.fn();
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      platformTier: "speed_priority",
+      onEmergencyReload: reloadSpy,
+      ticker,
+      onDone: () => {},
+    });
+
+    ticker.tick();
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(`dh_reload_count_${DROP}`)).toBe("1");
+
+    sessionStorage.clear();
+  });
+
+  it("fires pre-emptive click and forcibly unblocks disabled attributes at T - preFireLeadMs", () => {
+    let now = DROP - 25; // Pre-fire lead is 28ms -> T - 25ms is >= T - 28ms
+    const ticker = new ManualTicker();
+    const btn = document.createElement("button");
+    btn.setAttribute("disabled", "true");
+    btn.setAttribute("aria-disabled", "true");
+    btn.classList.add("disabled");
+    btn.textContent = "Điểm danh";
+    document.body.appendChild(btn);
+
+    const clickSpy = vi.fn(() => {
+      btn.textContent = "Đã điểm danh";
+    });
+    btn.addEventListener("click", clickSpy);
+
+    let outcome: HuntOutcome | null = null;
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      platformTier: "speed_priority",
+      preFireLeadMs: 28,
+      ticker,
+      onDone: (o) => (outcome = o),
+    });
+
+    ticker.tick();
+
+    // Attribute disabled must be unblocked immediately
+    expect(btn.hasAttribute("disabled")).toBe(false);
+    expect(btn.getAttribute("aria-disabled")).toBe("false");
+    expect(btn.classList.contains("disabled")).toBe(false);
+
+    // Click must be dispatched immediately
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    // When text transitions to 'Đã điểm danh', it finishes saved
+    now += 50;
+    ticker.tick();
+    expect((outcome as HuntOutcome | null)?.result).toBe("saved");
+  });
+
+  it("executes guarded reload loop up to 3 times after drop if button remains in yesterday's saved state", () => {
+    let now = DROP + 300;
+    const ticker = new ManualTicker();
+    const btn = document.createElement("button");
+    btn.setAttribute("data-state", "saved");
+    btn.textContent = "Đã điểm danh";
+    document.body.appendChild(btn);
+
+    const reloadSpy = vi.fn();
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      platformTier: "speed_priority",
+      onEmergencyReload: reloadSpy,
+      ticker,
+      onDone: () => {},
+    });
+
+    ticker.tick();
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(`dh_reload_count_${DROP}`)).toBe("1");
+
+    sessionStorage.clear();
+  });
 });
+
 
 

@@ -7,6 +7,8 @@ import {
 } from "./human_biometrics";
 import { WorkerTimer } from "./timer_worker";
 import { isSamePageUrl } from "../../lib/url";
+import { isMajorMarketplace } from "./target_diagnostics";
+import { PlatformTier } from "../../lib/types";
 
 /**
  * Outcome of one target snipe. Only what the page actually shows is reported:
@@ -45,9 +47,13 @@ export interface HuntOptions {
   /** Keep trying this long after the drop (ms). */
   windowMs?: number;
   clickIntervalMs?: number;
-  /** Active biometric click profile mode: stealth, pro_gamer, or turbo. */
+  /** Active biometric click profile mode: stealth, pro_gamer, turbo, or hyper. */
   clickProfileMode?: ClickProfileMode;
   maxClicks?: number;
+  /** Platform classification: major_marketplace (Shopee/Lazada/TikTok) or speed_priority (caffiliate/custom). */
+  platformTier?: PlatformTier;
+  /** Network latency offset lead (ms) before drop moment to fire pre-emptive click. */
+  preFireLeadMs?: number;
   /** Timer source; defaults to a Web Worker ticker, which keeps running in background tabs. */
   ticker?: Ticker;
   /** Enables dual-defense reload strategy: pre-warm reload at T-15s and emergency reload at T+300ms */
@@ -64,6 +70,7 @@ export const HUNT_DEFAULTS = {
   defaultProfileMode: "adaptive" as ClickProfileMode,
   maxClicks: Infinity,
   tickMs: 10,
+  speedPriorityPreFireLeadMs: 28,
 };
 
 /**
@@ -72,12 +79,17 @@ export const HUNT_DEFAULTS = {
  * window closes. Returns a function that cancels the hunt.
  */
 export function startHunt(opts: HuntOptions): () => void {
+  const effectiveTier: PlatformTier =
+    opts.platformTier ?? (isMajorMarketplace() ? "major_marketplace" : "speed_priority");
+  const preFireLeadMs =
+    opts.preFireLeadMs ?? (effectiveTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityPreFireLeadMs : 0);
   const leadMs = opts.leadMs ?? HUNT_DEFAULTS.leadMs;
   const nowAtStart = opts.now();
-  const isResumedAfterDrop = nowAtStart >= opts.targetTimestamp;
+  const isResumedAfterDrop = nowAtStart >= opts.targetTimestamp - preFireLeadMs;
   const isEmergencyReloaded =
     typeof sessionStorage !== "undefined" &&
-    Boolean(sessionStorage.getItem(`dh_emergency_reloaded_${opts.targetTimestamp}`));
+    (Boolean(sessionStorage.getItem(`dh_emergency_reloaded_${opts.targetTimestamp}`)) ||
+      Boolean(sessionStorage.getItem(`dh_reload_count_${opts.targetTimestamp}`)));
   const baseWindowMs = opts.windowMs ?? HUNT_DEFAULTS.windowMs;
   let windowMs = isEmergencyReloaded ? Math.max(baseWindowMs, 10_000) : baseWindowMs;
 
@@ -86,7 +98,9 @@ export function startHunt(opts: HuntOptions): () => void {
     const elapsedSinceDrop = nowAtStart - opts.targetTimestamp;
     windowMs = Math.max(windowMs, elapsedSinceDrop + 8_000);
   }
-  const profileMode = opts.clickProfileMode ?? HUNT_DEFAULTS.defaultProfileMode;
+  const defaultProfile: ClickProfileMode =
+    effectiveTier === "speed_priority" ? "hyper" : HUNT_DEFAULTS.defaultProfileMode;
+  const profileMode = opts.clickProfileMode ?? defaultProfile;
   const profile = CLICK_PROFILES[profileMode] ?? CLICK_PROFILES.adaptive;
   let currentIntervalMs =
     opts.clickIntervalMs !== undefined
@@ -107,12 +121,21 @@ export function startHunt(opts: HuntOptions): () => void {
   let lastStatusAt = -Infinity;
   let scrolled = false;
   let done = false;
+  let keepAliveSent = false;
   const initialPageUrl = typeof window !== "undefined" ? window.location.href : "";
 
   const finish = (result: HuntResult, detail: string) => {
     if (done) return;
     done = true;
     ticker.stop();
+    if (typeof sessionStorage !== "undefined") {
+      try {
+        sessionStorage.removeItem(`dh_reload_count_${opts.targetTimestamp}`);
+        sessionStorage.removeItem(`dh_last_reload_time_${opts.targetTimestamp}`);
+      } catch {
+        // ignore
+      }
+    }
     opts.onDone({ result, clicks, detail });
   };
 
@@ -191,13 +214,87 @@ export function startHunt(opts: HuntOptions): () => void {
       }
 
       const t = opts.now();
-    const untilDrop = opts.targetTimestamp - t;
+      const untilDrop = opts.targetTimestamp - t;
 
-    if (untilDrop > leadMs) {
-      // Waiting: keep the target located and visible so the burst starts without searching
-      if (untilDrop < 60_000) {
-        const el = resolve(false);
-        if (el && !scrolled) {
+      // Socket Keep-Alive pre-warming at T - 5s for speed priority platforms
+      if (
+        effectiveTier === "speed_priority" &&
+        !keepAliveSent &&
+        untilDrop <= 5000 &&
+        untilDrop > 1000
+      ) {
+        keepAliveSent = true;
+        if (typeof fetch === "function" && typeof window !== "undefined") {
+          try {
+            fetch(window.location.href, { method: "HEAD", cache: "no-store", keepalive: true }).catch(() => {});
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      // Precision Pre-Reload at T - 750ms if button is still in previous day's / inactive state
+      if (
+        (effectiveTier === "speed_priority" || opts.dualDefenseReload) &&
+        untilDrop <= 750 &&
+        untilDrop >= 350 &&
+        clicks === 0
+      ) {
+        const reloadCount = typeof sessionStorage !== "undefined"
+          ? parseInt(sessionStorage.getItem(`dh_reload_count_${opts.targetTimestamp}`) || "0", 10)
+          : 0;
+        if (reloadCount === 0) {
+          const el = resolve(false);
+          const isClickableNow = Boolean(
+            el &&
+            !el.hasAttribute("disabled") &&
+            el.getAttribute("aria-disabled") !== "true" &&
+            !el.classList.contains("disabled") &&
+            elementResolver.getButtonState(el) !== "saved"
+          );
+          if (!isClickableNow) {
+            if (typeof sessionStorage !== "undefined") {
+              sessionStorage.setItem(`dh_reload_count_${opts.targetTimestamp}`, "1");
+              sessionStorage.setItem(`dh_last_reload_time_${opts.targetTimestamp}`, String(t));
+            }
+            opts.onStatus?.("Pre-drop alignment: Refreshing session for zero-second strike...");
+            if (opts.onEmergencyReload) {
+              opts.onEmergencyReload();
+            } else if (typeof window !== "undefined") {
+              window.location.reload();
+            }
+            return;
+          }
+        }
+      }
+
+      if (untilDrop > leadMs) {
+        // Waiting: keep the target located and visible so the burst starts without searching
+        if (untilDrop < 60_000) {
+          const el = resolve(false);
+          if (el && !scrolled) {
+            try {
+              el.scrollIntoView({ block: "center" });
+              scrolled = true;
+            } catch {
+              // ignore
+            }
+          }
+        }
+        const waitSeconds = Math.max(1, Math.round(untilDrop / 1000));
+        status(t, `Waiting for the drop: ${waitSeconds}s`);
+        return;
+      }
+
+      if (t > opts.targetTimestamp + windowMs) {
+        if (clicks === 0) finish("not_found", "No matching target button appeared in time");
+        else finish("timeout", `Clicked ${clicks} times but target completion was not confirmed`);
+        return;
+      }
+
+      const el = resolve(true);
+      if (el) {
+        if (!scrolled) {
           try {
             el.scrollIntoView({ block: "center" });
             scrolled = true;
@@ -205,143 +302,157 @@ export function startHunt(opts: HuntOptions): () => void {
             // ignore
           }
         }
-      }
-      const waitSeconds = Math.max(1, Math.round(untilDrop / 1000));
-      status(t, `Waiting for the drop: ${waitSeconds}s`);
-      return;
-    }
-
-    if (t > opts.targetTimestamp + windowMs) {
-      if (clicks === 0) finish("not_found", "No matching target button appeared in time");
-      else finish("timeout", `Clicked ${clicks} times but target completion was not confirmed`);
-      return;
-    }
-
-    const el = resolve(true);
-    if (el) {
-      if (!scrolled) {
-        try {
-          el.scrollIntoView({ block: "center" });
-          scrolled = true;
-        } catch {
-          // ignore
-        }
-      }
-    } else if (universalDesc?.documentTop && !scrolled && typeof window !== "undefined") {
-      // Lazy-load activation fallback: if target is not found and descriptor has documentTop offset,
-      // scroll toward that region to trigger intersection observers and virtualized DOM mounting
-      const targetScrollY = Math.max(0, universalDesc.documentTop - 250);
-      if (Math.abs((window.scrollY || 0) - targetScrollY) > 200) {
-        try {
-          window.scrollTo({ top: targetScrollY, behavior: "instant" as ScrollBehavior });
-          scrolled = true;
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    const isTargetClickable = Boolean(
-      el &&
-      !el.hasAttribute("disabled") &&
-      el.getAttribute("aria-disabled") !== "true" &&
-      !el.classList.contains("disabled")
-    );
-
-    // 1. Completion verification: ONLY valid if we clicked at least once!
-    // Prevents false-positives when target button still displays yesterday's completion label
-    if (clicks > 0) {
-      const activeBaseline = baselineTextAtDrop ?? initialText;
-      const check = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
-      if (check.completed) {
-        if (check.state === "saved") return finish("saved", check.reason);
-        if (check.state === "exhausted") return finish("exhausted", check.reason);
-      }
-
-      const state = elementResolver.getButtonState(el);
-      if (state === "saved") return finish("saved", "The page shows the target as saved");
-      if (state === "exhausted") return finish("exhausted", "The target is fully claimed");
-    } else if (t >= opts.targetTimestamp + 2000 && el) {
-      // If drop has passed by at least 2s, clicks === 0, and page already explicitly marks it exhausted
-      const state = elementResolver.getButtonState(el);
-      if (state === "exhausted") {
-        return finish("exhausted", "Target voucher is already exhausted or sold out");
-      }
-    }
-
-    // 2. Autonomous fallback reload for static pages:
-    // If drop time has passed by 500ms, clicks is 0, and the button is not clickable
-    // (i.e. stuck in yesterday's disabled/completed state or countdown label),
-    // automatically reload the page once to load the new day/drop session!
-    if (
-      opts.dualDefenseReload &&
-      t >= opts.targetTimestamp + 250 &&
-      clicks === 0 &&
-      (!el || !isTargetClickable)
-    ) {
-      if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
-        const emergencyKey = `dh_emergency_reloaded_${opts.targetTimestamp}`;
-        if (!sessionStorage.getItem(emergencyKey)) {
-          sessionStorage.setItem(emergencyKey, "true");
-          opts.onStatus?.("Static page detected: Executing autonomous refresh...");
-          if (opts.onEmergencyReload) {
-            opts.onEmergencyReload();
-          } else {
-            window.location.reload();
-          }
-          return;
-        }
-      }
-    }
-
-    const isLockedTarget = Boolean(isLockedHunt && el);
-    const state = el ? elementResolver.getButtonState(el) : "unknown";
-
-    if (
-      el &&
-      (state === "collectable" || (isLockedTarget && isTargetClickable)) &&
-      t - lastClickAt >= currentIntervalMs &&
-      clicks < maxClicks
-    ) {
-      if (typeof window !== "undefined") {
-        const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { top: 0, bottom: 0, left: 0, right: 0 };
-        const viewH = window.innerHeight || document.documentElement?.clientHeight || 0;
-        const viewW = window.innerWidth || document.documentElement?.clientWidth || 0;
-        const isOffscreen = viewH > 0 && (rect.bottom < 0 || rect.top > viewH || rect.right < 0 || rect.left > viewW);
-        if (isOffscreen) {
+      } else if (universalDesc?.documentTop && !scrolled && typeof window !== "undefined") {
+        // Lazy-load activation fallback: if target is not found and descriptor has documentTop offset,
+        // scroll toward that region to trigger intersection observers and virtualized DOM mounting
+        const targetScrollY = Math.max(0, universalDesc.documentTop - 250);
+        if (Math.abs((window.scrollY || 0) - targetScrollY) > 200) {
           try {
-            el.scrollIntoView({ block: "center" });
+            window.scrollTo({ top: targetScrollY, behavior: "instant" as ScrollBehavior });
+            scrolled = true;
           } catch {
             // ignore
           }
         }
       }
-      const isFirstClick = clicks === 0;
-      if (isFirstClick) {
-        // C1-a: Capture the true baseline text right before click 1 at drop moment
-        // (after countdown has transitioned to the actionable label)
-        baselineTextAtDrop = elementResolver.text(el);
-      }
-      if (humanClicker.dispatchClick(el, { profileMode, approach: isFirstClick })) {
-        clicks++;
-        lastClickAt = t;
 
-        // Recompute next interval with biological variance and micro-pauses
-        currentIntervalMs =
-          opts.clickIntervalMs !== undefined
-            ? opts.clickIntervalMs
-            : computeNextInterval(profile, clicks + 1).intervalMs;
+      const isFireMoment = t >= opts.targetTimestamp - preFireLeadMs;
+      const isLockedTarget = Boolean(isLockedHunt && el);
 
-        // Check completion immediately after click was dispatched
-        const activeBaseline = baselineTextAtDrop ?? initialText;
-        const postCheck = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
-        if (postCheck.completed) {
-          if (postCheck.state === "saved") return finish("saved", postCheck.reason);
-          if (postCheck.state === "exhausted") return finish("exhausted", postCheck.reason);
+      // Speed-priority instant unblock:
+      // Do not wait for React timer or re-render cycle to remove disabled attributes.
+      // At fire moment (T - preFireLeadMs), unblock locked target immediately.
+      if (effectiveTier === "speed_priority" && isLockedTarget && isFireMoment && el) {
+        if (el.hasAttribute("disabled")) {
+          try { el.removeAttribute("disabled"); } catch {}
+        }
+        if (el.getAttribute("aria-disabled") === "true") {
+          try { el.setAttribute("aria-disabled", "false"); } catch {}
+        }
+        if (el.classList.contains("disabled")) {
+          try { el.classList.remove("disabled"); } catch {}
+        }
+        if ("disabled" in el && (el as HTMLButtonElement).disabled) {
+          try { (el as HTMLButtonElement).disabled = false; } catch {}
         }
       }
-    }
-    status(t, clicks > 0 ? `Target active · ${clicks} clicks` : "Waiting for target button...");
+
+      const isTargetClickable = Boolean(
+        el &&
+        !el.hasAttribute("disabled") &&
+        el.getAttribute("aria-disabled") !== "true" &&
+        !el.classList.contains("disabled")
+      );
+
+      // 1. Completion verification: ONLY valid if we clicked at least once!
+      // Prevents false-positives when target button still displays yesterday's completion label
+      if (clicks > 0) {
+        const activeBaseline = baselineTextAtDrop ?? initialText;
+        const check = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
+        if (check.completed) {
+          if (check.state === "saved") return finish("saved", check.reason);
+          if (check.state === "exhausted") return finish("exhausted", check.reason);
+        }
+
+        const state = elementResolver.getButtonState(el);
+        if (state === "saved") return finish("saved", "The page shows the target as saved");
+        if (state === "exhausted") return finish("exhausted", "The target is fully claimed");
+      } else if (t >= opts.targetTimestamp + 2000 && el) {
+        // If drop has passed by at least 2s, clicks === 0, and page already explicitly marks it exhausted
+        const state = elementResolver.getButtonState(el);
+        if (state === "exhausted") {
+          return finish("exhausted", "Target voucher is already exhausted or sold out");
+        }
+      }
+
+      // 2. Guarded reload loop: reload until active button appears (window [T - 750, T + 2250], max 3 reloads)
+      if (
+        (effectiveTier === "speed_priority" || opts.dualDefenseReload) &&
+        t >= opts.targetTimestamp + 250 &&
+        t <= opts.targetTimestamp + 2250 &&
+        clicks === 0
+      ) {
+        const reloadCount = typeof sessionStorage !== "undefined"
+          ? parseInt(sessionStorage.getItem(`dh_reload_count_${opts.targetTimestamp}`) || "0", 10)
+          : 0;
+        const lastReloadTime = typeof sessionStorage !== "undefined"
+          ? parseInt(sessionStorage.getItem(`dh_last_reload_time_${opts.targetTimestamp}`) || "0", 10)
+          : 0;
+
+        if (
+          reloadCount < 3 &&
+          t - lastReloadTime >= 650 &&
+          (!el || !isTargetClickable || elementResolver.getButtonState(el) === "saved")
+        ) {
+          if (typeof sessionStorage !== "undefined") {
+            sessionStorage.setItem(`dh_reload_count_${opts.targetTimestamp}`, String(reloadCount + 1));
+            sessionStorage.setItem(`dh_last_reload_time_${opts.targetTimestamp}`, String(t));
+          }
+          opts.onStatus?.(`Reloading until active button detected (${reloadCount + 1}/3)...`);
+          if (opts.onEmergencyReload) {
+            opts.onEmergencyReload();
+          } else if (typeof window !== "undefined") {
+            window.location.reload();
+          }
+          return;
+        }
+      }
+
+      const state = el ? elementResolver.getButtonState(el) : "unknown";
+
+      if (
+        el &&
+        isFireMoment &&
+        (state === "collectable" || (isLockedTarget && isTargetClickable)) &&
+        t - lastClickAt >= currentIntervalMs &&
+        clicks < maxClicks
+      ) {
+        if (typeof window !== "undefined") {
+          const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { top: 0, bottom: 0, left: 0, right: 0 };
+          const viewH = window.innerHeight || document.documentElement?.clientHeight || 0;
+          const viewW = window.innerWidth || document.documentElement?.clientWidth || 0;
+          const isOffscreen = viewH > 0 && (rect.bottom < 0 || rect.top > viewH || rect.right < 0 || rect.left > viewW);
+          if (isOffscreen) {
+            try {
+              el.scrollIntoView({ block: "center" });
+            } catch {
+              // ignore
+            }
+          }
+        }
+        const isFirstClick = clicks === 0;
+        if (isFirstClick) {
+          // C1-a: Capture the true baseline text right before click 1 at drop moment
+          // (after countdown has transitioned to the actionable label)
+          baselineTextAtDrop = elementResolver.text(el);
+        }
+        const shouldSkipApproach = effectiveTier === "speed_priority" || profileMode === "hyper";
+        if (
+          humanClicker.dispatchClick(el, {
+            profileMode,
+            approach: isFirstClick && !shouldSkipApproach,
+            skipApproach: shouldSkipApproach,
+          })
+        ) {
+          clicks++;
+          lastClickAt = t;
+
+          // Recompute next interval with biological variance and micro-pauses
+          currentIntervalMs =
+            opts.clickIntervalMs !== undefined
+              ? opts.clickIntervalMs
+              : computeNextInterval(profile, clicks + 1).intervalMs;
+
+          // Check completion immediately after click was dispatched
+          const activeBaseline = baselineTextAtDrop ?? initialText;
+          const postCheck = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
+          if (postCheck.completed) {
+            if (postCheck.state === "saved") return finish("saved", postCheck.reason);
+            if (postCheck.state === "exhausted") return finish("exhausted", postCheck.reason);
+          }
+        }
+      }
+      status(t, clicks > 0 ? `Target active · ${clicks} clicks` : "Waiting for target button...");
   } catch (err) {
     // M6: Catch uncaught errors in tick to avoid hung loop/UI
     finish("not_found", "Runtime error during hunt: " + (err as Error).message);

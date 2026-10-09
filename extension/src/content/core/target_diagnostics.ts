@@ -1,5 +1,28 @@
 import { elementResolver } from "./element_resolver";
-import { TargetDiagnosticsSummary, ReloadStrategy, PageFramework } from "../../lib/types";
+import { TargetDiagnosticsSummary, ReloadStrategy, PageFramework, PlatformTier } from "../../lib/types";
+
+/**
+ * Identifies major marketplace platforms (Shopee, Lazada, TikTok Shop)
+ * which deploy advanced biometric anti-bot/WAF systems (DataDome, Cloudflare, Risk Engine).
+ */
+export function isMajorMarketplace(url?: string): boolean {
+  const targetUrl = url || (typeof window !== "undefined" ? window.location?.href || "" : "");
+  if (!targetUrl) return false;
+  try {
+    const host = new URL(targetUrl, "https://example.com").hostname.toLowerCase();
+    return (
+      host.includes("shopee.") ||
+      host.includes("lazada.") ||
+      host.includes("tiktok.com")
+    );
+  } catch {
+    return (
+      targetUrl.includes("shopee.") ||
+      targetUrl.includes("lazada.") ||
+      targetUrl.includes("tiktok.com")
+    );
+  }
+}
 
 export class TargetDiagnostics {
   private countdownRegex = /\b(\d{1,2}:\d{2}:\d{2}|\d{1,2}:\d{2})\b/;
@@ -133,6 +156,8 @@ export class TargetDiagnostics {
       confidence = 80;
     }
 
+    const platformTier: PlatformTier = isMajorMarketplace() ? "major_marketplace" : "speed_priority";
+
     return {
       framework,
       hasCountdownTimer,
@@ -141,6 +166,7 @@ export class TargetDiagnostics {
       isStandby,
       strategy,
       confidence,
+      platformTier,
     };
   }
 

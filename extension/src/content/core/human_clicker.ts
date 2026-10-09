@@ -11,6 +11,7 @@ import {
 export interface HumanClickOptions {
   profileMode?: ClickProfileMode;
   approach?: boolean;
+  skipApproach?: boolean;
 }
 
 /**
@@ -51,7 +52,13 @@ export class HumanClicker {
     }
 
     // If approach is requested and previous cursor is away from target, simulate trajectory
-    if (options?.approach && (this.lastCursorPos.x !== 0 || this.lastCursorPos.y !== 0)) {
+    const shouldApproach = Boolean(
+      options?.approach &&
+      !options?.skipApproach &&
+      options?.profileMode !== "hyper" &&
+      (this.lastCursorPos.x !== 0 || this.lastCursorPos.y !== 0)
+    );
+    if (shouldApproach) {
       this.simulateApproach(element, coords);
     }
 
@@ -126,14 +133,20 @@ export class HumanClicker {
 
     const coords = calculateHumanClickCoordinates(rect);
 
-    if (options?.approach) {
+    const shouldApproach = Boolean(
+      options?.approach &&
+      !options?.skipApproach &&
+      profileMode !== "hyper"
+    );
+    if (shouldApproach) {
       this.simulateApproach(element, coords);
     }
 
     this.lastCursorPos = { x: coords.clientX, y: coords.clientY };
 
     // Dwell delay in milliseconds
-    const dwellMs = Math.max(15, Math.round(profile.dwellMeanMs));
+    const minDwell = profileMode === "hyper" ? 4 : 15;
+    const dwellMs = Math.max(minDwell, Math.round(profile.dwellMeanMs));
 
     // Down phase
     const { clientX, clientY } = coords;
@@ -194,7 +207,8 @@ export class HumanClicker {
     profileMode: ClickProfileMode = "pro_gamer",
     maxDurationMs = 2500,
     isStopConditionMet?: () => boolean,
-    onComplete?: (success: boolean) => void
+    onComplete?: (success: boolean) => void,
+    skipApproach = false
   ): void {
     if (this.isBursting) return;
     this.isBursting = true;
@@ -219,7 +233,11 @@ export class HumanClicker {
         return;
       }
 
-      this.dispatchClick(element, { profileMode, approach: this.burstCount === 0 });
+      this.dispatchClick(element, {
+        profileMode,
+        approach: !skipApproach && profileMode !== "hyper" && this.burstCount === 0,
+        skipApproach,
+      });
 
       const next = computeNextInterval(profile, this.burstCount);
       setTimeout(scheduleNext, next.intervalMs);
