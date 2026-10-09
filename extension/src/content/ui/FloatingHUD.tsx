@@ -690,7 +690,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       <button
         type="button"
         onClick={() => setMinimized(false)}
-        className="flex items-center gap-2.5 rounded-full bg-slate-950/95 px-4 py-2 text-white shadow-2xl ring-1 ring-white/10 transition hover:ring-emerald-400/50"
+        className="dh-minimized-pill flex items-center gap-2.5 rounded-full px-4 py-2 text-white shadow-2xl ring-1 ring-white/10 transition hover:ring-emerald-400/50"
+        style={hudPos ? { position: "fixed", left: `${hudPos.x}px`, top: `${hudPos.y}px` } : { position: "fixed", right: "24px", bottom: "24px" }}
       >
         <span className={`h-2 w-2 rounded-full ${isArmed ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
         <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">{serverTimeStr}</span>
@@ -702,13 +703,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   return (
     <div
-      className="dh-floating-card w-[340px] select-none overflow-hidden rounded-3xl bg-slate-950/95 text-slate-100 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.6)] ring-1 ring-white/10 backdrop-blur-xl"
-      style={hudPos ? { position: "fixed", left: `${hudPos.x}px`, top: `${hudPos.y}px`, bottom: "auto", right: "auto" } : undefined}
+      className="dh-floating-card w-[356px] select-none overflow-hidden rounded-3xl text-slate-100 ring-1 ring-white/10"
+      style={hudPos ? { position: "fixed", left: `${hudPos.x}px`, top: `${hudPos.y}px`, bottom: "auto", right: "auto" } : { position: "fixed", right: "24px", bottom: "24px" }}
     >
       {/* Draggable Header */}
       <div
         onMouseDown={handleHeaderMouseDown}
-        className="flex cursor-grab items-center justify-between bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-transparent px-4 py-3 active:cursor-grabbing"
+        className="dh-header flex cursor-grab items-center justify-between px-4 py-3 active:cursor-grabbing"
         title={t.dragHudTooltip}
       >
         <div className="flex items-center gap-2.5">
@@ -766,7 +767,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
       <div className="space-y-3 px-4 pb-4 pt-1">
         {/* Universal Server clock */}
-        <div className="rounded-2xl bg-white/[0.03] p-3 ring-1 ring-white/5">
+        <div className="dh-inner-card rounded-2xl p-3">
           <div className="flex items-center justify-between">
             <span className="truncate pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
               {clockTitle}
@@ -796,18 +797,18 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         </div>
 
         {/* Drop target with Quick Testing and Custom Time */}
-        <div className="rounded-2xl bg-white/[0.03] p-3 ring-1 ring-white/5">
+        <div className="dh-inner-card rounded-2xl p-3">
           {/* Slot selector grid */}
-          <div className="grid grid-cols-5 gap-1 rounded-xl bg-black/30 p-1 ring-1 ring-white/5">
+          <div className="grid grid-cols-5 gap-1 rounded-xl bg-black/40 p-1 ring-1 ring-white/5">
             {(
               [
-                ["quick_10s", t.quickTest10s || "+10s"],
-                ["quick_30s", t.quickTest30s || "+30s"],
-                ["00:00", "00:00"],
-                ["next_minute", t.nextMinute || "Next min"],
-                ["custom", t.customTime || "Custom"],
+                ["quick_10s", "+10s", t.quickTest10s || "+10s"],
+                ["quick_30s", "+30s", t.quickTest30s || "+30s"],
+                ["00:00", "00:00", "00:00:00"],
+                ["next_minute", lang === "vi" ? "+1p" : "+1m", t.nextMinute || "Next min"],
+                ["custom", lang === "vi" ? "Tự chọn" : "Custom", t.customTime || "Custom"],
               ] as const
-            ).map(([slotKey, label]) => {
+            ).map(([slotKey, shortLabel, fullTitle]) => {
               const actualSlot: TargetSlot =
                 slotKey === "00:00" ? "midnight" : (slotKey as TargetSlot);
               const isActive = targetSlot === actualSlot;
@@ -817,13 +818,14 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                   type="button"
                   disabled={isArmed}
                   onClick={() => handleSelectSlot(actualSlot)}
-                  className={`dh-slot-btn rounded-lg py-1 px-0.5 text-center font-mono text-[10px] font-semibold transition whitespace-nowrap overflow-hidden text-ellipsis ${
+                  title={fullTitle}
+                  className={`dh-slot-btn rounded-lg py-1 px-0.5 text-center font-mono text-[10px] font-semibold transition ${
                     isActive
                       ? "dh-slot-active bg-emerald-500 text-white shadow"
                       : "dh-slot-inactive text-slate-400 hover:text-slate-200"
                   } disabled:cursor-not-allowed`}
                 >
-                  {label}
+                  {shortLabel}
                 </button>
               );
             })}
@@ -872,7 +874,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         </div>
 
         {/* Universal Target locking */}
-        <div className="rounded-2xl bg-white/[0.03] p-3 ring-1 ring-white/5">
+        <div className="dh-inner-card rounded-2xl p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t.targetVoucher}</span>
             <div className="flex items-center gap-1.5">
