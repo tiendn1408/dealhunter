@@ -272,37 +272,38 @@ describe("ElementResolver", () => {
     expect(check.state).not.toBe("saved");
   });
 
-  it("detects page toast notification confirming voucher saved after click", () => {
+  it("detects page toast notification confirming voucher saved after click via structural icon", () => {
     const btn = document.createElement("button");
     btn.innerText = "Lưu";
     document.body.appendChild(btn);
 
-    // Create a Shopee toast element
+    // Create a toast element with checkmark/success icon and code contract
     const toast = document.createElement("div");
-    toast.className = "shopee-toast";
-    toast.innerText = "Đã lưu voucher vào ví";
+    toast.className = "shopee-toast is-success";
+    toast.innerHTML = '<svg class="icon-tick"></svg><span>Voucher claimed</span>';
     document.body.appendChild(toast);
 
     const check = resolver.isTargetCompleted(btn, "Lưu", 1);
     expect(check.completed).toBe(true);
     expect(check.state).toBe("saved");
-    expect(check.reason).toContain("Page toast notification confirmed success");
+    expect(check.reason).toContain("Page notification confirmed success via structural icon or data contract");
   });
 
-  it("detects page toast notification confirming voucher exhausted after click", () => {
+  it("detects page toast notification confirming voucher exhausted after click via error icon/contract", () => {
     const btn = document.createElement("button");
     btn.innerText = "Lưu";
     document.body.appendChild(btn);
 
     const toast = document.createElement("div");
-    toast.setAttribute("role", "alert");
-    toast.innerText = "Mã voucher đã hết lượt sử dụng";
+    toast.className = "shopee-toast is-warning";
+    toast.setAttribute("data-type", "warning");
+    toast.innerHTML = '<svg class="icon-warning"></svg><span>Out of quota</span>';
     document.body.appendChild(toast);
 
     const check = resolver.isTargetCompleted(btn, "Lưu", 1);
     expect(check.completed).toBe(true);
     expect(check.state).toBe("exhausted");
-    expect(check.reason).toContain("Page toast notification confirmed exhausted");
+    expect(check.reason).toContain("Page notification confirmed exhausted/error via structural icon or data contract");
   });
 
   it("strictly ignores DealHunter HUD elements when scanning for toasts", () => {

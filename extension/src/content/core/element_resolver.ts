@@ -91,7 +91,10 @@ function computeCssSelector(el: HTMLElement): string {
 }
 
 export function hasCompletionIcon(button: HTMLElement): boolean {
-  const iconElements = button.querySelectorAll<HTMLElement>("svg, i, span[class*='icon'], [role='img']");
+  const iconElements: HTMLElement[] = [
+    button,
+    ...Array.from(button.querySelectorAll<HTMLElement>("svg, i, span[class*='icon'], [role='img']")),
+  ];
   for (const el of iconElements) {
     const rawCls = el.getAttribute("class") || (typeof el.className === "string" ? el.className : "");
     const testId = el.getAttribute("data-testid") || "";
@@ -104,8 +107,8 @@ export function hasCompletionIcon(button: HTMLElement): boolean {
       continue;
     }
 
-    // Match check, checkmark, success, done as whole words or delimited by - / _ / space
-    if (/(?:^|[\s_-])(check|checkmark|success|done)(?:$|[\s_-])/i.test(combined)) {
+    // Match check, checkmark, tick, success, done as whole words or delimited by - / _ / space
+    if (/(?:^|[\s_-])(check|checkmark|tick|success|done)(?:$|[\s_-])/i.test(combined)) {
       return true;
     }
   }
@@ -114,7 +117,8 @@ export function hasCompletionIcon(button: HTMLElement): boolean {
 
 /**
  * Scans page-level notification banners, toasts, and dialogs (Shopee, Lazada, TikTok Shop)
- * for immediate post-click success or exhaustion confirmations.
+ * for immediate post-click success or exhaustion confirmations using pure structural,
+ * SVG icon, and HTML5/W3C data contracts without language-specific dictionaries.
  */
 export function checkPageToastConfirmation(): CompletionStatus | null {
   if (typeof document === "undefined") return null;
@@ -152,37 +156,52 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
     const hasDimensions = rect.width > 0 || rect.height > 0 || el.offsetWidth > 0 || el.offsetHeight > 0;
     const isTestEnv = typeof process !== "undefined" && process.env.NODE_ENV === "test";
     if (!hasDimensions && !isTestEnv) continue;
+
     const style = typeof window !== "undefined" && window.getComputedStyle ? window.getComputedStyle(el) : null;
     if (style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0")) {
       continue;
     }
 
-    const text = ((el.innerText || el.textContent || "") as string).toLowerCase().replace(/\s+/g, " ").trim();
-    if (!text || text.length > 200) continue;
+    const rawCls = (typeof el.className === "string" ? el.className : "").toLowerCase();
+    const dataType = (el.getAttribute("data-type") || el.getAttribute("data-status") || "").toLowerCase();
+    const role = (el.getAttribute("role") || "").toLowerCase();
 
-    // Success confirmation in toast/alert
-    if (
-      /(?:đã\s*lưu|lưu\s*thành\s*công|vào\s*ví|đã\s*sở\s*hữu|đã\s*nhận|nhận\s*thành\s*công|thu\s*thập\s*thành\s*công|đã\s*thu\s*thập|saved\s*to\s*wallet|already\s*claimed|claimed\s*successfully|saved\s*successfully|collected\s*successfully)/i.test(
-        text
-      )
-    ) {
+    // 1. Success confirmation: Structural SVG checkmark/success icon, or HTML5/CSS code contracts
+    const hasSuccessIcon = hasCompletionIcon(el);
+    const hasSuccessCode =
+      /^(success|positive|completed|saved|done)$/i.test(dataType) ||
+      /(?:^|[\s_-])(success|is-success|positive|completed|toast-success|alert-success)(?:$|[\s_-])/i.test(rawCls);
+
+    if (hasSuccessIcon || hasSuccessCode) {
       return {
         completed: true,
         state: "saved",
-        reason: `Page toast notification confirmed success: "${text.slice(0, 60)}"`,
+        reason: "Page notification confirmed success via structural icon or data contract",
       };
     }
 
-    // Out of quota / exhausted confirmation in toast/alert
-    if (
-      /(?:đã\s*hết\s*lượt|hết\s*lượt\s*sử\s*dụng|mã\s*đã\s*hết|hết\s*số\s*lượng|out\s*of\s*stock|fully\s*claimed|fully\s*redeemed|no\s*longer\s*available)/i.test(
-        text
-      )
-    ) {
+    // 2. Exhaustion / Error confirmation: Warning/error icons, or error/exhausted code tokens
+    const hasErrorIcon = Boolean(
+      el.querySelector("svg[class*='warning' i], svg[class*='error' i], i[class*='warning' i], i[class*='error' i], [role='img'][class*='warning' i]")
+    );
+    const hasErrorCode =
+      /^(error|warning|exhausted|depleted)$/i.test(dataType) ||
+      /(?:^|[\s_-])(error|is-error|warning|is-warning|danger|toast-error|alert-error|exhausted|depleted)(?:$|[\s_-])/i.test(rawCls);
+
+    if (hasErrorIcon || hasErrorCode) {
       return {
         completed: true,
         state: "exhausted",
-        reason: `Page toast notification confirmed exhausted: "${text.slice(0, 60)}"`,
+        reason: "Page notification confirmed exhausted/error via structural icon or data contract",
+      };
+    }
+
+    // 3. W3C ARIA Live Region role="status" announcing post-click update
+    if (role === "status" && el.textContent?.trim()) {
+      return {
+        completed: true,
+        state: "saved",
+        reason: "W3C status region confirmed action completion",
       };
     }
   }
@@ -408,29 +427,30 @@ export class ElementResolver {
         return { completed: true, state: "saved", reason };
       }
 
-      // 2e. Card container mutation after click (e.g. card badge or text changed to saved or exhausted)
+      // 2e. Card container behavioral mutation after click (language-agnostic)
       const card = this.findVoucherContainer(button);
       if (card) {
-        const cardTextNow = this.text(card).toLowerCase();
-        const initialClean = (initialText || "").toLowerCase();
-        if (
-          /(?:đã\s*lưu|đã\s*nhận|đã\s*thu\s*thập|đã\s*có\s*trong\s*ví|claimed|saved)/i.test(cardTextNow) &&
-          !/(?:đã\s*lưu|đã\s*nhận|đã\s*thu\s*thập|claimed|saved)/i.test(initialClean)
-        ) {
+        if (hasCompletionIcon(card)) {
           return {
             completed: true,
             state: "saved",
-            reason: "Voucher card updated with saved/claimed confirmation",
+            reason: "Voucher card gained completion icon after click",
           };
         }
-        if (
-          /(?:hết\s*lượt|đã\s*hết|hết\s*số\s*lượng|out\s*of\s*stock|sold\s*out|fully\s*claimed)/i.test(cardTextNow) &&
-          !/(?:hết\s*lượt|đã\s*hết|hết\s*số\s*lượng)/i.test(initialClean)
-        ) {
+
+        const cardState = this.getButtonState(card);
+        if (cardState === "saved") {
+          return {
+            completed: true,
+            state: "saved",
+            reason: "Voucher card transitioned to saved state after click",
+          };
+        }
+        if (cardState === "exhausted") {
           return {
             completed: true,
             state: "exhausted",
-            reason: "Voucher card updated to exhausted/sold-out",
+            reason: "Voucher card transitioned to exhausted state after click",
           };
         }
       }

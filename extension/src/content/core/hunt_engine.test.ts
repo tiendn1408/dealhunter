@@ -31,11 +31,11 @@ function giveLayout() {
   HTMLElement.prototype.scrollIntoView = () => {};
 }
 
-function setup(keyword?: string, locked?: HTMLElement | null) {
+function setup(keyword?: string, locked?: HTMLElement | null, windowMs = 3000) {
   let now = DROP - 5000;
   const ticker = new ManualTicker();
   let outcome: HuntOutcome | null = null;
-  startHunt({ targetTimestamp: DROP, now: () => now, keyword, locked, ticker, onDone: (o) => (outcome = o) });
+  startHunt({ targetTimestamp: DROP, now: () => now, keyword, locked, ticker, windowMs, onDone: (o) => (outcome = o) });
   return {
     ticker,
     advanceTo(t: number) {
@@ -546,10 +546,10 @@ describe("startHunt", () => {
     ticker.tick();
     expect(outcome).toBeNull();
 
-    // Shopee displays toast notification
+    // Shopee displays toast notification with success icon
     const toast = document.createElement("div");
-    toast.className = "shopee-toast";
-    toast.innerText = "Đã lưu voucher vào ví";
+    toast.className = "shopee-toast is-success";
+    toast.innerHTML = '<svg class="icon-success"></svg><span>Voucher Saved</span>';
     document.body.appendChild(toast);
 
     // Next tick
@@ -558,7 +558,7 @@ describe("startHunt", () => {
 
     expect(outcome).not.toBeNull();
     expect((outcome as HuntOutcome | null)?.result).toBe("saved");
-    expect((outcome as HuntOutcome | null)?.detail).toContain("Page toast notification confirmed success");
+    expect((outcome as HuntOutcome | null)?.detail).toContain("Page notification confirmed success via structural icon or data contract");
   });
 });
 

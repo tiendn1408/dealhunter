@@ -2,7 +2,7 @@
 
 Tai lieu nay mo ta chi tiet kien truc ky thuat, thuat toan loi, va luong xu ly dong bo cua he thong **DealHunter Universal Sniper** tren Chrome Extension (Manifest V3).
 
-Cap nhat: 2026-10-09 · Dong bo voi ban build production va 165 unit tests.
+Cap nhat: 2026-10-09 · Dong bo voi ban build production va 179 unit tests.
 
 ---
 
@@ -34,9 +34,9 @@ He thong Sniper duoc xay dung dua tren cac thanh phan cot loi duoc to chuc ro ra
 ```
 
 1. **`HuntCoordinator`**: Single Source of Truth quan ly phien san, dong bo giua Floating HUD truc quan tren man hinh va Background Scheduler hen gio tu dong. Xu ly hop nhat phien (task adoption) va tiep noi phien sau khi reload trang thong qua `sessionStorage`.
-2. **`HuntEngine`**: Co che click don dap adaptive sieu toc dua tren `WorkerTimer` (10ms tick), dieu phoi thoi gian lead (150ms truoc gio G), timing window va co che phong thu kep.
+2. **`HuntEngine`**: Co che click don dap adaptive sieu toc dua tren `WorkerTimer` (10ms tick), dieu phoi thoi gian lead (150ms truoc gio G), timing window (8000ms mac dinh, mo rong 10000ms sau reload) va co che phong thu kep.
 3. **`TargetDiagnostics`**: Bo phan tich do tuong thich SPA (React/Vue/Angular), phan biet trang tinh va trang reactive de xac dinh chien luoc `dualDefenseReload` (tat reload tu dong tren cac trang SPA nhu Shopee).
-4. **`ElementResolver`**: Thuat toan nhan dien phan tu, theo doi nut xuyen suot virtual DOM/React re-render va danh gia ket qua hoan tat dua tren may trang thai hanh vi.
+4. **`ElementResolver`**: Thuat toan nhan dien phan tu, theo doi nut xuyen suot virtual DOM/React re-render va danh gia ket qua hoan tat dua tren may trang thai hanh vi khong phu thuoc ngon ngu.
 5. **`HumanClicker`**: Phat chuoi su kien W3C Pointer Events Level 3 day du voi toa do Gauss 2 chieu tap trung trong tam nut va thoi gian tiep xuc phim vat ly (dwell time).
 
 ---
@@ -51,9 +51,24 @@ Khi da thuc hien it nhat 1 cu click ($clicksCount \ge 1$), trang thai hoan tat d
 - **DOM Detachment / Unmount**: Neu `!button.isConnected`, phan tu da bi go khoi cay DOM (modal dong lai, card voucher duoc luu va bien mat). Ket qua: `saved`.
 - **Idempotency Transition**: Neu phan tu chuyen sang `disabled`, `aria-disabled="true"`, hoac nhan class `.disabled` sau chuoi click. Day la co che chong click lap chuan cua cac he thong frontend. Ket qua: `saved`.
 - **Text Mutation (Bien doi noi dung chu)**: Loai bo cac chuoi dem nguoc thoi gian (`\d{1,2}:\d{2}`) va so sanh `cleanCurrent !== cleanInitial`. Neu chu tren nut bien doi ngay sau khi click, he thong ghi nhan trang web da tiep nhan va phan hoi tuong tac thanh cong.
-- **Subtree Icon Injection**: Kiem tra viec chen moi the SVG hoac bieu tuong mang ngu nghia hoan thanh (`check`, `tick`, `success`, `done`) vao ben trong nut.
+- **Subtree Icon Injection**: Kiem tra viec chen moi the SVG hoac bieu tuong mang ngu nghia hoan thanh (`check`, `tick`, `success`, `done`) vao ben trong nut hoac voucher card.
+- **Voucher Card Behavioral Transition**: Kiem tra su bien doi cua toan bo container (`findVoucherContainer`) qua `getButtonState(card)`:
+  - Chuyen sang `saved` khi the nhan them SVG icon hoan tat hoac dat trang thai `saved`.
+  - Chuyen sang `exhausted` khi thanh tien do day (`progress[value="100"]`, `[aria-valuenow="100"]`, `[data-stock="0"]`) hoac class trang thai can kiet.
 
-### 2.2. Danh gia trang thai truoc khi click (Pre-existing State Contracts)
+### 2.2. Xac nhan thong qua Toast / Notification / Live Region toan trang
+Ham `checkPageToastConfirmation` quet cac vung thong bao noi tren toan trang (`[role="alert"]`, `[role="status"]`, `.toast`, v.v.) hoan toan doc lap voi ngon ngu (hoat dong tren moi phien ban Shopee / Lazada / Tiki quoc te):
+- **Thanh cong (`saved`)**:
+  - Phat hien SVG icon hoan tat: `hasCompletionIcon(el)` (duong dan path hoac class chua `check`, `tick`, `success`, `done`).
+  - Hop dong du lieu HTML5: `data-type="success"` hoac `data-status="success"`.
+  - Code tokens quoc te: `success`, `is-success`, `positive`, `completed`, `toast-success`, `alert-success`.
+  - Vung cap nhat dong W3C ARIA: `role="status"` duoc kich hoat thong bao sau tuong tac.
+- **Het luot / Can kiet (`exhausted`)**:
+  - Phat hien icon loi/canh bao: SVG/Icon chua `warning`, `error`.
+  - Hop dong du lieu HTML5: `data-type="error|warning|exhausted|depleted"`.
+  - Code tokens: `error`, `is-error`, `warning`, `danger`, `exhausted`, `depleted`.
+
+### 2.3. Danh gia trang thai truoc khi click (Pre-existing State Contracts)
 Doi voi cac nut da luu hoac het luot truoc khi bat dau san:
 
 - **Chuan W3C ARIA**: `aria-pressed="true"`, `aria-checked="true"`, `aria-selected="true"`.
@@ -68,7 +83,7 @@ Doi voi cac nut da luu hoac het luot truoc khi bat dau san:
   - The lien ket dieu huong: `role="link"`, the `<a>` co `href`.
   - Class phu tro: `secondary`, `detail`, `terms`, `condition`, `rules`, `info`, `more`, `dismiss`, `cancel`, `close`.
 
-### 2.3. Chuan doan Standby trong TargetDiagnostics
+### 2.4. Chuan doan Standby trong TargetDiagnostics
 Trang thai cho gio mo deal duoc danh gia khach quan qua:
 - Bo dem gio trong container: Co chuoi thoi gian `\d{1,2}:\d{2}(?::\d{2})?`.
 - Thuoc tinh vo hieu hoa: `disabled`, `aria-disabled="true"`, hoac class `.disabled`.
@@ -125,6 +140,13 @@ Dong co tu dong dieu chinh chu ky $\Delta t$ dua tren so luong click thuc te ma 
 ```
 
 Thuat toan tinh pacing duoc dong bo chat che (`computeNextInterval(profile, 1)` o nhip dau va `computeNextInterval(profile, clicks + 1)` sau moi click), dam bao vi nghi phuc hoi co hoc xuat hien chinh xac ngay truoc cu click thu 4.
+
+### 3.6. Loai bo gioi han 80 clicks co dinh (Dynamic Window Pacing)
+- Truoc day he thong ton tai gioi han gia tao `maxClicks: 80`. Gioi han nay da duoc go bo hoan toan (`maxClicks: Infinity` theo mac dinh).
+- Phien san duoc dieu phoi hoan toan boi:
+  1. Cua so san vang thuc te (`windowMs: 8000ms`, hoac 10000ms neu reload phong thu kep).
+  2. Nhip sinh hoc cua Dong co Kinetic 3 pha: Tu dong giam tan suat va nghi ngoi hop ly nhu thao tac tay con nguoi.
+  3. May trang thai phan ung tu nhien: Dung ngay khi voucher duoc xac nhan da luu (`saved`) hoac het hang (`exhausted`).
 
 ---
 
@@ -183,7 +205,7 @@ Hai che do "Arm Sniper" (kich hoat truc tiep tren Floating HUD) va "Schedule" (h
 
 ## 7. Quy Chuan Chat Luong va Kiem Thu
 
-- **Unit Tests**: 165/165 tests pass tren 17 test suites (`npx vitest run`).
+- **Unit Tests**: 179/179 tests pass tren 17 test suites (`npx vitest run`).
 - **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.
 - **Production Build**: Bien dich hoan tat sach se `popup.js`, `background.js`, `content.js` va `content.css`.
 - **Zero-Emoji**: Tuyet doi khong su dung emoji trong ma nguon, log, test va tai lieu.

@@ -60,10 +60,9 @@ export interface HuntOptions {
 
 export const HUNT_DEFAULTS = {
   leadMs: 150,
-  windowMs: 3000,
-  clickIntervalMs: 35,
+  windowMs: 8000,
   defaultProfileMode: "adaptive" as ClickProfileMode,
-  maxClicks: 80,
+  maxClicks: Infinity,
   tickMs: 10,
 };
 
