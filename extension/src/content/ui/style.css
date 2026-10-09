@@ -409,6 +409,19 @@
   background-color: rgba(16, 185, 129, 0.2) !important;
 }
 
+/* Action Group: Primary CTA and Secondary Test Click button */
+#dealhunter-hud-root .dh-action-group {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  margin-top: 4px !important;
+  margin-bottom: 2px !important;
+}
+
+#dealhunter-hud-root .dh-action-group > * {
+  margin: 0 !important;
+}
+
 /* Arm sniper action button: Guaranteed gradient & text color on all websites */
 #dealhunter-hud-root .dh-arm-btn {
   display: flex !important;

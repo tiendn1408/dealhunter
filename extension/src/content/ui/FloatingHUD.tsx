@@ -52,6 +52,23 @@ const TONE_STYLES: Record<Tone, { dot: string; text: string; ring: string }> = {
   error: { dot: "bg-rose-400", text: "text-rose-200", ring: "ring-rose-500/40" },
 };
 
+const formatElementIdentifier = (el: HTMLElement, desc?: UniversalTargetDescriptor | null): string => {
+  const text = (desc?.initialText || el.innerText || el.getAttribute("aria-label") || el.getAttribute("title") || "").trim();
+  if (text) {
+    const clean = text.replace(/\s+/g, " ");
+    return clean.length > 25 ? `"${clean.slice(0, 25)}..."` : `"${clean}"`;
+  }
+  if (desc?.id || el.id) {
+    return `#${desc?.id || el.id}`;
+  }
+  const tag = (desc?.tagName || el.tagName || "button").toLowerCase();
+  const classes = Array.from(el.classList).filter((c) => !c.startsWith("dh-"));
+  if (classes.length > 0) {
+    return `<${tag}.${classes.slice(0, 2).join(".")}>`;
+  }
+  return `<${tag}>`;
+};
+
 export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, autoPick }) => {
   const [lang, setLang] = useState<Language>("en");
   const [minimized, setMinimized] = useState(false);
@@ -162,7 +179,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       if (el) {
         targetElementRef.current = el;
         el.classList.add("dh-target-highlight");
-        const name = (savedTargetNameRef.current || elementResolver.text(el) || t.targetButtonDefault).trim();
+        const name = (savedTargetNameRef.current || formatElementIdentifier(el, universalDescRef.current)).trim();
         setTargetSummary(name);
       }
     };
@@ -341,7 +358,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     universalDescRef.current = elementResolver.describeUniversal(el);
 
     const desc = universalDescRef.current;
-    setTargetSummary(desc.initialText || desc.id || (el.innerText || t.lockedButtonDefault).trim().slice(0, 40));
+    setTargetSummary(formatElementIdentifier(el, desc));
     setIsTargetSaved(false);
 
     // Fast synchronous inspection
@@ -899,16 +916,12 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         <div className="dh-inner-card rounded-2xl p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t.targetVoucher}</span>
-            {isTargetSaved ? (
+            {isTargetSaved && (
               <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
                 <BookmarkCheck className="h-2.5 w-2.5" />
                 {t.savedTarget}
               </span>
-            ) : targetSummary ? (
-              <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-                {t.locked}
-              </span>
-            ) : null}
+            )}
           </div>
           {targetSummary && (
             <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl bg-emerald-500/10 px-2.5 py-1.5 ring-1 ring-emerald-500/20">
@@ -1003,7 +1016,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         </div>
 
         {/* Action Group: Primary CTA & Secondary Test Click */}
-        <div className="space-y-1.5 pt-0.5">
+        <div className="dh-action-group">
           <button
             type="button"
             onClick={() => (isArmed ? disarmHunt() : armHunt())}
