@@ -137,8 +137,14 @@ func main() {
 	handler.SetCORSAllowedOrigins(cfg.CORSOrigins())
 	handler.SetAdminEmails(cfg.AdminEmailList())
 	handler.SetGuestRateLimiter(router.NewRedisRateLimiter(rdb, "dh:rl:guest", 20, 10*time.Minute))
-	// Requests that make the server call a marketplace, per user
+	trustedProxies, err := router.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		log.Fatalf("invalid TRUSTED_PROXIES: %v", err)
+	}
+	handler.SetTrustedProxies(trustedProxies)
+	// Requests that make the server call a marketplace, per user and per client IP
 	handler.SetScrapeRateLimiter(router.NewRedisRateLimiter(rdb, "dh:rl:scrape", 30, 10*time.Minute))
+	handler.SetScrapeIPRateLimiter(router.NewRedisRateLimiter(rdb, "dh:rl:scrape-ip", 120, 10*time.Minute))
 	if v := newPhoneVerifier(cfg, rdb, logger); v != nil {
 		handler.SetPhoneVerifier(v)
 	}

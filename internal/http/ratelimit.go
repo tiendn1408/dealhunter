@@ -66,7 +66,7 @@ func writeRetryAfter(w http.ResponseWriter, d time.Duration) {
 	w.Header().Set("Retry-After", strconv.Itoa(secs))
 }
 
-// clientIP is the address set by the RealIP middleware, without the port.
+// clientIP is the client address resolved by TrustedRealIP, without the port.
 func clientIP(r *http.Request) string {
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return host

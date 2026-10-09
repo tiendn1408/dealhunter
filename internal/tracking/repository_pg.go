@@ -20,16 +20,8 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
-func (r *PostgresRepository) CreateTracking(ctx context.Context, t *domain.TrackedProduct) error {
-	// Ensure user exists to satisfy foreign key constraint
-	ensureUserQuery := `
-		INSERT INTO users (id, created_at)
-		VALUES ($1, NOW())
-		ON CONFLICT (id) DO NOTHING;
-	`
-	if _, err := r.pool.Exec(ctx, ensureUserQuery, t.UserID); err != nil {
-		return fmt.Errorf("ensure user exists: %w", err)
-	}
+// CreateTracking inserts (or re-activates) a tracking, inside tx when one is given.
+func (r *PostgresRepository) CreateTracking(ctx context.Context, tx pgx.Tx, t *domain.TrackedProduct) error {
 
 	query := `
 		INSERT INTO tracked_products (
@@ -55,7 +47,7 @@ func (r *PostgresRepository) CreateTracking(ctx context.Context, t *domain.Track
 		t.NextFetchAt = now
 	}
 
-	return r.pool.QueryRow(ctx, query,
+	return r.q(tx).QueryRow(ctx, query,
 		t.ID,
 		t.UserID,
 		t.ProductSourceID,

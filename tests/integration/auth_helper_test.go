@@ -5,10 +5,12 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -137,4 +139,14 @@ func postSignedZaloWebhook(t *testing.T, client *http.Client, url string, payloa
 		t.Fatalf("POST %s: %v", url, err)
 	}
 	return resp
+}
+
+// createGuestUser inserts the guest row a server-issued guest token belongs to (the API never creates
+// users implicitly).
+func createGuestUser(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO users (id, auth_provider) VALUES ($1, 'guest') ON CONFLICT (id) DO NOTHING`, userID); err != nil {
+		t.Fatalf("create guest user: %v", err)
+	}
 }

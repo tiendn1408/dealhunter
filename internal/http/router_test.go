@@ -173,3 +173,31 @@ func TestScrapeEndpointsRateLimited(t *testing.T) {
 		}
 	}
 }
+
+// keyLimiter refuses one key only, to check which key a limiter is asked about.
+type keyLimiter struct{ deny string }
+
+func (l keyLimiter) Allow(_ context.Context, key string) (bool, time.Duration, error) {
+	return key != l.deny, time.Minute, nil
+}
+
+// The per-IP scrape limit applies whatever the user: many guest accounts from one address share it.
+func TestScrapeLimitedPerClientIP(t *testing.T) {
+	h := newTestHandler()
+	h.trackingService = newFakeStore().trackingService()
+	h.SetScrapeIPRateLimiter(keyLimiter{deny: "203.0.113.7"})
+	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), h)
+
+	for _, ip := range []string{"203.0.113.7", "198.51.100.9"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tracked-products", strings.NewReader(`{"url":"https://shopee.vn/x-i.1.2"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = ip + ":1234"
+		authAs(req, uuid.New())
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req) // past the limiter the request fails (the fake store has no registry); only 429 matters
+		limited := w.Code == http.StatusTooManyRequests
+		if limited != (ip == "203.0.113.7") {
+			t.Errorf("%s: limited=%v (status %d)", ip, limited, w.Code)
+		}
+	}
+}

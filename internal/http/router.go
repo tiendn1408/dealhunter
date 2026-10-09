@@ -15,7 +15,7 @@ func NewRouter(logger *slog.Logger, handler *Handler) *chi.Mux {
 	handler.logger = logger
 
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(TrustedRealIP(handler.trustedProxies))
 	r.Use(middleware.Recoverer)
 	r.Use(RequestLogger(logger))
 

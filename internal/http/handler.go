@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,8 @@ type Handler struct {
 	adminEmails          map[string]bool
 	guestLimiter         RateLimiter
 	scrapeLimiter        RateLimiter
+	scrapeIPLimiter      RateLimiter
+	trustedProxies       []netip.Prefix
 	phoneVerifier        PhoneVerifier
 	logger               *slog.Logger
 }
@@ -72,6 +75,17 @@ func (h *Handler) SetAdminEmails(emails []string) {
 	}
 }
 
+// SetTrustedProxies lists the reverse proxies whose X-Forwarded-For / X-Real-IP headers are believed.
+func (h *Handler) SetTrustedProxies(p []netip.Prefix) {
+	h.trustedProxies = p
+}
+
+// SetScrapeIPRateLimiter adds a per-IP limit on top of the per-user one, so creating many guest
+// accounts from one address does not multiply the marketplace traffic it can cause.
+func (h *Handler) SetScrapeIPRateLimiter(l RateLimiter) {
+	h.scrapeIPLimiter = l
+}
+
 // SetScrapeRateLimiter limits, per user, the requests that make the server call a marketplace
 // (track a URL, link a source, auto-match, accept a suggestion).
 func (h *Handler) SetScrapeRateLimiter(l RateLimiter) {
@@ -93,18 +107,23 @@ func (h *Handler) SetPhoneVerifier(v PhoneVerifier) {
 // allowScrape enforces the per-user scrape limit; it answers 429 itself when the user is over it.
 // A limiter outage lets the request through (logged), like the guest limiter.
 func (h *Handler) allowScrape(w http.ResponseWriter, r *http.Request, userID uuid.UUID) bool {
-	if h.scrapeLimiter == nil {
-		return true
-	}
-	allowed, retryAfter, err := h.scrapeLimiter.Allow(r.Context(), userID.String())
-	if err != nil {
-		h.log().Warn("scrape rate limiter unavailable", "err", err)
-		return true
-	}
-	if !allowed {
-		writeRetryAfter(w, retryAfter)
-		http.Error(w, "Bạn thao tác quá nhanh (mỗi thao tác này phải truy cập sàn). Vui lòng thử lại sau.", http.StatusTooManyRequests)
-		return false
+	for _, check := range []struct {
+		limiter RateLimiter
+		key     string
+	}{{h.scrapeLimiter, userID.String()}, {h.scrapeIPLimiter, clientIP(r)}} {
+		if check.limiter == nil {
+			continue
+		}
+		allowed, retryAfter, err := check.limiter.Allow(r.Context(), check.key)
+		if err != nil {
+			h.log().Warn("scrape rate limiter unavailable", "err", err)
+			continue
+		}
+		if !allowed {
+			writeRetryAfter(w, retryAfter)
+			http.Error(w, "Bạn thao tác quá nhanh (mỗi thao tác này phải truy cập sàn). Vui lòng thử lại sau.", http.StatusTooManyRequests)
+			return false
+		}
 	}
 	return true
 }

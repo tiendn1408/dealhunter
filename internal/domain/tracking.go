@@ -27,7 +27,7 @@ type TrackedProduct struct {
 var ErrTrackingNotFound = errors.New("tracking not found")
 
 type TrackingRepository interface {
-	CreateTracking(ctx context.Context, t *TrackedProduct) error
+	CreateTracking(ctx context.Context, tx pgx.Tx, t *TrackedProduct) error
 	GetTracking(ctx context.Context, id uuid.UUID) (*TrackedProduct, error)
 	GetTrackingForUser(ctx context.Context, id, userID uuid.UUID) (*TrackedProduct, error)
 	GetTrackingBySource(ctx context.Context, userID, sourceID uuid.UUID) (*TrackedProduct, error)

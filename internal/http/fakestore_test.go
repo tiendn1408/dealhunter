@@ -72,7 +72,7 @@ func (f *fakeStore) AssignProductSource(_ context.Context, _ pgx.Tx, sourceID, f
 }
 
 // domain.TrackingRepository
-func (f *fakeStore) CreateTracking(_ context.Context, t *domain.TrackedProduct) error {
+func (f *fakeStore) CreateTracking(_ context.Context, _ pgx.Tx, t *domain.TrackedProduct) error {
 	f.trackings = append(f.trackings, t)
 	return nil
 }

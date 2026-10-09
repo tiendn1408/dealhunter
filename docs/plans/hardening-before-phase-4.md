@@ -133,7 +133,7 @@
 - [x] **SEC-12**: 500 ở guest/logout/me được log; lỗi DB không còn bị che thành 404 (pause/resume, xoá alert, log alert, resolve nguồn, tạo voucher); đánh dấu đã đọc ID lạ ⇒ `404`.
 - [x] **SEC-11**: body khai báo > 64KB ⇒ `413` trước handler (mọi `/api/v1`, kể cả webhook); body không khai báo độ dài vẫn bị cắt ở 64KB.
 - [x] **Test tái hiện còn thiếu**: SEC-07 nhóm dùng chung (link/accept/dismiss ⇒ 409, gợi ý giữ pending, auto-link hệ thống vẫn chạy), SEC-09 (`ADMIN_EMAILS` rỗng, thành viên không có trong danh sách, guest; bảng validate voucher gồm title > 200, code > 64 ký tự), SEC-11 (413 API + webhook, body chunked), SEC-12 (body 500 chung chung, chi tiết chỉ ở log), OTP (mã chưa gửi, gửi lại quá sớm, dùng lại mã, đoán mã 5 lần, số giữ nguyên khi chiếm thất bại), rate limit (cửa sổ trượt, 429 + Retry-After).
-- [ ] Còn lại: `middleware.RealIP` tin `X-Forwarded-For` ⇒ OPS-03 (Bước 7). `/prices` không giới hạn khoảng thời gian ⇒ PERF-02 (Bước 8). OTP thật cần mẫu ZNS được Zalo duyệt (kiểm chứng sau).
+- [ ] Còn lại: `/prices` không giới hạn khoảng thời gian ⇒ PERF-02 (Bước 8). OTP thật cần mẫu ZNS được Zalo duyệt (kiểm chứng sau). (`X-Forwarded-For` đã xử lý ở "Đợt sửa phần còn lại".)
 
 **Rà soát lần 3 (2026-10-08)** — 3 agent rà độc lập Bước 1 + 1.5 + 2 trên code đã commit; các lỗi đã sửa:
 - [x] **OTP đoán quá 5 lần khi gửi đồng thời** (tái hiện: 353/400 lần đoán được so sánh): kiểm tra + đếm + so sánh + xoá là một script Lua; lần đoán sau khi mã bị huỷ không tạo lại key. Lưu mã và TTL trong một transaction. Quota (cooldown, theo thành viên, theo thành viên+số, theo số) kiểm tra rồi mới trừ trong một script; ZNS gửi lỗi ⇒ hoàn quota. Theo số: 3 mã/giờ cho mỗi (thành viên, số), 10 mã/giờ cho mỗi số ⇒ một tài khoản không đốt hết quota của chủ số. Liên kết cùng số đồng thời được khoá theo số (không còn 500). Test đồng thời: 200 lần đoán song song ⇒ đúng 1 "quá số lần", mã thật bị từ chối; 20 yêu cầu song song ⇒ 1 mã.
@@ -151,6 +151,14 @@
 - [x] Extension: URL API/web production do web gửi sang (kiểm tra host: localhost hoặc dealhunter.vn), mặc định localhost cho dev; "rẻ hơn X%" tính so với giá Shopee đang xem.
 - [x] Tài liệu API: payload thật của comparison, gợi ý ghép, voucher.
 - Ghi chú: phí ship hiện **luôn** NULL (chưa có đường nào đọc được phí ship); tin Zalo và web cùng tính giá chưa gồm ship nên khớp nhau. Logout không cần "storm" refresh: tab nhận broadcast chỉ refresh một lần dưới khoá.
+
+**Đợt sửa phần còn lại (2026-10-09)**:
+- [x] **IP client & rate limit bị nhân lên** (kéo sớm một phần OPS-03): bỏ `middleware.RealIP` (tin `X-Forwarded-For` của bất kỳ ai); `TrustedRealIP` chỉ tin header từ `TRUSTED_PROXIES` và lấy hop ngoài cùng bên phải không thuộc proxy tin cậy (client không chèn được IP). Compose production: API chỉ bind `127.0.0.1:8080` (nginx trên host là đường vào duy nhất), `TRUSTED_PROXIES` mặc định `127.0.0.1/32,::1/128,172.16.0.0/12`. Thêm giới hạn **theo IP** cho các thao tác gọi ra sàn (120 / 10 phút) ngoài giới hạn theo người dùng ⇒ tạo nhiều guest không nhân được hạn mức.
+- [x] Gắn nguồn: tracking của người gọi được tạo **trong cùng transaction** với việc gắn (cả hai cùng thành công hoặc cùng không); `CreateTracking` không còn tự tạo dòng user "ma".
+- [x] Script E2E (`session`, `nomock`, `member`) chạy `preflight.mjs` trước: tạo một guest qua API và kiểm tra nó nằm trong `E2E_DB`; API chạy trên DB khác ⇒ dừng ngay.
+- [x] Trang chi tiết: mũi tên/màu biến động giá theo đúng chiều tăng/giảm.
+- Không sửa được: giá trị tồn kho bịa từ trước Bước 1.5 trong DB cũ (không phân biệt được với dữ liệu thật) — DB dev đã reset.
+- Còn lại cho Bước 7 (OPS-03): `/metrics` tách cổng nội bộ; cổng web `3000` cũng nên bind `127.0.0.1`.
 
 **Chỉ dùng dữ liệu thật (2026-10-08)** — dự án đang phát triển, toàn bộ dữ liệu local là dữ liệu test/mock:
 - [x] **Nguyên nhân dữ liệu mock quay lại**: integration test ghi thẳng vào DB dev (`DATABASE_URL`, mặc định `dealdb`) và Redis DB 0 — sau migration `000010` DB dev vẫn có 645 user test (`*@dealhunter.vn`) và 132 sản phẩm, phần lớn `mock.dealhunter.vn`. Nay test dùng `TEST_DATABASE_URL` / `TEST_REDIS_URL` (mặc định `dealdb_test`, Redis DB 15) và **từ chối chạy** nếu tên DB không kết thúc bằng `_test` hoặc Redis là DB 0. `make test-integration` tự tạo + migrate `dealdb_test`.

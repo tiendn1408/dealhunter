@@ -110,6 +110,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 
 	client := ts.Client()
 	userID := uuid.New()
+	createGuestUser(t, dbPool, userID)
 
 	t.Log("Step 1: Tracking a product with model code (Sony WH-1000XM5) on Shopee...")
 	testURL := "https://mock.dealhunter.vn/item/shopee-sony-wh1000xm6-" + runID

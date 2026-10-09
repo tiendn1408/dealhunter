@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	TrustedProxies      string // comma-separated IPs/CIDRs of reverse proxies whose X-Forwarded-For is believed
 	AppEnv              string
 	HTTPPort            int
 	LogLevel            string
@@ -97,6 +98,7 @@ func Load() (*Config, error) {
 	zaloEnabled := getEnv("ZALO_ENABLED", "false") == "true" || zaloToken != "" || zaloRefreshToken != ""
 
 	// Fail closed: a deployment that forgets APP_ENV gets production rules (local dev sets it in .env)
+	trustedProxies := getEnv("TRUSTED_PROXIES", "")
 	appEnv := getEnv("APP_ENV", "production")
 	isDev := !isStrictEnv(appEnv)
 
@@ -110,6 +112,7 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
+		TrustedProxies:      trustedProxies,
 		AppEnv:              appEnv,
 		HTTPPort:            port,
 		LogLevel:            getEnv("LOG_LEVEL", "info"),

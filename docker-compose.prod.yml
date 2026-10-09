@@ -55,9 +55,13 @@ services:
     command: ["/app/bin/api"]
     restart: always
     ports:
-      - "${HTTP_PORT:-8080}:8080"
+      # Only the host's nginx reaches the API (OPS-03): a public port would let clients bypass the proxy
+      # and, through Docker's userland proxy, look like a trusted proxy address
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"
     environment:
       APP_ENV: production
+      # Reverse proxy (host nginx reaches the container through the Docker gateway) whose X-Forwarded-For is believed
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32,::1/128,172.16.0.0/12}
       HTTP_PORT: 8080
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgres://${POSTGRES_USER:-dealuser}:${POSTGRES_PASSWORD:-dealpass}@postgres:5432/${POSTGRES_DB:-dealdb}?sslmode=disable

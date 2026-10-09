@@ -80,6 +80,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 
 	client := server.Client()
 	userID := uuid.New().String()
+	createGuestUser(t, dbPool, uuid.MustParse(userID))
 	slug := uuid.New().String()
 
 	// Step 1: User tracks initial product (Shopee) via POST /api/v1/tracked-products

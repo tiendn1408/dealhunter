@@ -55,6 +55,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 	comparisonSvc := comparison.NewComparisonService(comparisonRepo, comparisonCache)
 
 	userID := uuid.New()
+	createGuestUser(t, dbPool, userID)
 	slug := uuid.New().String()
 
 	// 1. Ingest initial product (Shopee)

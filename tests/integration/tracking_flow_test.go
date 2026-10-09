@@ -55,6 +55,7 @@ func TestEndToEndTrackingFlow(t *testing.T) {
 	trackingSvc := tracking.NewTrackingService(registry, productRepo, trackingRepo, jobRepo, q)
 
 	userID := uuid.New()
+	createGuestUser(t, dbPool, userID)
 	testURL := "https://mock.dealhunter.vn/product/" + uuid.New().String()
 
 	// 1. Ingest URL

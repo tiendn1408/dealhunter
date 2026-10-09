@@ -104,7 +104,7 @@ func (s *TrackingService) TrackURL(ctx context.Context, userID uuid.UUID, url st
 		UpdatedAt:              time.Now(),
 		IsPrimary:              true,
 	}
-	if err := s.trackingRepo.CreateTracking(ctx, tracked); err != nil {
+	if err := s.trackingRepo.CreateTracking(ctx, nil, tracked); err != nil {
 		return nil, fmt.Errorf("create tracking: %w", err)
 	}
 
@@ -291,8 +291,35 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 	}
 
 	groups := []uuid.UUID{targetProductID}
+	callerTracksSource := false
 	if source != nil {
 		groups = append(groups, source.ProductID)
+		tracked, err := s.trackingRepo.GetTrackingBySource(ctx, userID, source.ID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("check caller tracking: %w", err)
+		}
+		callerTracksSource = tracked != nil
+	}
+	// The caller tracks the linked source too, in the same transaction as the link: both happen or neither
+	trackSource := func(tx pgx.Tx) error {
+		if callerTracksSource {
+			return nil
+		}
+		pollInterval := 1800
+		if err := s.trackingRepo.CreateTracking(ctx, tx, &domain.TrackedProduct{
+			ID:                     uuid.New(),
+			UserID:                 userID,
+			ProductSourceID:        source.ID,
+			Active:                 true,
+			PollingIntervalSeconds: pollInterval,
+			NextFetchAt:            time.Now().Add(time.Duration(pollInterval) * time.Second),
+			CreatedAt:              time.Now(),
+			UpdatedAt:              time.Now(),
+			IsPrimary:              false,
+		}); err != nil {
+			return fmt.Errorf("track linked source: %w", err)
+		}
+		return nil
 	}
 	err = s.trackingRepo.WithGroupLock(ctx, groups, func(tx pgx.Tx) error {
 		// Re-checked under the locks: the group may have changed since the checks above
@@ -322,7 +349,7 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 				return fmt.Errorf("reassign source: %w", err)
 			}
 			source.ProductID = targetProductID
-			return nil
+			return trackSource(tx)
 		}
 
 		var extID *string
@@ -349,34 +376,10 @@ func (s *TrackingService) LinkSourceToProduct(ctx context.Context, userID, targe
 		if source.ProductID != targetProductID {
 			return ErrSourceInOtherGroup
 		}
-		return nil
+		return trackSource(tx)
 	})
 	if err != nil {
 		return nil, err
-	}
-
-	// Create TrackedProduct with IsPrimary = false if user isn't tracking yet
-	// The link is committed; the caller still has to track the new source, so failures are reported
-	tracked, err := s.trackingRepo.GetTrackingBySource(ctx, userID, source.ID)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("check caller tracking: %w", err)
-	}
-	if tracked == nil {
-		pollInterval := 1800
-		newTracked := &domain.TrackedProduct{
-			ID:                     uuid.New(),
-			UserID:                 userID,
-			ProductSourceID:        source.ID,
-			Active:                 true,
-			PollingIntervalSeconds: pollInterval,
-			NextFetchAt:            time.Now().Add(time.Duration(pollInterval) * time.Second),
-			CreatedAt:              time.Now(),
-			UpdatedAt:              time.Now(),
-			IsPrimary:              false,
-		}
-		if err := s.trackingRepo.CreateTracking(ctx, newTracked); err != nil {
-			return nil, fmt.Errorf("track linked source: %w", err)
-		}
 	}
 
 	// Create and enqueue initial fetch job
