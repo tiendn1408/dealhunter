@@ -1,41 +1,46 @@
-# DealHunter — Kế Hoạch & Thiết Kế Kỹ Thuật Chrome Extension Assistant
-# (Client-Side Fast Voucher Clicker & Price Intelligence In-Page)
+# DealHunter — Ke Hoach & Thiet Ke Ky Thuat Chrome Extension Assistant
+# (Universal Fast Clicker, Multi-Platform Voucher Sniper & Price Intelligence)
 
-> **Mục tiêu tài liệu**: Đặc tả vị trí kiến trúc, mô hình dữ liệu, cơ chế tương tác API giữa **Backend DealHunter** và **DealHunter Chrome Extension (Client-Side Assistant)**; đồng thời giải thích chiến lược kinh doanh bảo toàn hoa hồng Affiliate và lộ trình mở rộng đa sàn TMĐT.
-
----
-
-## 1. Bối Cảnh & Động Lực Phát Triển
-
-### 1.1. Nỗi Đau Thực Tế Của Người Dùng (User Pain Points)
-1. **Hiện tượng "bốc hơi" của Voucher lớn (Flash Vouchers)**:
-   - Các mã giảm giá 15% - 20%, voucher 500k - 1 triệu vào các đợt Siêu Sale (10/10, 11/11, 12/12) tại các khung giờ vàng (0h, 9h, 12h, 18h, 21h) thường hết sạch trong 1 đến 3 giây.
-   - Người dùng bấm tay thông thường không thể cạnh tranh được với công cụ auto-click.
-2. **Shopee Anti-Bot chặn triệt để Server-Side Bot**:
-   - Shopee áp dụng cơ chế xác thực 2 lớp (2FA/OTP), Cloudflare WAF, canvas fingerprinting và captcha trượt hình.
-   - Nếu Backend DealHunter tự động đăng nhập tài khoản người dùng từ server để "lưu hộ", máy chủ sẽ bị ban IP, tài khoản Shopee của khách hàng sẽ bị khóa vĩnh viễn (lỗi F02/M04) và tài khoản Affiliate của DealHunter sẽ bị sàn hủy hoa hồng.
-
-### 1.2. Giải Pháp: Client-Side Assistant Chuẩn Manifest V3
-Thay vì can thiệp bằng bot từ máy chủ, DealHunter cung cấp tiện ích mở rộng chạy trực tiếp trên trình duyệt của người dùng (**Client-Side**):
-- Sử dụng địa chỉ IP mạng cá nhân và cookie đăng nhập chính chủ của người dùng $\to$ **100% hợp lệ và an toàn**.
-- Tự động bù trừ độ lệch đồng hồ Shopee Server qua HTTP HEAD ping với độ chính xác mili-giây.
-- Web Worker Ticker độc lập duy trì nhịp click 25ms - 35ms không bị Chrome bóp nghẹt tài nguyên khi tab chạy nền.
-- Đóng vai trò là "Cánh tay nối dài" trên trình duyệt, kết nối dữ liệu 2 chiều với Backend Go API.
+> **Muc tieu tai lieu**: Dac ta vi tri kien truc, mo hinh du lieu, co che tuong tac API giua **Backend DealHunter** va **DealHunter Chrome Extension (Client-Side Assistant)**; mo ta toan dien nang luc **Universal Fast Clicker & Sniper tren moi trang web**, co che san voucher va bao toan hoa hong Affiliate da san TMDT.
+>
+> Cap nhat: 2026-10-09 · Ap dung cho ma nguon hoan thien trong `extension/src` va ban build `extension/dist`.
 
 ---
 
-## 2. Vị Trí Trong Kiến Trúc Tổng Thể Hệ Sinh Thái
+## 1. Boi Canh & Dinh Vi He Thong
+
+### 1.1. Tu Shopee Voucher den Universal Web Sniper
+Ban dau, tien ich duoc thiet ke de giai quyet bai toan san ma giam gia chop nhoang tren Shopee. Tuy nhien, qua trinh thuc te cho thay nguoi dung co nhu cau rat lon ve viec **click chinh xac vao dung thoi khac 00:00:00 hoac gio vang tren nhieu nen tang khac nhau**:
+1. **San ve su kien / concert** tren cac trang ban ve (Ticketbox, Ticketmaster, v.v.): Cac su kien hot mo ban dung 00:00 hoac 12:00 thuong het ve trong 2 den 5 giay.
+2. **Dang ky tin chi / hoc phan**: Cac cong dang ky cua truong dai hoc mo dung gio G, yeu cau bam nut "Dang ky" nhanh hon hang ngan sinh vien khac.
+3. **Flash sale chop nhoang da san**: Ngoai Shopee, cac su kien mo ban gioi han tren Lazada, Tiki, TikTok Shop hoac cac website ban hang rieng biet.
+4. **Voucher gia tri lon tren Shopee**: Cac ma giam 15% - 20%, voucher 500k - 1 trieu mo vao khung gio 0h, 9h, 12h, 15h, 18h, 21h het trong tich tac.
+
+### 1.2. Nguyen Ly Thiet Ke Client-Side Assistant (Manifest V3)
+Thay vi can thiep bang bot tu may chu backend (de bi he thong Cloudflare WAF, captcha, chan IP va khoa tai khoan F02/M04), DealHunter trien khai kien truc **Client-Side Assistant** chay truc tiep tren trinh duyet nguoi dung:
+- Su dung session dang nhap chinh chu, cookie va dia chi IP hop le cua nguoi dung -> **100% an toan va khong bi coi la bot can thiep trai phep**.
+- Tinh toan do lech thoi gian mili-giay giua may tinh va server (NTP Time Calibration).
+- Web Worker High-Resolution Timer doc lap duy tri nhip tick 10ms khong bi trinh duyet Chrome bop nghet tai nguyen khi tab chay nen.
+- Mo phong chuoi su kien chuot nguoi that (Anti-Bot Human Clicker) voi toa do ngau nhien de tranh bi phat hien.
+
+---
+
+## 2. Kien Truc Tong The He Thong
 
 ```mermaid
 flowchart TD
-    subgraph Browser ["Trình Duyệt Người Dùng (Client Machine)"]
-        ShopeeTab["Tab Web Shopee.vn (DOM, React App, Voucher Hub, Cart)"]
+    subgraph Browser ["Trinh Duyet Nguoi Dung (Client Browser)"]
+        subgraph TargetPages ["Cac Trang Web Muc Tieu"]
+            WebTab["Universal Web Page (Ticketbox, Dang ky hoc phan, Event URLs)"]
+            ShopeeTab["Shopee Web (Voucher Hub, Cart, Product Page)"]
+        end
         
         subgraph Extension ["DealHunter Chrome Extension (Manifest V3)"]
-            HUD["Floating HUD (Đếm ngược mili-giây, Chọn nút, Semi-Auto)"]
-            Scheduler["Background Scheduler (chrome.alarms, Full-Auto)"]
-            PriceBadge["Price History Badge (Floating Widget trên Product Page)"]
-            CoreEngine["Core Clicker (TimeSync, WebWorker, HumanizedClick)"]
+            HUD["Floating HUD (Sniper · Domain, 00:00 Preset, Target Picker, EN/VI)"]
+            Scheduler["Background Scheduler (chrome.alarms, Full-Auto, Custom URL)"]
+            PriceBadge["Price History Badge (Floating Widget tren Product Page)"]
+            CoreEngine["Core Engine (NTP TimeSync, WebWorker, HumanizedClick)"]
+            PopupApp["Popup Dashboard (3 Tabs: Live Sniper, Schedule, My Hunts)"]
         end
         
         WebDashboard["DealHunter Web (Next.js 14 Dashboard)"]
@@ -50,8 +55,10 @@ flowchart TD
         RedisCache[(Redis Cache & Stream)]
     end
 
-    HUD <-->|DOM Events & Clicks| ShopeeTab
+    HUD <-->|DOM Events & Real Clicks| WebTab
+    HUD <-->|DOM Events & Real Clicks| ShopeeTab
     PriceBadge <-->|Extract SKU| ShopeeTab
+    Scheduler -->|chrome.tabs.create| WebTab
     Scheduler -->|chrome.tabs.create| ShopeeTab
     
     PriceBadge -->|GET /tracked-products/{id}/comparison| API
@@ -67,102 +74,106 @@ flowchart TD
 
 ---
 
-## 3. Các Luồng Nghiệp Vụ Tương Tác Giữa Extension Và Backend
+## 3. Cac Tinh Nang Va Luong Nghiep Vu Chinh
 
-### 3.1. Luồng Báo Giá & So Sánh Đa Sàn (In-Page Price Intelligence)
-Khi người dùng đang lướt xem bất kỳ sản phẩm nào trên trang `shopee.vn/product/...` hoặc `shopee.vn/*-i.*.*`:
-1. **Extension** trích xuất URL và mã định danh sản phẩm (`itemId`, `shopId`).
-2. **Extension** gọi API:
-   ```http
-   GET /api/v1/tracked-products
-   ```
-3. Nếu sản phẩm đã nằm trong hệ thống theo dõi:
-   - Extension gọi tiếp:
-     ```http
-     GET /api/v1/tracked-products/{id}/comparison
-     ```
-   - Nhận về thông tin `best_deal`, giá đáy lịch sử 30 ngày, giá so sánh trên Lazada và TikTok Shop.
-   - Hiển thị component `PriceHistoryBadge` nhỏ gọn ở góc màn hình báo: *"Sản phẩm này đang rẻ hơn 18% trên TikTok Shop"* kèm link chuyển đổi.
-4. Nếu sản phẩm chưa có trong hệ thống:
-   - Hiển thị nút "Theo dõi giá trên DealHunter". Người dùng bấm 1 chạm sẽ tự động gửi `POST /api/v1/tracked-products` vào tài khoản cá nhân.
+### 3.1. Universal Live Sniper (Ban Tia Truc Tiep Tren Moi Trang Web)
+- **Pham vi**: Ap dung tren moi trang web HTTP/HTTPS (`<all_urls>`).
+- **Nhan dien tu dong**: Khi mo Popup, he thong tu dong phat hien domain hien tai (vi du: `ticketbox.vn active`, `shopee.vn active`) va hien nut lon noi bat:
+  `START SNIPER ON THIS PAGE` / `BAT DAU SAN TREN TRANG NAY`.
+- **Bang dieu khien Floating HUD**:
+  - Hien thi tieu de dong theo domain: `DealHunter · Sniper · <domain>`.
+  - Ba moc gio truc chien:
+    + `[00:00]`: Canh nua dem dung 00:00:00.000 (khuyen dung cho moi trang web).
+    + `[Next flash]`: Canh gio sale ke tiep (0h, 9h, 12h, 15h, 18h, 21h).
+    + `[Next min]`: Canh dau phut ke tiep de kiem tra truoc.
+  - **Khoa nut muc tieu (Target Picker)**:
+    + Nut `Pick button` (`Chon nut`): Ho tro re chuot va khoa **bat ky nut nao tren DOM** cua bat ky website nao (ke ca khi nut dang bi disable/mo truoc gio G).
+    + Nut `Auto-detect` (`Tu quet nut`): Quet nhanh nut Luu voucher Shopee.
+  - **Phat hoa luc (Arming & Firing)**:
+    + Khi bam `Arm sniper`, he thong vao trang thai truc chien dem nguoc miligiay.
+    + Dung gio G (truoc 150ms de bu do tre mang), he thong ban loat click 35ms/click vao dung nut da khoa cho den khi trang xac nhan hoac het cua so 3 giay.
 
----
+### 3.2. Full-Auto Schedule Voi Custom URL (Hen Gio Tu Dong 100%)
+- **Pham vi**: Khong chi gioi han cac trang Hub co san cua Shopee, nguoi dung co the dat lich cho **bat ky duong link web nao** qua tuy chon `Custom URL`.
+- **Quy trinh hen gio**:
+  1. Mo popup -> The `Schedule`.
+  2. Chon gio chay (`00`, `09`, `12`, `15`, `18`, `21`).
+  3. Chon trang muc tieu: Shopee Hub, 10.10 Sale, Cart, hoac **`Custom URL`**.
+  4. Voi `Custom URL`, nguoi dung co the bam nut 1-click **`Use current page`** (`Dung link hien tai`) de tu dong dien link dang xem hoac dan link tuy y.
+  5. Dien tu khoa (neu can).
+  6. Service Worker tao `chrome.alarms`.
+- **Quy trinh thuc thi luc gio G**:
+  1. **Truoc gio G 60 giay**: Service Worker danh thuc, do lai RTT dong bo gio va goi `chrome.tabs.create` mo tab moi den link muc tieu.
+  2. **Tab tai xong**: Content script tu dong cuon man hinh toi vi tri nut va san sang.
+  3. **Dung gio G**: Tu dong kich hoat chuoi burst click va ghi lai ket qua vao the `My Hunts`.
 
-### 3.2. Luồng Săn Voucher & Kích Hoạt Hoa Hồng (Voucher Hunt & Early Cookie Drop)
-Khi người dùng truy cập trang mã giảm giá Shopee (`shopee.vn/m/ma-giam-gia`, `shopee.vn/m/10-10`, `shopee.vn/cart`):
-1. **Extension** kích hoạt `FloatingHUD` kèm đồng hồ Shopee Server mili-giây.
-2. Extension lấy danh sách mã hot ngày Siêu Sale từ Backend:
-   ```http
-   GET /api/v1/tracked-products/{id}/vouchers
-   ```
-3. Các URL thu thập mã (`collect_url`) trả về từ Backend đã được bọc sẵn **Affiliate Deeplink**:
-   ```text
-   https://s.shopee.vn/universal-link?url=https%3A%2F%2Fshopee.vn%2Fm%2F10-10&sub_id=u_{user_id}_p_{product_id}
-   ```
-4. **Hiệu ứng kép (Double Benefit)**:
-   - **Với người dùng**: Extension kích hoạt chuỗi click tốc độ 35ms giúp họ giật được mã 500k trước khi hết lượt.
-   - **Với hệ sinh thái DealHunter**: Thao tác mở trang và lưu mã kích hoạt ngay lập tức **Cookie Affiliate 7 - 30 ngày** có gắn mã `sub_id` của DealHunter. Khi người dùng hoàn tất đơn hàng, DealHunter được ghi nhận 100% doanh thu hoa hồng.
-
----
-
-## 4. Hai Chế Độ Vận Hành Chi Tiết
-
-### 4.1. Chế Độ 1: Bán Tự Động (Semi-Auto) — Trợ Lý Trực Tiếp
-* **Mục đích**: Dành cho người dùng chủ động ngồi trước máy tính vào khung giờ vàng (ví dụ lúc 23h55).
-* **Quy trình hoạt động**:
-  1. Người dùng mở sẵn tab Shopee chứa voucher cần săn.
-  2. Floating HUD hiển thị đồng hồ Shopee Server và độ lệch ping RTT.
-  3. Người dùng bấm **Trỏ Chọn Nút** (hoặc để hệ thống **Tự Tìm Nút**).
-  4. Chọn khung giờ mục tiêu (mặc định: Khung giờ vàng kế tiếp `0h, 9h, 12h, 15h, 18h, 21h`, hoặc Phút kế tiếp để test).
-  5. Bấm **BẬT SĂN MÃ (SEMI-AUTO)**.
-  6. Đúng thời điểm `TargetTime - 80ms`: Tiện ích tự động bắn chuỗi click tốc độ 35ms trong vòng 1.5 - 2.0 giây cho đến khi nút chuyển sang trạng thái "Đã lưu".
+### 3.3. In-Page Price Intelligence (Theo Doi & So Sanh Gia Xuyen San)
+- Khi nguoi dung xem san pham tren Shopee (`shopee.vn/product/...` hoac `shopee.vn/*-i.*.*`), component `PriceHistoryBadge` kiem tra voi Backend DealHunter:
+  - Neu san pham da duoc theo doi: Hien thi gia day lich su 30 ngay va thong bao so sanh neu san khac (Lazada / TikTok Shop) co gia re hon.
+  - Neu san pham chua theo doi: Hien thi nut de nguoi dung theo doi nhanh 1-cham vao tai khoan DealHunter.
 
 ---
 
-### 4.2. Chế Độ 2: Tự Động Hoàn Toàn (Full-Auto) — Đặt Lịch Hẹn Trước
-* **Mục đích**: Dành cho người dùng không muốn thức canh màn hình hoặc muốn chuẩn bị trước nhiều tiếng đồng hồ.
-* **Quy trình hoạt động**:
-  1. Người dùng mở Popup Extension, chọn:
-     - Khung giờ săn (ví dụ: `0h00`).
-     - Trang Shopee mục tiêu (Hub mã, giỏ hàng, hoặc trang chiến dịch 10/10).
-     - Từ khóa lọc voucher (ví dụ: `"15%"`, `"500k"`).
-  2. Background Service Worker tạo lịch hẹn qua `chrome.alarms.create`.
-  3. **Thời điểm `T - 60 giây`**:
-     - Service Worker đánh thức, gửi lệnh `chrome.tabs.create` tự động mở tab Shopee mới và đưa vào trạng thái `active: true`.
-     - Đo lại RTT ping để hiệu chỉnh đồng hồ máy chủ Shopee lần cuối.
-     - Content Script tải xong, tự động tìm và khóa mục tiêu khớp với từ khóa.
-  4. **Thời điểm `T - 80ms` (Đúng 00:00:00)**:
-     - Tự động kích hoạt Turbo Burst Clicker.
-     - Cập nhật trạng thái tác vụ thành `completed` và phát âm thanh thông báo để người dùng chốt đơn.
+## 4. Chi Tiet Kien Truc Ma Nguon Extension
 
----
-
-## 5. Nguyên Tắc An Toàn & Chống Khóa Tài Khoản (Anti-Ban Safety)
-
-1. **Chuỗi sự kiện chuột toàn diện (Synthetic Event Chain)**:
-   Không sử dụng lệnh gọi `element.click()` đơn độc (dễ bị React synthetic event scanner bỏ qua hoặc gắn cờ bot). Sử dụng chuỗi 5 sự kiện chuột hoàn chỉnh:
-   $$\text{pointerdown} \longrightarrow \text{mousedown} \longrightarrow \text{pointerup} \longrightarrow \text{mouseup} \longrightarrow \text{click}$$
-2. **Tọa độ click ngẫu nhiên bên trong nút (Coordinate Jitter)**:
-   Mỗi nhịp click rơi vào tọa độ ngẫu nhiên trong vùng an toàn từ 25% đến 75% chiều dài và chiều rộng của nút bấm, mô phỏng chính xác thao tác nhấp chuột của con người.
-3. **Ngắt an toàn tự động (Safe Burst Window)**:
-   - Tần suất: 35ms/click.
-   - Giới hạn: Tối đa 25 - 30 clicks trong cửa sổ tối đa 2.0 giây.
-   - Tự động dừng ngay lập tức khi phát hiện nút chuyển sang nhãn: `"Đã lưu"`, `"Đã nhận"`, `"Dùng ngay"`, `"Hết lượt"`, hoặc bị gắn thuộc tính `disabled`.
-
----
-
-## 6. Lộ Trình Mở Rộng Đa Sàn (Multi-Marketplace Roadmap)
-
-Hệ thống được thiết kế theo mẫu **MarketplaceAdapter Interface**, cho phép mở rộng không giới hạn:
+Ma nguon extension tai `extension/src` duoc to chuc ro rang va toi uu theo module:
 
 ```text
-src/content/adapters/
-├── adapter_interface.ts      # Hợp đồng chung cho mọi sàn
-├── shopee_adapter.ts        # Hoàn thiện 100% trong đợt này
-├── lazada_adapter.ts        # Mở rộng tiếp theo (Lazada Voucher Collector)
-└── tiktok_adapter.ts        # Mở rộng tiếp theo (TikTok Shop Live Voucher)
+extension/
+├── public/
+│   ├── manifest.json            # Manifest V3 (<all_urls>, scripting, storage, alarms)
+│   └── icons/                   # Logo DealHunter cac kich thuoc 16, 24, 32, 48, 128, 512
+├── src/
+│   ├── background/
+│   │   ├── index.ts             # Service Worker khoi tao, dieu phoi message
+│   │   ├── scheduler.ts         # chrome.alarms quan ly lich hen, tu dong mo tab
+│   │   ├── time_calibrator.ts   # Tinh toan do lech gio qua HTTP HEAD RTT
+│   │   └── web_session.ts       # Quan ly phien dang nhap tu web DealHunter
+│   ├── content/
+│   │   ├── core/
+│   │   │   ├── element_resolver.ts # Quet, trich xuat descriptor va relocate nut DOM
+│   │   │   ├── human_clicker.ts    # Chuoi su kien chuot nguoi that voi random jitter
+│   │   │   ├── hunt_engine.ts      # Vong lap truc chien miligiay, ho tro user-locked target
+│   │   │   ├── time_sync_client.ts # Client dong bo gio miligiay
+│   │   │   └── timer_worker.ts     # Web Worker Ticker 10ms khong bi throttle
+│   │   ├── ui/
+│   │   │   ├── FloatingHUD.tsx     # Bang dieu khien Sniper noi tren trang (00:00, pick button)
+│   │   │   └── PriceHistoryBadge.tsx # Huy hieu gia tren trang san pham
+│   │   └── index.tsx            # Content script entrypoint, lang nghe ACTIVATE_HUD
+│   ├── popup/
+│   │   ├── components/
+│   │   │   ├── ScheduleForm.tsx    # Form dat lich hen (ho tro Custom URL)
+│   │   │   ├── TaskList.tsx        # Danh sach lich hen va ket qua
+│   │   │   └── TimeOffsetCard.tsx  # The trang thai dong bo gio va ping RTT
+│   │   ├── App.tsx              # Popup giao dien 3 tab, nhan dien domain active
+│   │   └── index.tsx            # Popup mount
+│   └── lib/
+│       ├── constants.ts         # Hang so he thong
+│       ├── drop_time.ts         # Tinh toan moc gio Viet Nam (GMT+7)
+│       ├── i18n.ts              # Tu dien song ngu EN (mac dinh) / VI co dau
+│       ├── storage.ts           # Wrapper chrome.storage
+│       └── types.ts             # TypeScript interfaces
 ```
 
-* **Giai đoạn 1 (Hiện tại)**: Tối ưu 100% cho Shopee Web (nơi có lượng voucher lớn nhất và cạnh tranh gay gắt nhất).
-* **Giai đoạn 2 (Dự kiến)**: Bật module `lazada_adapter.ts` cho các đợt Mega Sale của Lazada (trang `lazada.vn/voucher`).
-* **Giai đoạn 3 (Dự kiến)**: Bật module `tiktok_adapter.ts` để tự động giật mã trợ giá trên các phiên TikTok Shop Live.
+---
+
+## 5. Cac Co Che Phong Ve & Chong Chan Bot (Anti-Bot Defenses)
+
+1. **Synthetic Pointer/Mouse Event Chain**:
+   Khong bao gio goi `element.click()` don thuan. Thay vao do, `human_clicker.ts` phat day du 7 su kien lien tiep:
+   `pointerover` -> `pointerenter` -> `pointerdown` -> `mousedown` -> `focus` -> `pointerup` -> `mouseup` -> `click`
+2. **Random Coordinate Jitter (30% - 70%)**:
+   Toa do moi cu click duoc tinh toan ngau nhien trong pham vi an toan ben trong khung nut, tranh bi he thong an ninh phat hien toa do co dinh bat thuong.
+3. **Tu dong ngat va gioi han an toan**:
+   Moi phien burst click gioi han toi da 80 clicks trong vong 3 giay. He thong tu dong dung ngay lap tuc khi nut chuyen sang trang thai hoan tat (Da luu, Het luot, hoac bien mat).
+
+---
+
+## 6. Quy Chuan Chat Luong & Kiem Thu
+
+- **35/35 Unit Tests Vitest Pass**:
+  Bao phu toan dien tu thuat toan NTP time calibrator, drop time GMT+7, human clicker jitter, element resolver den hunt engine ho tro universal locked target tren moi trang web.
+- **Zero-Emoji Policy**:
+  Toan bo ma nguon, giao dien nguoi dung (UI) va tai lieu he thong tuan thu tuyet doi 100% quy chuan Zero-Emoji.
+- **Song ngu chuan muc**:
+  Giao dien tieng Anh mac dinh toan cau, kem ho tro tieng Viet co dau chuan xac 100% co the chuyen doi tuc thi.

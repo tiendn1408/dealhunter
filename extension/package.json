@@ -1,7 +1,7 @@
 {
   "name": "dealhunter-extension",
   "version": "1.0.0",
-  "description": "DealHunter Assistant - Client-Side Fast Voucher Clicker for Shopee Web",
+  "description": "DealHunter Assistant - Universal Fast Clicker and Sniper for Midnight Drops, Flash Sales, and Price Intelligence",
   "private": true,
   "type": "module",
   "scripts": {

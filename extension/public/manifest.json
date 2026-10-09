@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "DealHunter Assistant - Fast Voucher Clicker",
+  "name": "DealHunter Assistant",
+  "short_name": "DealHunter",
   "version": "1.0.0",
-  "description": "Client-Side Fast Voucher Clicker and Price Intelligence for Shopee Vietnam",
+  "description": "Universal high-speed sniper and fast clicker for midnight drops (00:00), flash sales, ticket booking, and e-commerce price intelligence.",
   "permissions": [
     "storage",
     "alarms",
