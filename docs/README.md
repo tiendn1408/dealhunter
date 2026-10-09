@@ -55,3 +55,4 @@ De chuan bi cho cac giai doan tiep theo (Phase 2, Phase 3, ...), tat ca tai lieu
 
 ### Tiện Ích Chrome DealHunter Assistant (`docs/extension/`)
 - [**huong-dan-su-dung.md**](extension/huong-dan-su-dung.md): Hướng dẫn cài đặt và sử dụng tiện ích săn voucher Shopee (bán tự động, tự động 100%, đọc kết quả, xử lý sự cố).
+- [**ra-soat-loi-va-ke-hoach-sua.md**](extension/ra-soat-loi-va-ke-hoach-sua.md): Rà soát extension 2026-10-09 — danh sách lỗi (nghiêm trọng → thấp), quyết định sản phẩm, tài liệu cũ, lỗ hổng test và kế hoạch sửa 3 đợt.
