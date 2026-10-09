@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { timeSyncClient } from "../core/time_sync_client";
 import { humanClicker } from "../core/human_clicker";
+import { ClickProfileMode } from "../core/human_biometrics";
 import { elementResolver, UniversalTargetDescriptor } from "../core/element_resolver";
 import { HuntOutcome } from "../core/hunt_engine";
 import { huntCoordinator, ARMED_SESSION_KEY } from "../core/hunt_coordinator";
@@ -69,6 +70,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   const [targetSlot, setTargetSlot] = useState<TargetSlot>("quick_10s");
   const [customTime, setCustomTime] = useState("00:00:00");
+  const [clickProfile, setClickProfile] = useState<ClickProfileMode>("pro_gamer");
   const armedTargetTimestampRef = useRef<number | null>(null);
   const [countdownStr, setCountdownStr] = useState("--:--:--.-");
   const [targetLabel, setTargetLabel] = useState("--:--:--");
@@ -135,6 +137,18 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       }
     });
   }, [lang]);
+
+  // Load saved click profile from settings on mount
+  useEffect(() => {
+    storage.getSettings().then((s) => {
+      if (s.clickProfileMode) setClickProfile(s.clickProfileMode);
+    });
+  }, []);
+
+  const handleSelectProfile = (mode: ClickProfileMode) => {
+    setClickProfile(mode);
+    storage.saveSettings({ clickProfileMode: mode });
+  };
 
   // Continuous target locator: observes DOM mutations & polls to ensure target highlight is NEVER lost on reload/SPAs
   useEffect(() => {
@@ -582,6 +596,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       targetSlot,
       customTime: targetSlot === "custom" ? customTime : undefined,
       label: targetSummary || undefined,
+      clickProfileMode: clickProfile,
     });
   };
 
@@ -594,7 +609,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   const handleManualTestClick = () => {
     if (targetElementRef.current) {
-      humanClicker.dispatchClick(targetElementRef.current);
+      humanClicker.dispatchClick(targetElementRef.current, { profileMode: clickProfile, approach: true });
       setStatus({ text: t.testClickSuccess, tone: "idle" });
     } else {
       handleAutoDetect();
@@ -924,6 +939,77 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               </button>
             </div>
           )}
+        </div>
+
+        {/* Biometric Click Mode */}
+        <div className="rounded-2xl bg-white/[0.03] p-2.5 ring-1 ring-white/5">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              {t.clickProfileTitle}
+            </span>
+            <span className="font-mono text-[9px] text-emerald-400 font-medium">
+              {clickProfile === "stealth"
+                ? "~7 CPS · Stealth"
+                : clickProfile === "pro_gamer"
+                ? "~14 CPS · Human"
+                : "~23 CPS · Blitz"}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              type="button"
+              disabled={isArmed}
+              onClick={() => handleSelectProfile("stealth")}
+              className={`flex flex-col items-center justify-center rounded-xl py-1.5 px-1 text-center transition ${
+                clickProfile === "stealth"
+                  ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+                  : "bg-white/[0.02] text-slate-400 hover:bg-white/5 hover:text-slate-200"
+              }`}
+              title={t.clickProfileStealthDesc}
+            >
+              <div className="flex items-center gap-1 text-[11px] font-semibold">
+                <ShieldCheck className="h-3 w-3" />
+                <span>{t.clickProfileStealth}</span>
+              </div>
+              <span className="text-[9px] text-slate-500 font-mono">140ms</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isArmed}
+              onClick={() => handleSelectProfile("pro_gamer")}
+              className={`flex flex-col items-center justify-center rounded-xl py-1.5 px-1 text-center transition ${
+                clickProfile === "pro_gamer"
+                  ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+                  : "bg-white/[0.02] text-slate-400 hover:bg-white/5 hover:text-slate-200"
+              }`}
+              title={t.clickProfileProGamerDesc}
+            >
+              <div className="flex items-center gap-1 text-[11px] font-semibold">
+                <MousePointerClick className="h-3 w-3" />
+                <span>{t.clickProfileProGamer}</span>
+              </div>
+              <span className="text-[9px] text-slate-500 font-mono">72ms</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isArmed}
+              onClick={() => handleSelectProfile("turbo")}
+              className={`flex flex-col items-center justify-center rounded-xl py-1.5 px-1 text-center transition ${
+                clickProfile === "turbo"
+                  ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+                  : "bg-white/[0.02] text-slate-400 hover:bg-white/5 hover:text-slate-200"
+              }`}
+              title={t.clickProfileTurboDesc}
+            >
+              <div className="flex items-center gap-1 text-[11px] font-semibold">
+                <Zap className="h-3 w-3" />
+                <span>{t.clickProfileTurbo}</span>
+              </div>
+              <span className="text-[9px] text-slate-500 font-mono">40ms</span>
+            </button>
+          </div>
         </div>
 
         {/* Arm / Disarm */}

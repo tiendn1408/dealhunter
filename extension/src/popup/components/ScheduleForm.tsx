@@ -53,8 +53,15 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
   // Target time state
   const nextSale = useMemo(() => getNextSaleDrop(Date.now()), []);
   const [timeInput, setTimeInput] = useState<string>(nextSale.timeStr);
+  const [clickProfileMode, setClickProfileMode] = useState<"stealth" | "pro_gamer" | "turbo">("pro_gamer");
   const [submitting, setSubmitting] = useState(false);
   const t = getTranslation(lang);
+
+  useEffect(() => {
+    storage.getSettings().then((s) => {
+      if (s.clickProfileMode) setClickProfileMode(s.clickProfileMode);
+    });
+  }, []);
 
   // 1. Detect active browser tab & saved target for this tab
   useEffect(() => {
@@ -179,6 +186,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         descriptor: targetSnapshot?.descriptor,
         dualDefenseReload: true,
         diagnostics: targetSnapshot?.diagnostics,
+        clickProfileMode,
         preWarmSeconds: 60, // Optimal autonomous pre-warm lead time
         status: "pending",
         createdAt: Date.now(),

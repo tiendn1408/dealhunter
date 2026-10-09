@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = {
   language: "en" as const,
   burstIntervalMs: 35, // 35ms between clicks
   burstDurationMs: 2000, // 2.0s maximum burst window
+  clickProfileMode: "pro_gamer" as const,
   preWarmSeconds: 60, // Open tab 60s in advance
   soundEnabled: true,
   autoCheckoutReady: true,

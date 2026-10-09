@@ -176,6 +176,15 @@ export const I18N = {
     analyzingTarget: "Analyzing page reactivity...",
     standbyStateBadge: "Standby",
 
+    // Click Profiles & Biometrics
+    clickProfileTitle: "Biometric Click Mode",
+    clickProfileStealth: "Stealth Human",
+    clickProfileStealthDesc: "~7 CPS · 100% human motor speed & variance",
+    clickProfileProGamer: "Pro Gamer",
+    clickProfileProGamerDesc: "~14 CPS · Jitter clicking with muscle recovery cadency",
+    clickProfileTurbo: "Turbo Blitz",
+    clickProfileTurboDesc: "~23 CPS · Ultra-fast burst with Gaussian jitter",
+
     // Price History Badge
     priceBadgeTitle: "DealHunter Intelligence",
     betterDealPrefix: "Better deal on",
@@ -363,6 +372,15 @@ export const I18N = {
     dualDefenseHint: "F5 trước 15s làm mới session & F5 khẩn cấp nếu nút chưa mở sau giờ G",
     analyzingTarget: "Đang phân tích phản hồi trang...",
     standbyStateBadge: "Chờ giờ G",
+
+    // Click Profiles & Biometrics
+    clickProfileTitle: "Chế độ click sinh học",
+    clickProfileStealth: "Người thật",
+    clickProfileStealthDesc: "~7 CPS · Tốc độ cơ học người thật & phương sai tự nhiên",
+    clickProfileProGamer: "Game thủ",
+    clickProfileProGamerDesc: "~14 CPS · Kỹ thuật jitter clicking & ngắt nhịp phục hồi cơ",
+    clickProfileTurbo: "Siêu tốc",
+    clickProfileTurboDesc: "~23 CPS · Bắn liên thanh kèm độ lệch chuẩn Gauss",
 
     // Price History Badge
     priceBadgeTitle: "DealHunter Intelligence",

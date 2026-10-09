@@ -1,6 +1,7 @@
 import { startHunt, HuntOutcome } from "./hunt_engine";
 import { elementResolver, UniversalTargetDescriptor } from "./element_resolver";
 import { timeSyncClient } from "./time_sync_client";
+import { ClickProfileMode } from "./human_biometrics";
 import { storage } from "../../lib/storage";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask } from "../../lib/types";
@@ -16,6 +17,7 @@ export interface ArmedSession {
   customTime?: string;
   descriptor?: UniversalTargetDescriptor;
   keyword?: string;
+  clickProfileMode?: ClickProfileMode;
   url: string;
   armedAt: number;
 }
@@ -97,6 +99,7 @@ export class HuntCoordinator {
     targetSlot?: string;
     customTime?: string;
     keyword?: string;
+    clickProfileMode?: ClickProfileMode;
   }): void {
     if (this.state.isArmed) {
       if (params.taskId && this.currentSession?.taskId === params.taskId) {
@@ -128,6 +131,7 @@ export class HuntCoordinator {
       customTime: params.customTime,
       descriptor: desc || undefined,
       keyword: params.keyword,
+      clickProfileMode: params.clickProfileMode,
       url: typeof window !== "undefined" ? window.location.href : "",
       armedAt: Date.now(),
     };
@@ -162,6 +166,7 @@ export class HuntCoordinator {
       locked: targetEl,
       universalDescriptor: desc ?? undefined,
       keyword: params.keyword,
+      clickProfileMode: params.clickProfileMode,
       dualDefenseReload: true,
       onStatus: (msg) => {
         const isFiring = msg.includes("active") || msg.startsWith("Saving");
@@ -213,6 +218,7 @@ export class HuntCoordinator {
       targetSlot: "custom",
       customTime: `${String(task.targetHour).padStart(2, "0")}:${String(task.targetMinute).padStart(2, "0")}:${String(second).padStart(2, "0")}`,
       keyword: task.keyword,
+      clickProfileMode: task.clickProfileMode,
     });
   }
 
@@ -241,6 +247,7 @@ export class HuntCoordinator {
           targetSlot: session.targetSlot,
           customTime: session.customTime,
           keyword: session.keyword,
+          clickProfileMode: session.clickProfileMode,
         });
         return true;
       } else {

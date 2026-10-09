@@ -277,5 +277,69 @@ describe("startHunt", () => {
 
     expect(onEmergencyReload).toHaveBeenCalled();
   });
+
+  it("paces clicks according to the stealth human biometric profile", () => {
+    document.body.innerHTML = `<div><button id="stealth-btn">Lưu</button></div>`;
+    const btn = document.getElementById("stealth-btn")!;
+    const clickTimestamps: number[] = [];
+    btn.addEventListener("click", () => {
+      clickTimestamps.push(now);
+    });
+
+    let now = DROP;
+    const ticker = new ManualTicker();
+    let outcome: HuntOutcome | null = null;
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      ticker,
+      clickProfileMode: "stealth",
+      onDone: (o) => (outcome = o),
+    });
+
+    // Advance 600ms
+    while (now < DROP + 600 && ticker.running) {
+      now += 10;
+      ticker.tick();
+    }
+
+    expect(clickTimestamps.length).toBeGreaterThanOrEqual(2);
+    expect(clickTimestamps.length).toBeLessThanOrEqual(6); // Stealth profile runs ~6-8 CPS, not 20+ CPS
+    // Verify interval between first two clicks is >= 90ms (biological human delay)
+    if (clickTimestamps.length >= 2) {
+      const delta = clickTimestamps[1] - clickTimestamps[0];
+      expect(delta).toBeGreaterThanOrEqual(90);
+    }
+  });
+
+  it("executes turbo mode with high-speed Gaussian bursts", () => {
+    document.body.innerHTML = `<div><button id="turbo-btn">Lưu</button></div>`;
+    const btn = document.getElementById("turbo-btn")!;
+    const clickTimestamps: number[] = [];
+    btn.addEventListener("click", () => {
+      clickTimestamps.push(now);
+    });
+
+    let now = DROP;
+    const ticker = new ManualTicker();
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      ticker,
+      clickProfileMode: "turbo",
+      onDone: () => {},
+    });
+
+    // Advance 400ms
+    while (now < DROP + 400 && ticker.running) {
+      now += 10;
+      ticker.tick();
+    }
+
+    // In turbo mode, it should fire more clicks than stealth in 400ms
+    expect(clickTimestamps.length).toBeGreaterThanOrEqual(5);
+  });
 });
 

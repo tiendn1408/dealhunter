@@ -22,6 +22,7 @@ export interface ScheduledTask {
   };
   preWarmSeconds?: number; // lead time before target to open/focus tab (default: 60)
   dualDefenseReload?: boolean; // automatically executes pre-warm reload & emergency fallback if static
+  clickProfileMode?: "stealth" | "pro_gamer" | "turbo"; // default: "pro_gamer"
   diagnostics?: TargetDiagnosticsSummary;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: number;
@@ -47,6 +48,7 @@ export interface ExtensionSettings {
   language: "en" | "vi"; // default: 'en'
   burstIntervalMs: number; // default: 35ms
   burstDurationMs: number; // default: 2000ms
+  clickProfileMode?: "stealth" | "pro_gamer" | "turbo"; // default: "pro_gamer"
   preWarmSeconds: number; // default: 60s
   soundEnabled: boolean;
   autoCheckoutReady: boolean;

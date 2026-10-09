@@ -1,5 +1,10 @@
 import { elementResolver, VoucherDescriptor, UniversalTargetDescriptor } from "./element_resolver";
 import { humanClicker } from "./human_clicker";
+import {
+  ClickProfileMode,
+  CLICK_PROFILES,
+  computeNextInterval,
+} from "./human_biometrics";
 import { WorkerTimer } from "./timer_worker";
 
 /**
@@ -39,6 +44,8 @@ export interface HuntOptions {
   /** Keep trying this long after the drop (ms). */
   windowMs?: number;
   clickIntervalMs?: number;
+  /** Active biometric click profile mode: stealth, pro_gamer, or turbo. */
+  clickProfileMode?: ClickProfileMode;
   maxClicks?: number;
   /** Timer source; defaults to a Web Worker ticker, which keeps running in background tabs. */
   ticker?: Ticker;
@@ -54,6 +61,7 @@ export const HUNT_DEFAULTS = {
   leadMs: 150,
   windowMs: 3000,
   clickIntervalMs: 35,
+  defaultProfileMode: "pro_gamer" as ClickProfileMode,
   maxClicks: 80,
   tickMs: 10,
 };
@@ -70,7 +78,12 @@ export function startHunt(opts: HuntOptions): () => void {
     Boolean(sessionStorage.getItem(`dh_emergency_reloaded_${opts.targetTimestamp}`));
   const baseWindowMs = opts.windowMs ?? HUNT_DEFAULTS.windowMs;
   const windowMs = isEmergencyReloaded ? Math.max(baseWindowMs, 10_000) : baseWindowMs;
-  const clickIntervalMs = opts.clickIntervalMs ?? HUNT_DEFAULTS.clickIntervalMs;
+  const profileMode = opts.clickProfileMode ?? HUNT_DEFAULTS.defaultProfileMode;
+  const profile = CLICK_PROFILES[profileMode] ?? CLICK_PROFILES.pro_gamer;
+  let currentIntervalMs =
+    opts.clickIntervalMs !== undefined
+      ? opts.clickIntervalMs
+      : computeNextInterval(profile, 0).intervalMs;
   const maxClicks = opts.maxClicks ?? HUNT_DEFAULTS.maxClicks;
   const ticker = opts.ticker ?? new WorkerTimer();
 
@@ -238,12 +251,19 @@ export function startHunt(opts: HuntOptions): () => void {
     if (
       el &&
       (state === "collectable" || (isLockedTarget && isTargetClickable)) &&
-      t - lastClickAt >= clickIntervalMs &&
+      t - lastClickAt >= currentIntervalMs &&
       clicks < maxClicks
     ) {
-      if (humanClicker.dispatchClick(el)) {
+      const isFirstClick = clicks === 0;
+      if (humanClicker.dispatchClick(el, { profileMode, approach: isFirstClick })) {
         clicks++;
         lastClickAt = t;
+
+        // Recompute next interval with biological variance and micro-pauses
+        currentIntervalMs =
+          opts.clickIntervalMs !== undefined
+            ? opts.clickIntervalMs
+            : computeNextInterval(profile, clicks).intervalMs;
 
         // Check completion immediately after click was dispatched
         const postCheck = elementResolver.isTargetCompleted(el, initialText, clicks);
