@@ -107,21 +107,25 @@
 
 /* -------------------------------------------------------------
    BUTTON & INPUT COMPREHENSIVE RESETS
-   High specificity selector (#dealhunter-hud-root button) overrides
+   Highest specificity selector (#dealhunter-hud-root button) overrides
    any host website button styles (Oxford, Google, ChatGPT, Shopee)
    ------------------------------------------------------------- */
 #dealhunter-hud-root button,
 #dealhunter-badge-root button {
-  background-image: none;
-  border-style: none;
-  border-width: 0;
+  background-color: transparent !important;
+  background-image: none !important;
+  background: transparent !important;
+  border-style: none !important;
+  border-width: 0 !important;
+  border: 0 solid transparent !important;
   outline: none !important;
-  cursor: pointer;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  color: inherit;
-  font-family: inherit;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  color: inherit !important;
+  font-family: inherit !important;
   font-size: inherit;
   line-height: inherit;
   margin: 0 !important;
@@ -143,6 +147,64 @@
   margin: 0 !important;
   box-sizing: border-box !important;
   letter-spacing: normal !important;
+}
+
+/* Header icon buttons (EN, Minimize, Close) */
+#dealhunter-hud-root .dh-icon-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+  color: #94a3b8 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+#dealhunter-hud-root .dh-icon-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #f1f5f9 !important;
+}
+
+#dealhunter-hud-root .dh-icon-btn.dh-lang-btn {
+  color: #6ee7b7 !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+}
+
+/* Recalibrate pill button */
+#dealhunter-hud-root .dh-recalibrate-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  border-radius: 9999px !important;
+  padding: 2px 8px !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+#dealhunter-hud-root .dh-recalibrate-btn.dh-calibrated {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+  color: #6ee7b7 !important;
+}
+
+#dealhunter-hud-root .dh-recalibrate-btn.dh-calibrated:hover {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+}
+
+#dealhunter-hud-root .dh-recalibrate-btn.dh-uncalibrated {
+  background-color: rgba(245, 158, 11, 0.1) !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+  color: #fcd34d !important;
+}
+
+#dealhunter-hud-root .dh-recalibrate-btn.dh-uncalibrated:hover {
+  background-color: rgba(245, 158, 11, 0.2) !important;
 }
 
 /* Slot buttons: guaranteed sizing, zero squishing/ellipsis */
@@ -175,6 +237,75 @@
 #dealhunter-hud-root .dh-slot-inactive:hover {
   background-color: rgba(255, 255, 255, 0.08) !important;
   color: #f8fafc !important;
+}
+
+/* Target Action buttons (Pick button / Auto-detect) */
+#dealhunter-hud-root .dh-action-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  width: 100% !important;
+  border-radius: 12px !important;
+  padding: 8px 12px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #f1f5f9 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+#dealhunter-hud-root .dh-action-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+#dealhunter-hud-root .dh-action-btn-cancelling {
+  background-color: rgba(244, 63, 94, 0.2) !important;
+  border-color: rgba(244, 63, 94, 0.4) !important;
+  color: #fecdd3 !important;
+}
+
+#dealhunter-hud-root .dh-action-btn-cancelling:hover {
+  background-color: rgba(244, 63, 94, 0.3) !important;
+}
+
+/* Secondary helper buttons (Save target, Forget, Quick schedule) */
+#dealhunter-hud-root .dh-sub-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  border-radius: 8px !important;
+  padding: 4px 8px !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #cbd5e1 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+#dealhunter-hud-root .dh-sub-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #6ee7b7 !important;
+}
+
+#dealhunter-hud-root .dh-sub-btn-danger:hover {
+  background-color: rgba(244, 63, 94, 0.15) !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+  color: #fda4af !important;
+}
+
+#dealhunter-hud-root .dh-sub-btn-emerald {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  color: #6ee7b7 !important;
+}
+
+#dealhunter-hud-root .dh-sub-btn-emerald:hover {
+  background-color: rgba(16, 185, 129, 0.2) !important;
 }
 
 /* Arm sniper action button: Guaranteed gradient & text color on all websites */
@@ -224,6 +355,36 @@
 #dealhunter-hud-root .dh-arm-btn-rose:hover {
   background-color: #fb7185 !important;
   background-image: linear-gradient(to right, #fb7185, #f43f5e) !important;
+}
+
+/* Manual Test Click button: Guaranteed transparent background & slate color */
+#dealhunter-hud-root .dh-test-click-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  width: 100% !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #94a3b8 !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  padding: 6px 0 !important;
+  cursor: pointer !important;
+  transition: color 0.15s ease !important;
+}
+
+#dealhunter-hud-root .dh-test-click-btn:hover {
+  color: #f1f5f9 !important;
+  background-color: transparent !important;
+}
+
+#dealhunter-hud-root .dh-test-click-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
 }
 
 .dh-target-highlight {

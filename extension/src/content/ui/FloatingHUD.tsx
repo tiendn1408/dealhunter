@@ -738,7 +738,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           <button
             type="button"
             onClick={handleToggleLang}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-white/10 transition hover:bg-white/10"
+            className="dh-icon-btn dh-lang-btn flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-emerald-300 ring-1 ring-white/10 transition hover:bg-white/10"
             title={t.toggleLanguageTooltip(lang === "en" ? "vi" : "en")}
           >
             <Languages className="h-3 w-3" />
@@ -747,7 +747,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           <button
             type="button"
             onClick={() => setMinimized(true)}
-            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+            className="dh-icon-btn rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
             title="Minimize"
           >
             <Minus className="h-3.5 w-3.5" />
@@ -756,7 +756,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
+              className="dh-icon-btn rounded-lg p-1.5 text-slate-400 transition hover:bg-white/5 hover:text-slate-100"
               title="Close"
             >
               <X className="h-3.5 w-3.5" />
@@ -776,10 +776,10 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               type="button"
               onClick={handleRecalibrate}
               disabled={syncing}
-              className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 transition ${
+              className={`dh-recalibrate-btn flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
                 calibrated
-                  ? "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30 hover:bg-emerald-500/20"
-                  : "bg-amber-500/10 text-amber-300 ring-amber-500/30 hover:bg-amber-500/20"
+                  ? "dh-calibrated ring-1 ring-emerald-500/30"
+                  : "dh-uncalibrated ring-1 ring-amber-500/30"
               }`}
               title={t.resyncClockTooltip}
             >
@@ -902,10 +902,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               type="button"
               onClick={handleSelectTarget}
               disabled={isArmed}
-              className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-semibold transition disabled:opacity-40 ${
-                picking
-                  ? "bg-rose-500/20 text-rose-200 ring-1 ring-rose-500/40 hover:bg-rose-500/30"
-                  : "bg-white/5 text-slate-100 ring-1 ring-white/10 hover:bg-white/10"
+              className={`dh-action-btn flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-semibold transition disabled:opacity-40 ${
+                picking ? "dh-action-btn-cancelling" : ""
               }`}
               title={picking ? t.cancelPickTooltip : t.pickButton}
             >
@@ -925,7 +923,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               type="button"
               onClick={handleAutoDetect}
               disabled={isArmed}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-white/5 py-2 text-[11px] font-semibold text-slate-100 ring-1 ring-white/10 transition hover:bg-white/10 disabled:opacity-40"
+              className="dh-action-btn flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-semibold transition disabled:opacity-40"
             >
               <ScanSearch className="h-3.5 w-3.5 text-emerald-300" />
               {t.autoDetect}
@@ -939,7 +937,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                     type="button"
                     onClick={handleForgetSavedTarget}
                     disabled={isArmed}
-                    className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-slate-400 ring-1 ring-white/10 transition hover:bg-rose-500/10 hover:text-rose-300 hover:ring-rose-500/30 disabled:opacity-40"
+                    className="dh-sub-btn dh-sub-btn-danger flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium disabled:opacity-40"
                     title={t.forgetTarget}
                   >
                     <Trash2 className="h-2.5 w-2.5" />
@@ -950,7 +948,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                     type="button"
                     onClick={handleSaveTarget}
                     disabled={isArmed || !universalDescRef.current}
-                    className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                    className="dh-sub-btn dh-sub-btn-emerald flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold disabled:opacity-40"
                     title={t.saveTarget}
                   >
                     <Bookmark className="h-2.5 w-2.5" />
@@ -962,7 +960,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 type="button"
                 onClick={handleScheduleFromHUD}
                 disabled={isArmed || !universalDescRef.current}
-                className="flex items-center gap-1 rounded-lg bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 transition hover:bg-white/10 hover:text-emerald-300 disabled:opacity-40"
+                className="dh-sub-btn flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold disabled:opacity-40"
                 title={t.quickScheduleFromHUD}
               >
                 <CalendarClock className="h-3 w-3 text-emerald-300" />
@@ -991,7 +989,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           type="button"
           onClick={handleManualTestClick}
           disabled={isArmed}
-          className="flex w-full items-center justify-center gap-1.5 text-[11px] font-medium text-slate-400 transition hover:text-slate-200 disabled:opacity-40"
+          className="dh-test-click-btn flex w-full items-center justify-center gap-1.5 text-[11px] font-medium text-slate-400 transition hover:text-slate-200 disabled:opacity-40"
           title={t.testClickTooltip}
         >
           <MousePointerClick className="h-3.5 w-3.5" />
