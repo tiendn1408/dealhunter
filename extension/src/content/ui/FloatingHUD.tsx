@@ -681,10 +681,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const StatusIcon =
     status.tone === "success" ? CircleCheck : status.tone === "error" ? CircleX : status.tone === "warning" ? CircleAlert : null;
 
-  const clockTitle = timeSyncClient.getIsCalibrated()
-    ? (t.serverClockTitle ? t.serverClockTitle(serverDomain) : `${serverDomain} time`)
-    : t.localDeviceTime;
-
   if (minimized) {
     return (
       <button
@@ -769,9 +765,12 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         {/* Universal Server clock */}
         <div className="dh-inner-card rounded-2xl p-3">
           <div className="flex items-center justify-between">
-            <span className="truncate pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              {clockTitle}
-            </span>
+            <div className="flex items-center gap-1.5" title={serverDomain ? `${t.offsetVsDomain(serverDomain)} (${serverDomain})` : t.localDeviceTime}>
+              <span className={`h-1.5 w-1.5 rounded-full ${calibrated ? "bg-emerald-400 shadow-sm shadow-emerald-400/50" : "bg-amber-400 animate-pulse"}`} />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                {calibrated ? (t.atomicClockLabel || "NTP Server Time") : t.localDeviceTime}
+              </span>
+            </div>
             <button
               type="button"
               onClick={handleRecalibrate}
@@ -791,9 +790,17 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 : t.notSyncedRetry}
             </button>
           </div>
-          <div className="mt-1 text-center font-mono text-[28px] font-bold leading-none tabular-nums tracking-tight text-emerald-300">
-            {serverTimeStr}
-          </div>
+          {(() => {
+            const [clockMain, clockMs] = serverTimeStr.includes(".")
+              ? serverTimeStr.split(".")
+              : [serverTimeStr, "000"];
+            return (
+              <div className="mt-1 flex items-baseline justify-center font-mono tabular-nums leading-none tracking-tight text-emerald-400">
+                <span className="text-[30px] font-bold">{clockMain}</span>
+                <span className="text-base font-medium text-emerald-400/75">.{clockMs}</span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Drop target with Quick Testing and Custom Time */}
@@ -847,36 +854,56 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           )}
 
           {/* Target & Countdown Box */}
-          <div className="mt-2.5 flex items-center justify-between rounded-xl bg-black/20 px-3 py-2 ring-1 ring-white/5">
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                <Timer className={`h-3.5 w-3.5 ${isArmed ? "text-amber-400 animate-spin" : "text-emerald-400"}`} />
-                <span>{t.dropIn}</span>
+          {(() => {
+            const [cdMain, cdTenth] = countdownStr.includes(".")
+              ? countdownStr.split(".")
+              : [countdownStr, "0"];
+            return (
+              <div className="mt-2.5 flex items-center justify-between rounded-xl bg-black/30 px-3 py-2.5 ring-1 ring-white/5">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    {t.targetDropLabel || "Target drop"}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-sm font-bold text-emerald-400">
+                      {targetLabel}
+                    </span>
+                    {(targetSlot === "quick_10s" || targetSlot === "quick_30s") && (
+                      <span className="rounded bg-emerald-500/10 px-1 py-0.2 text-[9px] font-semibold text-emerald-400/90 ring-1 ring-emerald-500/20">
+                        test
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-0.5">
+                  <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    <Timer className={`h-3 w-3 ${isArmed ? "text-amber-400 animate-spin" : "text-emerald-400"}`} />
+                    <span>{t.dropIn}</span>
+                  </div>
+                  <div className="flex items-baseline font-mono tabular-nums leading-none">
+                    <span className={`text-xl font-bold ${isArmed ? "text-amber-300 animate-pulse" : "text-slate-100"}`}>
+                      {cdMain}
+                    </span>
+                    <span className={`text-xs font-semibold ${isArmed ? "text-amber-400/80" : "text-slate-400"}`}>
+                      .{cdTenth}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1">
+                    <span className={`h-1.5 w-1.5 rounded-full ${isArmed ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
+                    <span className={`text-[9px] font-semibold uppercase tracking-wider ${isArmed ? "text-amber-300" : "text-slate-400"}`}>
+                      {isArmed ? t.armedCountdown : t.standbyReady}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="font-mono text-[11px] text-slate-400">
-                <span className="text-slate-500">{t.targetPrefix}</span>
-                <span className="font-semibold text-slate-300">{targetLabel}</span>
-              </div>
-            </div>
-            <div className="text-right">
-              <div
-                className={`font-mono text-xl font-bold leading-none tabular-nums ${
-                  isArmed ? "text-amber-300 animate-pulse" : "text-slate-100"
-                }`}
-              >
-                {countdownStr}
-              </div>
-              <div className="mt-1 text-[9px] font-medium uppercase tracking-wider text-slate-500">
-                {isArmed ? t.armedCountdown : t.standbyReady}
-              </div>
-            </div>
-          </div>
+            );
+          })()}
         </div>
 
         {/* Universal Target locking */}
         <div className="dh-inner-card rounded-2xl p-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{t.targetVoucher}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t.targetVoucher}</span>
             <div className="flex items-center gap-1.5">
               {isTargetSaved ? (
                 <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
@@ -894,9 +921,21 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               )}
             </div>
           </div>
-          <p className="mb-2.5 truncate font-mono text-[11px] text-slate-300" title={targetSummary ?? undefined}>
-            {targetSummary ? `[Locked] ${targetSummary}` : t.notPickedText}
-          </p>
+          {targetSummary ? (
+            <div className="mb-2.5 flex items-center gap-2 rounded-xl bg-emerald-500/10 px-2.5 py-1.5 ring-1 ring-emerald-500/20">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+              <span className="truncate font-mono text-xs font-semibold text-emerald-300" title={targetSummary}>
+                {targetSummary}
+              </span>
+            </div>
+          ) : (
+            <div className="mb-2.5 flex items-center gap-2 rounded-xl bg-white/5 px-2.5 py-1.5 ring-1 ring-white/5">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-500" />
+              <span className="truncate text-[11px] font-medium text-slate-400">
+                {t.notPickedText}
+              </span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
