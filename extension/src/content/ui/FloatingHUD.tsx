@@ -793,6 +793,24 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     return () => window.removeEventListener("dealhunter:activate-pick", onActivatePick);
   }, [minimized]);
 
+  // Synchronize target time from external events (e.g. simulator benchmark tool)
+  useEffect(() => {
+    const onSetTargetTime = (e: Event) => {
+      const customEvent = e as CustomEvent<{ timeStr?: string; timestamp?: number }>;
+      if (customEvent.detail?.timeStr && !huntCoordinator.getState().isArmed) {
+        setTargetSlot("custom");
+        setCustomTime(customEvent.detail.timeStr);
+        armedTargetTimestampRef.current = null;
+        setStatusMsg({
+          text: `Đã đồng bộ giờ G: ${customEvent.detail.timeStr}`,
+          tone: "idle",
+        });
+      }
+    };
+    window.addEventListener("dealhunter:set-target-time", onSetTargetTime);
+    return () => window.removeEventListener("dealhunter:set-target-time", onSetTargetTime);
+  }, []);
+
   // Auto-detect collect buttons
   const handleAutoDetect = () => {
     if (picking) {
