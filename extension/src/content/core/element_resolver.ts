@@ -93,7 +93,7 @@ function computeCssSelector(el: HTMLElement): string {
 export function hasCompletionIcon(button: HTMLElement): boolean {
   const iconElements: HTMLElement[] = [
     button,
-    ...Array.from(button.querySelectorAll<HTMLElement>("svg, i, span[class*='icon'], [role='img']")),
+    ...Array.from(button.querySelectorAll<HTMLElement>("svg, i, [class*='icon'], [role='img']")),
   ];
   for (const el of iconElements) {
     const rawCls = el.getAttribute("class") || (typeof el.className === "string" ? el.className : "");
@@ -115,10 +115,107 @@ export function hasCompletionIcon(button: HTMLElement): boolean {
   return false;
 }
 
+export function hasExhaustionIcon(element: HTMLElement): boolean {
+  const iconElements: HTMLElement[] = [
+    element,
+    ...Array.from(element.querySelectorAll<HTMLElement>("svg, i, [class*='icon'], [role='img']")),
+  ];
+  for (const el of iconElements) {
+    const rawCls = el.getAttribute("class") || (typeof el.className === "string" ? el.className : "");
+    const testId = el.getAttribute("data-testid") || "";
+    const ariaLabel = el.getAttribute("aria-label") || "";
+    const title = el.getAttribute("title") || "";
+    const combined = `${rawCls} ${testId} ${ariaLabel} ${title}`.toLowerCase();
+
+    // Match warning, error, cross, times, fail, close, alert, ban, exclamation as technical tokens
+    if (
+      /(?:^|[\s_-])(warning|error|danger|close|cross|times|fail|alert|ban|exclamation|exhausted|depleted|is-warning|is-error|swal2-x-mark)(?:$|[\s_-])/i.test(
+        combined
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Universal Chromatic Visual Tone Analysis:
+ * Language-agnostic inspection of computed colors (color, backgroundColor, fill, stroke).
+ * W3C / UI design conventions worldwide universally map:
+ * - Green (dominant green): success / completed / confirmed
+ * - Red / Amber (dominant red or orange): error / warning / exhausted / depleted
+ */
+export function detectVisualChromaticTone(el: HTMLElement): "success" | "exhausted" | "neutral" {
+  const elements = [
+    el,
+    ...Array.from(
+      el.querySelectorAll<HTMLElement>("svg, path, circle, i, [role='img'], [class*='icon'], [class*='badge']")
+    ),
+  ];
+  for (const target of elements) {
+    // 1. Direct SVG attributes
+    const fill = target.getAttribute("fill");
+    const stroke = target.getAttribute("stroke");
+    const colorCandidates = [fill, stroke];
+
+    // 2. Computed styles
+    if (typeof window !== "undefined" && window.getComputedStyle) {
+      try {
+        const cs = window.getComputedStyle(target);
+        if (cs) {
+          colorCandidates.push(cs.color, cs.backgroundColor, cs.fill, cs.stroke);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    for (const c of colorCandidates) {
+      if (!c || c === "none" || c === "transparent" || c === "currentColor" || c === "inherit") continue;
+
+      // Parse rgb/rgba
+      const rgbMatch = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      if (rgbMatch) {
+        const r = parseInt(rgbMatch[1], 10);
+        const g = parseInt(rgbMatch[2], 10);
+        const b = parseInt(rgbMatch[3], 10);
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        if (max - min >= 25) {
+          if (g > 90 && g > r + 25 && g > b + 25) return "success";
+          if (r > 120 && r > g + 25 && r > b + 25) return "exhausted";
+          if (r > 180 && g > 100 && b < 80) return "exhausted"; // amber / warning
+        }
+      }
+
+      // Parse hex #rgb or #rrggbb
+      const hexMatch = c.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      if (hexMatch) {
+        let hex = hexMatch[1];
+        if (hex.length === 3) {
+          hex = hex.split("").map((ch) => ch + ch).join("");
+        }
+        const r = parseInt(hex.slice(0, 2), 16);
+        const g = parseInt(hex.slice(2, 4), 16);
+        const b = parseInt(hex.slice(4, 6), 16);
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        if (max - min >= 25) {
+          if (g > 90 && g > r + 25 && g > b + 25) return "success";
+          if (r > 120 && r > g + 25 && r > b + 25) return "exhausted";
+          if (r > 180 && g > 100 && b < 80) return "exhausted";
+        }
+      }
+    }
+  }
+  return "neutral";
+}
+
 /**
  * Scans page-level notification banners, toasts, and dialogs (Shopee, Lazada, TikTok Shop)
  * for immediate post-click success or exhaustion confirmations using pure structural,
- * SVG icon, and HTML5/W3C data contracts without language-specific dictionaries.
+ * SVG icon, chromatic tone, and HTML5/W3C data contracts without language-specific dictionaries.
  */
 export function checkPageToastConfirmation(): CompletionStatus | null {
   if (typeof document === "undefined") return null;
@@ -193,56 +290,67 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
     }
 
     const rawCls = (typeof el.className === "string" ? el.className : "").toLowerCase();
-    const dataType = (el.getAttribute("data-type") || el.getAttribute("data-status") || "").toLowerCase();
+    const dataType = (el.getAttribute("data-type") || el.getAttribute("data-status") || el.getAttribute("data-state") || "").toLowerCase();
     const role = (el.getAttribute("role") || "").toLowerCase();
-    const elText = (el.innerText || el.textContent || "").toLowerCase().trim();
 
-    // 1. Exhaustion / Error confirmation: Warning/error icons, error/exhausted code tokens, or error notification text
-    const hasErrorIcon = Boolean(
-      el.querySelector("svg[class*='warning' i], svg[class*='error' i], i[class*='warning' i], i[class*='error' i], [role='img'][class*='warning' i]")
-    );
-    const hasErrorCode =
-      /^(error|warning|exhausted|depleted)$/i.test(dataType) ||
-      /(?:^|[\s_-])(error|is-error|warning|is-warning|danger|toast-error|alert-error|exhausted|depleted)(?:$|[\s_-])/i.test(rawCls);
-    const hasExhaustedText =
-      /(?:thất bại|đã hết lượt|đã điểm danh hôm nay|hôm nay bạn đã điểm danh|đã nhận rồi|hết hạn|không thành công|failed|already claimed|limit reached)/i.test(
-        elText
+    // 1. Structural icon evaluation (SVG geometry / Icon library technical tokens)
+    const hasSuccessIcon = hasCompletionIcon(el);
+    const hasErrorIcon = hasExhaustionIcon(el);
+
+    // 2. Technical Framework Contracts & CSS class tokens (language-agnostic technical code)
+    const hasSuccessCode =
+      /^(success|positive|completed|saved|done)$/i.test(dataType) ||
+      /(?:^|[\s_-])(success|is-success|positive|completed|toast-success|alert-success|swal2-success|notice-success)(?:$|[\s_-])/i.test(
+        rawCls
+      ) ||
+      Boolean(
+        el.querySelector(
+          "[class*='swal2-success'], [class*='alert-success'], [class*='is-success'], [class*='toast-success'], [data-type='success'], [data-status='success'], [data-state='success']"
+        )
       );
 
-    if (hasErrorIcon || hasErrorCode || hasExhaustedText) {
+    const hasErrorCode =
+      /^(error|warning|exhausted|depleted|danger|failed)$/i.test(dataType) ||
+      /(?:^|[\s_-])(error|is-error|warning|is-warning|danger|toast-error|alert-error|alert-danger|exhausted|depleted|swal2-error|swal2-warning|notice-error)(?:$|[\s_-])/i.test(
+        rawCls
+      ) ||
+      Boolean(
+        el.querySelector(
+          "[class*='swal2-error'], [class*='swal2-warning'], [class*='alert-danger'], [class*='alert-warning'], [class*='is-error'], [class*='is-warning'], [class*='toast-error'], [data-type='error'], [data-status='error']"
+        )
+      );
+
+    // 3. Chromatic Visual Tone Analysis (Green vs Red/Amber computed styles)
+    const chromaticTone = detectVisualChromaticTone(el);
+
+    // Evaluate Exhaustion/Error first:
+    if (hasErrorIcon || hasErrorCode || chromaticTone === "exhausted") {
+      const reason =
+        hasErrorIcon || hasErrorCode
+          ? "Page notification confirmed exhausted/error via structural icon or data contract"
+          : "Page notification confirmed exhausted/error via chromatic visual tone (warning/danger)";
       return {
         completed: true,
         state: "exhausted",
-        reason:
-          hasErrorIcon || hasErrorCode
-            ? "Page notification confirmed exhausted/error via structural icon or data contract"
-            : `Page notification confirmed exhausted/error via message text: "${elText.slice(0, 50)}"`,
+        reason,
       };
     }
 
-    // 2. Success confirmation: Structural SVG checkmark/success icon, HTML5/CSS code contracts, or success notification text
-    const hasSuccessIcon = hasCompletionIcon(el);
-    const hasSuccessCode =
-      /^(success|positive|completed|saved|done)$/i.test(dataType) ||
-      /(?:^|[\s_-])(success|is-success|positive|completed|toast-success|alert-success)(?:$|[\s_-])/i.test(rawCls);
-    const hasSuccessText =
-      /(?:thành công|chúc mừng|điểm danh thành công|nhận thưởng thành công|nhận quà thành công|lưu thành công|successfully|congratulations|reward claimed)/i.test(
-        elText
-      );
-
-    if (hasSuccessIcon || hasSuccessCode || hasSuccessText) {
+    // Evaluate Success:
+    if (hasSuccessIcon || hasSuccessCode || chromaticTone === "success") {
+      const reason =
+        hasSuccessIcon || hasSuccessCode
+          ? "Page notification confirmed success via structural icon or data contract"
+          : "Page notification confirmed success via chromatic visual tone (success/green)";
       return {
         completed: true,
         state: "saved",
-        reason:
-          hasSuccessIcon || hasSuccessCode
-            ? "Page notification confirmed success via structural icon or data contract"
-            : `Page notification confirmed success via message text: "${elText.slice(0, 50)}"`,
+        reason,
       };
     }
 
-    // 3. W3C ARIA Live Region role="status" announcing post-click update
-    if (role === "status" && elText) {
+    // 4. W3C ARIA Live Region role="status" announcing post-click update
+    if (role === "status" && el.textContent?.trim()) {
       return {
         completed: true,
         state: "saved",

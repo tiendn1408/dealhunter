@@ -341,36 +341,53 @@ describe("ElementResolver", () => {
     expect(typeof desc.documentTop).toBe("number");
   });
 
-  it("detects SweetAlert2 or modal popup with Vietnamese success text 'Điểm danh thành công'", () => {
+  it("detects SweetAlert2 modal popup via framework technical class 'swal2-success' regardless of language", () => {
     const btn = document.createElement("button");
     btn.innerText = "Điểm danh";
     document.body.appendChild(btn);
 
-    // Simulate SweetAlert modal appearing on caffiliate
+    // Simulate SweetAlert modal with technical class swal2-success
     const swal = document.createElement("div");
     swal.className = "swal2-container";
-    swal.innerHTML = '<div class="swal2-popup"><div class="swal2-title">Chúc mừng bạn đã điểm danh thành công!</div></div>';
+    swal.innerHTML = '<div class="swal2-popup"><div class="swal2-icon swal2-success"></div><div class="swal2-title">签到成功 / Điểm danh thành công</div></div>';
     document.body.appendChild(swal);
 
     const check = resolver.isTargetCompleted(btn, "Điểm danh", 1);
     expect(check.completed).toBe(true);
     expect(check.state).toBe("saved");
-    expect(check.reason).toContain("Page notification confirmed success via message text");
+    expect(check.reason).toContain("Page notification confirmed success");
   });
 
-  it("detects modal dialog with Vietnamese error text 'Đã hết lượt' as exhausted", () => {
+  it("detects modal dialog via chromatic green tone without reading text (multilingual support)", () => {
+    const btn = document.createElement("button");
+    btn.innerText = "Claim Voucher";
+    document.body.appendChild(btn);
+
+    // Custom modal with green chromatic SVG fill (#10b981) in any language
+    const modal = document.createElement("div");
+    modal.className = "modal-content";
+    modal.innerHTML = '<svg fill="#10b981"><circle r="10"></circle></svg><div class="modal-body">รับสิทธิ์สำเร็จ / 領取成功</div>';
+    document.body.appendChild(modal);
+
+    const check = resolver.isTargetCompleted(btn, "Claim Voucher", 1);
+    expect(check.completed).toBe(true);
+    expect(check.state).toBe("saved");
+    expect(check.reason).toContain("chromatic visual tone");
+  });
+
+  it("detects modal dialog via structural warning icon or technical error class as exhausted", () => {
     const btn = document.createElement("button");
     btn.innerText = "Điểm danh";
     document.body.appendChild(btn);
 
     const modal = document.createElement("div");
-    modal.className = "modal-content";
-    modal.innerHTML = '<div class="modal-body">Hôm nay bạn đã điểm danh hoặc đã hết lượt.</div>';
+    modal.className = "modal-content is-warning";
+    modal.innerHTML = '<svg class="icon-warning"></svg><div class="modal-body">今日已领取 / Quota limit reached</div>';
     document.body.appendChild(modal);
 
     const check = resolver.isTargetCompleted(btn, "Điểm danh", 1);
     expect(check.completed).toBe(true);
     expect(check.state).toBe("exhausted");
-    expect(check.reason).toContain("Page notification confirmed exhausted/error via message text");
+    expect(check.reason).toContain("Page notification confirmed exhausted/error");
   });
 });
