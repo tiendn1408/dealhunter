@@ -403,11 +403,11 @@ export function startHunt(opts: HuntOptions): () => void {
         }
       }
 
-      // 2. Guarded reload loop: reload until active button appears (window [T + 150, T + 2500], max 3 reloads)
-      // Dead Click Recovery: Even if probe click(s) were fired, if target remains locked, missing, or unresponsive in yesterday's state, trigger guarded reload!
+      // 2. Guarded reload loop: reload until active button appears (window [T, T + 2500], max 3 reloads)
+      // Purposeful Reload: We know button is rendered but locked/stale. Reload with purpose until active button renders!
       if (
         isReloadEnabled &&
-        t >= opts.targetTimestamp + 150 &&
+        t >= opts.targetTimestamp &&
         t <= opts.targetTimestamp + 2500
       ) {
         const reloadCount = typeof sessionStorage !== "undefined"
@@ -428,14 +428,14 @@ export function startHunt(opts: HuntOptions): () => void {
 
         if (
           reloadCount < 3 &&
-          t - lastReloadTime >= 500 &&
+          t - lastReloadTime >= 450 &&
           (isUnclickableAtDrop || isDeadClickProbe)
         ) {
           if (typeof sessionStorage !== "undefined") {
             sessionStorage.setItem(`dh_reload_count_${opts.targetTimestamp}`, String(reloadCount + 1));
             sessionStorage.setItem(`dh_last_reload_time_${opts.targetTimestamp}`, String(t));
           }
-          opts.onStatus?.(`Reloading: target inactive or unresponsive after probe click (${reloadCount + 1}/3)...`);
+          opts.onStatus?.(`Purposeful reload: Button rendered but locked, refreshing for active state (${reloadCount + 1}/3)...`);
           if (opts.onEmergencyReload) {
             opts.onEmergencyReload();
           } else if (typeof window !== "undefined") {
