@@ -242,12 +242,18 @@ Ham `isMajorMarketplace` phan chia pham vi hoat dong:
 Tren cac trang React SPA khong co co che tu dong mo khoa nut theo thoi gian thuc ma can reload trang de lay session ngay moi (`caffiliate.vn`):
 1. **T - 5s (Keep-Alive Socket Pre-warming)**:
    - Ngam gui request `HEAD` voi `cache: "no-store"` va `keepalive: true` toi origin server de giu am socket TCP/TLS, tranh ton thoi gian bat tay TLS handshake khi click.
-2. **T - 750ms (Precision Pre-Reload)**:
-   - Neu nut muc tieu van o trang thai khoa cua ngay hom truoc (`disabled` hoac `saved`), tu dong kich hoat reload truoc 750ms de trang kip hoan tat tai lai ma va CSS truoc gio G 100ms - 200ms.
-3. **Cua so 3 giay quanh gio G ($[T - 750ms, T + 2250ms]$)**:
+2. **$T - \text{preReloadLeadMs}$ (Precision Pre-Reload & Tuy Chon Cau Hinh)**:
+   - He thong cung cap bo chon thoi gian reload linh hoat tren Floating HUD de phu hop voi tung toc do mang va dac thu trang web:
+     - **`750ms` (Mac dinh)**: Thich hop cho mang on dinh, trang SPA nhe tai lai trong 200ms - 400ms.
+     - **`1.5s`**: Danh cho mang co do tre cao hoac trang SPA nang, nhieu asset can them thoi gian mount DOM.
+     - **`Tat (0ms)`**: Danh cho cac trang tu cap nhat nut qua WebSocket / Polling khong can tai lai toan trang.
+   - Neu nut muc tieu van o trang thai khoa cua ngay hom truoc (`disabled` hoac `saved`), tu dong kich hoat reload truoc $T - \text{preReloadLeadMs}$ de trang kip hoan tat tai lai ma va CSS truoc gio G 100ms - 200ms.
+   - Toan bo trang thai phien san (`ARMED_SESSION_KEY`) bao gom slot gio, gio tuy chinh, thoi gian reload, va target descriptor duoc luu tru an toan trong `sessionStorage` va tu dong phuc hoi 100% khi trang mount lai.
+3. **Cua so 3 giay quanh gio G ($[T - \text{preReloadLeadMs}, T + 2250ms]$)**:
    - Ap dung co che reload lap lai co kiem soat qua `sessionStorage` (`dh_reload_count_${DROP}`):
    - Toi da 3 lan reload, moi lan cach nhau toi thieu 650ms de tranh spam may chu.
    - **Vua phat hien nut kha dung (`isTargetClickable && state !== "saved"`) la lap tuc dung reload va click ngay (0ms tre)**.
+   - **Phong ngua False Positive**: Ham danh gia `isTargetCompleted` khong duoc ngoc nhan thuoc tinh `disabled` ban dau cua ngay hom truoc la da thanh cong. He thong chi cong nhan thanh cong khi da co it nhat 1 cu click duoc phat di hoac DOM co su bien doi trang thai sau gio G.
    - Khi co click thanh cong hoac deal hoan tat, tu dong don dep toan bo bien dem trong `sessionStorage`.
 
 ### 8.3. Luong Xu Ly Chi Tiet Toan Dien (End-to-End Execution Flow)
@@ -341,8 +347,10 @@ He thong tu dong ap dung chien luoc rieng biet tuy thuoc vao do nhay cam cua he 
 ## 10. Co Che Phong Thu va Xu Ly Ngoai Le (Fault Tolerance & Edge Case Recovery)
 
 1. **Bao toan trang thai qua Reload (Cross-Reload State Continuity)**:
-   - Moi thong tin san gom `targetTimestamp`, `universalDescriptor`, `diagnostics`, `clickProfileMode`, `dualDefenseReload` duoc luu tai `sessionStorage` (`ARMED_SESSION_KEY`).
-   - Khi trang web reload (du do F5 thu cong hay tu dong reload cua he thong), Content Script nap lai se doc ngay `ARMED_SESSION_KEY`, tu dong arm lai `HuntCoordinator` va dinh vi lai nut trong vong 10ms.
+   - Moi thong tin san gom `targetTimestamp`, `targetSlot`, `customTime`, `preReloadLeadMs`, `universalDescriptor`, `diagnostics`, `clickProfileMode`, `dualDefenseReload` duoc luu tai `sessionStorage` (`ARMED_SESSION_KEY`).
+   - Khi trang web reload (do F5 thu cong hay tu dong reload cua he thong), Content Script va `FloatingHUD` nap lai se doc ngay `ARMED_SESSION_KEY`:
+     - `HuntCoordinator` tu dong phuc hoi phien san va dinh vi lai nut trong vong 10ms.
+     - `FloatingHUD` tu dong khoi phuc toan bo giao dien: giu nguyen trang thai `Armed`, khoi phuc slot gio/gio custom, cau hinh preReloadLead, khoi phuc vien highlight DOM, va duy tri timestamp dem nguoc chinh xac khong bi nhay lui moc gio.
 2. **Tu dong tai dinh vi nut khi React re-render**:
    - Khi React huy phan tu DOM cu va chen phan tu DOM moi vao cay tai gio G, `elementResolver.relocateUniversal(desc)` su dung chu ky noi dung (`matchesContentSignature`) va bo neo vi tri (`documentTop`, `ancestorSelector`) de tim lai nut moi trong 1 tick (10ms), khong lam dut gay chuoi click.
 3. **Chong click lap vao trang thai cu hom truoc**:
@@ -355,7 +363,7 @@ He thong tu dong ap dung chien luoc rieng biet tuy thuoc vao do nhay cam cua he 
 
 ## 11. Quy Chuan Chat Luong va Kiem Thu
 
-- **Unit Tests**: 200/200 tests pass tren 18 test suites (`npx vitest run`).
+- **Unit Tests**: 206/206 tests pass tren 18 test suites (`npm test` / `npx vitest run`).
 - **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.
 - **Production Build**: Bien dich hoan tat sach se `popup.js`, `background.js`, `content.js` va `content.css`.
 - **Zero-Emoji**: Tuyet doi khong su dung emoji trong ma nguon, log, test va tai lieu.

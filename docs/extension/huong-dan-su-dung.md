@@ -15,8 +15,9 @@
 5. [Che do 2 — Schedule (Hen gio tu dong 100%)](#5-che-do-2--schedule-hen-gio-tu-dong-100)
 6. [Che do 3 — My Hunts (Quan ly lich hen va lich su san)](#6-che-do-3--my-hunts-quan-ly-lich-hen-va-lich-su-san)
 7. [Thuoc tinh ky thuat va thuat toan loi](#7-thuoc-tinh-ky-thuat-va-thuat-toan-loi)
-8. [Xu ly su co thuong gap (Troubleshooting)](#8-xu-ly-su-co-thuong-gap-troubleshooting)
-9. [Luu y quan trong va an toan tai khoan](#9-luu-y-quan-trong-va-an-toan-tai-khoan)
+8. [Kiem thu thuc te voi Test Simulator](#8-kiem-thu-thuc-te-voi-test-simulator-benchmark--simulation)
+9. [Xu ly su co thuong gap (Troubleshooting)](#9-xu-ly-su-co-thuong-gap-troubleshooting)
+10. [Luu y quan trong va an toan tai khoan](#10-luu-y-quan-trong-va-an-toan-tai-khoan)
 
 ---
 
@@ -103,21 +104,26 @@ Dung khi ban dang theo doi truc tiep tren man hinh va can kich hoat san mot nut 
    - **`00:00`**: San vao dung nua dem tiep theo (00:00:00).
    - **`+1m` / `+1p`**: San vao dau phut tiep theo.
    - **`Custom` / `Tuy chinh`**: Nhap gio bat ky theo dinh dang `HH:mm:ss`. He thong kiem tra tinh hop le va canh bao neu gio nhap khong dung dinh dang.
-2. **Khoa nut muc tieu (Target Button)**:
+2. **Cau hinh Reload don dau (Pre-reload Lead Time)**:
+   - **`750ms` (Mac dinh)**: Tu dong reload trang truoc gio G 750ms de trang kip lay phien lam viec ngay moi ma khong ton thoi gian cho doi. Phu hop nhat voi cac trang React SPA nhu `caffiliate.vn`.
+   - **`1.5s`**: Danh cho duong truyen mang cham hoac trang web co ma nguon nang can them thoi gian mount DOM.
+   - **`Tat (Off)`**: Danh cho cac trang tu cap nhat nut theo thoi gian thuc khong can tai lai toan bo trang web.
+3. **Khoa nut muc tieu (Target Button)**:
    - Bam nut **`Pick button`** (**`Chon nut`**): Re chuot len man hinh den nut ban muon click (nut Luu voucher, nut Mua ngay, nut Dat cho). Nut se duoc lam noi bat voi vien xanh neon `dh-target-highlight`. Click vao nut de khoa muc tieu.
    - Hoac bam **`Auto-detect`** (**`Tu quet`**): Neu dang o tren Shopee, tien ich tu dong quet va de xuat nut voucher hop le dau tien tren man hinh.
    - Neu muon huy chon nut da khoa, bam bieu tuong nut **X** ben canh ten muc tieu de reset ve trang thai ban dau.
-3. **Kiem tra dong bo dong ho**:
+4. **Kiem tra dong bo dong ho**:
    - Bang HUD hien thi thoi gian thuc va do lech giua may tinh va server (vi du: `+120ms ±15ms`).
    - Bam bieu tuong xoay tron ben canh de can chinh lai neu can.
-4. **Bam thu 1 click (Test click)**:
+5. **Bam thu 1 click (Test click)**:
    - Bam **`Test click (1x)`** (**`Bam thu 1 click`**) de kiem tra xem chuoi pointer events co truyen dung vao nut muc tieu hay khong.
 
 ### Buoc 4: Kich hoat truc chien (Arm Sniper)
 1. Bam nut lon: **`Arm sniper`** (**`Kich hoat san`**).
 2. Nut chuyen sang trang thai **`Disarm`** (**`Huy kich hoat`**) va bang HUD bat dau dem nguoc mili-giay den gio G.
-3. Ban co the bam nut Minimize (`-`) de thu gon HUD xuong thanh trang thai nho gon o goc man hinh.
-4. Dung gio G (co tinh lead 150ms), he thong se tu dong kich hoat chuoi click adaptive cho den khi trang web xac nhan luu thanh cong hoac het thoi gian san.
+3. **Co che bao toan phien qua Reload**: Neu chon Reload (`750ms` hoac `1.5s`), khi trang reload, Floating HUD va dong co san se tu dong khoi phuc toan bo thiet lap va muc tieu da chon tu `sessionStorage`, giu nguyen trang thai Armed va tiep tuc dem nguoc chinh xac ma khong bi gian doan.
+4. Ban co the bam nut Minimize (`-`) de thu gon HUD xuong thanh trang thai nho gon o goc man hinh.
+5. Dung gio G (co tinh lead 150ms hoac 28ms tren `speed_priority`), he thong se tu dong kich hoat chuoi click adaptive cho den khi trang web xac nhan luu thanh cong hoac het thoi gian san.
 
 ---
 
@@ -192,7 +198,41 @@ Chi tiet kien truc toan dien duoc tai lieu hoa tai: [`docs/extension/kien-truc-u
 
 ---
 
-## 8. Xu Ly Su Co Thuong Gap (Troubleshooting)
+## 8. Kiem Thu Thuc Te Voi Test Simulator (Benchmark & Simulation)
+
+De kiem thu extension mot cach chinh xac ma khong can cho den gio G thuc te (00:00:00), he thong cung cap bo Test Simulator rieng biet tai `/Users/tiendn/Workplace/Projects/deal-hunter/simulator`.
+
+### 8.1. Khoi dong Simulator
+1. Mo Terminal va chay lenh:
+   ```bash
+   cd /Users/tiendn/Workplace/Projects/deal-hunter/simulator
+   npm run dev
+   ```
+2. Truy cap trinh duyet tai: `http://localhost:3100/`.
+
+### 8.2. Kich ban kiem thu Caffiliate (Diem danh doi thuong & Pre-reload)
+Tab **Caffiliate Bench** mo phong chinh xac 100% co che cua trang `app.caffiliate.vn`:
+1. **Thiet lap trang thai hom qua**:
+   - Chon `Initial state: Yesterday Claimed`. Nut tren man hinh se o trang thai bi vo hieu hoa (`disabled`) tu ngay hom truoc.
+2. **Dat moc gio G (Drop Time)**:
+   - Nhap gio hoac bam `+10s` / `+30s` tren bang dieu khien Simulator.
+   - Thoi gian gio G va trang thai duoc luu truc tiep vao `localStorage`, khong bi mat khi trang reload.
+3. **Khoa nut va Kich hoat tren Extension**:
+   - Mo Popup DealHunter tren tab do, bam `START SNIPER ON THIS PAGE`.
+   - Tren bang Floating HUD:
+     - Chon moc gio khop voi gio G tren Simulator (hoac bam nut `Sync Time` neu co).
+     - Chon che do `Reload: 750ms` (hoac `1.5s`).
+     - Bam `Pick button` va click vao nut Diem danh tren man hinh Simulator.
+     - Bam `Arm sniper`.
+4. **Quan sat ket qua**:
+   - Tai $T - 750ms$, trang Simulator se tu dong reload.
+   - Khi reload xong, Floating HUD van giu nguyen trang thai `Armed`, dem nguoc chinh xac khong bi reset.
+   - Dung gio G, extension tu dong ban cuoc click toc do cao (Hyper Strike) vao nut.
+   - Simulator ghi nhan cu click bang Native Event Listener, tinh toan do lech mili-giay giua gio G va thoi diem nhan, va luu vao bang Nhat ky hoat dong (Activity Logs).
+
+---
+
+## 9. Xu Ly Su Co Thuong Gap (Troubleshooting)
 
 ### Q1: Toi bam nut Start tren trang web ma khong thay bang HUD xuat hien?
 - **Tra loi**: Hien tai popup da duoc tich hop co che tu dong chen tep CSS va script vao tab dang mo khi ban bam `START SNIPER ON THIS PAGE`. Neu ban van khong thay HUD, co the do tab dang o dia chi cam cua trinh duyet (vi du: `chrome://`, `about:blank`, hoac Web Store). Hay thu tren mot trang web `https://` thong thuong.
@@ -211,7 +251,7 @@ Chi tiet kien truc toan dien duoc tai lieu hoa tai: [`docs/extension/kien-truc-u
 
 ---
 
-## 9. Luu Y Quan Trong Va An Toan Tai Khoan
+## 10. Luu Y Quan Trong Va An Toan Tai Khoan
 
 1. **Bao mat tuyet doi**: Tien ich hoat dong hoan toan tai phia client tren trinh duyet cua ban, su dung phien dang nhap co san cua chinh ban. Tien ich khong bao gio luu tru mat khau hay thong tin the tin dung.
 2. **Uu tien 1 tai khoan / 1 cua so focus duy nhat**: Voi cac deal mili-giay khoc liet (nhu diem danh doi thuong caffiliate.vn), luon giu 1 cua so trinh duyet duy nhat tren man hinh va dam bao cua so dang duoc focus.
