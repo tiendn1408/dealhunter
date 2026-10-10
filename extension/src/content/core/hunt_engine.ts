@@ -58,6 +58,8 @@ export interface HuntOptions {
   ticker?: Ticker;
   /** Enables dual-defense reload strategy: pre-warm reload at T-15s and emergency reload at T+300ms */
   dualDefenseReload?: boolean;
+  /** Precision pre-reload offset lead (ms) before drop moment (default: 750ms) */
+  preReloadLeadMs?: number;
   /** Custom handler for emergency reload (e.g. for testing or custom navigation) */
   onEmergencyReload?: () => void;
   onStatus?: (message: string) => void;
@@ -245,11 +247,15 @@ export function startHunt(opts: HuntOptions): () => void {
         }
       }
 
-      // Precision Pre-Reload at T - 750ms: ONLY if dualDefenseReload is explicitly set and button is disabled or in yesterday's saved state
+      // Precision Pre-Reload at T - preReloadLeadMs: active unless dualDefenseReload is explicitly false
+      const preReloadLeadMs = opts.preReloadLeadMs ?? 750;
+      const isReloadEnabled = opts.dualDefenseReload !== false;
+      const reloadWindowMin = Math.max(200, preReloadLeadMs - 400);
+
       if (
-        opts.dualDefenseReload &&
-        untilDrop <= 750 &&
-        untilDrop >= 350 &&
+        isReloadEnabled &&
+        untilDrop <= preReloadLeadMs &&
+        untilDrop >= reloadWindowMin &&
         clicks === 0
       ) {
         const reloadCount = typeof sessionStorage !== "undefined"
@@ -263,7 +269,7 @@ export function startHunt(opts: HuntOptions): () => void {
               sessionStorage.setItem(`dh_reload_count_${opts.targetTimestamp}`, "1");
               sessionStorage.setItem(`dh_last_reload_time_${opts.targetTimestamp}`, String(t));
             }
-            opts.onStatus?.("Pre-drop alignment: Refreshing session for zero-second strike...");
+            opts.onStatus?.(`Pre-drop reload: Refreshing for fresh day quota (T - ${preReloadLeadMs}ms)...`);
             if (opts.onEmergencyReload) {
               opts.onEmergencyReload();
             } else if (typeof window !== "undefined") {
@@ -381,9 +387,9 @@ export function startHunt(opts: HuntOptions): () => void {
         }
       }
 
-      // 2. Guarded reload loop: reload until active button appears (window [T - 750, T + 2250], max 3 reloads)
+      // 2. Guarded reload loop: reload until active button appears (window [T + 250, T + 2250], max 3 reloads)
       if (
-        opts.dualDefenseReload &&
+        isReloadEnabled &&
         t >= opts.targetTimestamp + 250 &&
         t <= opts.targetTimestamp + 2250 &&
         clicks === 0

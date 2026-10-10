@@ -21,6 +21,7 @@ export interface ArmedSession {
   keyword?: string;
   clickProfileMode?: ClickProfileMode;
   dualDefenseReload?: boolean;
+  preReloadLeadMs?: number;
   diagnostics?: TargetDiagnosticsSummary;
   url: string;
   armedAt: number;
@@ -80,6 +81,13 @@ export class HuntCoordinator {
   }
 
   /**
+   * Returns current active armed session, if any.
+   */
+  getCurrentSession(): ArmedSession | null {
+    return this.currentSession;
+  }
+
+  /**
    * Arm hunt for either manual HUD "Arm sniper" or background Scheduled task.
    * Guarantees that only ONE hunt engine instance runs at a time.
    */
@@ -94,6 +102,7 @@ export class HuntCoordinator {
     keyword?: string;
     clickProfileMode?: ClickProfileMode;
     dualDefenseReload?: boolean;
+    preReloadLeadMs?: number;
     diagnostics?: TargetDiagnosticsSummary;
   }): void {
     if (this.state.isArmed && this.currentSession) {
@@ -162,6 +171,7 @@ export class HuntCoordinator {
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
+      preReloadLeadMs: params.preReloadLeadMs,
       diagnostics: diag || params.diagnostics,
       url: typeof window !== "undefined" ? window.location.href : "",
       armedAt: Date.now(),
@@ -199,6 +209,7 @@ export class HuntCoordinator {
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
+      preReloadLeadMs: params.preReloadLeadMs,
       platformTier: diag?.platformTier,
       windowMs:
         (params as any).windowMs ??
@@ -302,6 +313,7 @@ export class HuntCoordinator {
           keyword: session.keyword,
           clickProfileMode: session.clickProfileMode,
           dualDefenseReload: session.dualDefenseReload,
+          preReloadLeadMs: session.preReloadLeadMs,
           diagnostics: session.diagnostics,
         });
         return true;

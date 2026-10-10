@@ -589,7 +589,7 @@ describe("startHunt", () => {
     vi.unstubAllGlobals();
   });
 
-  it("triggers precision pre-reload at T - 750ms if button is still disabled with dualDefenseReload", () => {
+  it("triggers precision pre-reload at T - 750ms if button is still disabled or stale in speed priority", () => {
     let now = DROP - 700; // T - 700ms
     const ticker = new ManualTicker();
     const btn = document.createElement("button");
@@ -604,7 +604,60 @@ describe("startHunt", () => {
       now: () => now,
       locked: btn,
       platformTier: "speed_priority",
-      dualDefenseReload: true,
+      onEmergencyReload: reloadSpy,
+      ticker,
+      onDone: () => {},
+    });
+
+    ticker.tick();
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(`dh_reload_count_${DROP}`)).toBe("1");
+
+    sessionStorage.clear();
+  });
+
+  it("does not trigger pre-reload if dualDefenseReload is explicitly set to false", () => {
+    let now = DROP - 700;
+    const ticker = new ManualTicker();
+    const btn = document.createElement("button");
+    btn.setAttribute("disabled", "true");
+    btn.textContent = "Điểm danh";
+    document.body.appendChild(btn);
+
+    const reloadSpy = vi.fn();
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      platformTier: "speed_priority",
+      dualDefenseReload: false,
+      onEmergencyReload: reloadSpy,
+      ticker,
+      onDone: () => {},
+    });
+
+    ticker.tick();
+    expect(reloadSpy).not.toHaveBeenCalled();
+    sessionStorage.clear();
+  });
+
+  it("triggers pre-reload at custom configured preReloadLeadMs (e.g. T - 1500ms)", () => {
+    let now = DROP - 1400; // T - 1400ms is within [T - 1500, T - 1100]
+    const ticker = new ManualTicker();
+    const btn = document.createElement("button");
+    btn.setAttribute("disabled", "true");
+    btn.textContent = "Điểm danh";
+    document.body.appendChild(btn);
+
+    const reloadSpy = vi.fn();
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      platformTier: "speed_priority",
+      preReloadLeadMs: 1500,
       onEmergencyReload: reloadSpy,
       ticker,
       onDone: () => {},
