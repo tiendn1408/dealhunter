@@ -314,16 +314,151 @@ Bang duoi day mo ta hanh vi cua he thong tai tung moc thoi gian xung quanh gio G
 
 | Moc Thoi Gian | Hanh Dong Chinh | Muc Dich Ky Thuat | Thanh Phan Xu Ly |
 | :--- | :--- | :--- | :--- |
-| **$T - 60s \to T - 20s$** | Pre-warm Tab & Calibration | Bat tab len front, focus window, dong bo dong ho 3 vong voi server qua tieu de `Date`. | `TaskScheduler`, `TimeCalibrator` |
-| **$T - 15s$** | Clean Tab & Arm Verify | Lam sach session/DOM tren tab cu neu can, kiem tra khoa nut va tao snapshot descriptor. | `TaskScheduler`, `HuntCoordinator` |
-| **$T - 5s$** | Socket Keep-Alive Ping | Gui request `HEAD` ngam giu ket noi TCP/TLS mo san, triet tieu 30ms-80ms bat tay TLS. | `HuntEngine` |
-| **$T - 750ms$** | Precision Pre-Reload | Neu nut muc tieu van bi khoa boi phien hom qua, reload truoc 750ms de DOM kip mount truoc gio G 150ms. | `HuntEngine` |
-| **$T - 750ms \to T - 150ms$** | Fast In-Memory Reload | Trinh duyet tai lai trang tu bo nho dem cache, content script khoi phuc phien tu `sessionStorage`. | `HuntCoordinator`, `ElementResolver` |
-| **$T - 28ms$** | Pre-fire Lead & DOM Unblock | Cuong che go `disabled`, bo qua quy dao chuot Bezier, dispatch chuoi su kien tuc thi trong 0.1ms. | `HuntEngine`, `HumanClicker` |
-| **$T - 28ms \to T = 0ms$** | Network Transit Window | Goi tin HTTP di chuyen qua ha tang mang Internet (~25-30ms ping RTT). | Internet / Network Layer |
-| **$T = 00:00:00.000$** | Server Arrival (Diem G) | Goi tin cham may chu dung tich tac server mo cong ngay moi, an tron moc 00:00:00. | Origin Server (`caffiliate.vn`) |
-| **$T + 250ms \to T + 2250ms$** | Guarded Reload Loop | Neu server cap nhat cham hoac chua mo nut, reload lap lai toi da 3 lan (cach nhau $\ge 650ms$). Vua co nut la click ngay. | `HuntEngine` |
-| **$T + 50ms \to T + 500ms$** | Completion Verification | Nhan dien nut bien doi sang da diem danh/saved, dung ban, cap nhat UI va don dep storage. | `ElementResolver`, `HuntCoordinator` |
+| **$T - 60s \to T - 50s$** | Wakeup & Focus Foreground Tab | Danh thuc service worker, focus window va dua tab len front de thoat khoi co che bop nghen timer/CPU cua Chromium. | `TaskScheduler`, Chrome APIs |
+| **$T - 50s \to T - 20s$** | 3-Phase Domain Calibration | Gui 3 dot HEAD request toi server dich, trich xuat Date header va RTT de loai bo sai so dong ho he dieu hanh ($\pm 10ms$). | `TimeCalibrator`, `TimeSyncClient` |
+| **$T - 20s \to T - 15s$** | Target Verify & SSOT Session | Dinh vi nut, chan doan nen tang (`speed_priority`), luu phien truc chien vao `sessionStorage` (`ARMED_SESSION_KEY`). | `TargetDiagnostics`, `HuntCoordinator` |
+| **$T - 15s \to T - 5s$** | Web Worker Dedicated Ticker | Khoi dong luong Worker chay nen rieng biet (nhip tick 10ms on dinh), dong bo dem nguoc HUD mili-giay. | `WorkerTimer`, `FloatingHUD` |
+| **$T - 5.000s$** | Socket Keep-Alive Pre-warming | Ngam gui `fetch(HEAD, keepalive: true, cache: "no-store")` giu am ket noi TCP/TLS, triet tieu 30ms-80ms bat tay handshake. | `HuntEngine` |
+| **$T - 750ms$ (hoac Lead)** | Precision Pre-Reload | Neu nut con vuong trang thai cu hom qua (`disabled`/`saved`), tu dong reload truoc 750ms de trang kip lay phien moi. | `HuntEngine` |
+| **$T - 750ms \to T - 150ms$** | Zero-Loss Session Restore | Trinh duyet tai lai ma tu cache; Content Script va HUD doc lai `sessionStorage`, giu nguyen Armed, highlight nut, khoa moc gio G. | `HuntCoordinator`, `FloatingHUD`, `ElementResolver` |
+| **$T - 28ms$** | Pre-fire Lead & DOM Unblock | Cuong che go bo `disabled`, set `aria-disabled="false"`, xoa class `.disabled` tren DOM; bo qua Bezier (0.1ms). | `HuntEngine`, `HumanClicker` |
+| **$T - 28ms \to T = 0ms$** | Network Transit Window | Phat chuoi Pointer Events W3C (dwell time 8ms); goi tin HTTP di chuyen qua ha tang mang Internet (~25-28ms RTT/2). | `HumanClicker`, Network Layer |
+| **$T = 00:00:00.000$** | Server Arrival (Diem G) | Goi tin HTTP cham cong API gateway cua server dung tich tac mo cong ngay moi, doat ve Top 1 tuyet doi. | Origin Server (`caffiliate.vn`) |
+| **$T + 0ms \to T + 500ms$** | Hyper Burst Sequence | Duy tri nhip ban cuong do cao (25ms/click, ~40 CPS) chong nuot su kien, dong thoi theo doi bien doi DOM. | `HuntEngine`, `ElementResolver` |
+| **$T + 250ms \to T + 2500ms$** | Guarded Reload Loop | Neu server cap nhat cham, reload toi da 3 lan (cach nhau $\ge 650ms$). Vua phat hien nut mo la dung reload va click tuc thi. | `HuntEngine` |
+| **$T + 500ms \to T + 3000ms$** | Completion & Cleanup | Phat hien nut chuyen sang da diem danh/saved, ngung ban, cap nhat HUD xanh, don dep `sessionStorage` va cap nhat task. | `ElementResolver`, `HuntCoordinator` |
+| **$T + 3000ms \to T + 10s$** | Safety Watchdog Teardown | Bo hen gio an toan tu dong dong chu trinh san neu khong con phan hoi, giai phong tai nguyen trinh duyet va ghi nhan log. | `HuntEngine`, `TaskScheduler` |
+
+### 8.5. Kich Ban Thuc Thi Chi Tiet Tu 1 Phut Truoc Gio G (23:59:00) Den 10 Giay Sau Gio G (00:00:10)
+
+Gia su muc tieu san la moc giao thua nua dem **$00:00:00.000$** tren trang web React SPA (`https://app.caffiliate.vn`):
+
+```mermaid
+timeline
+    title Luong Thuc Thi Chi Tiet Tu 23:59:00 Den 00:00:10
+    23:59:00 : Wakeup Background : Focus Tab & Dua len Tien canh : Pre-warm Reload tab cu
+    23:59:10 : Time Calibration 3 Vong : Tinh do lech Date & RTT : Triet tieu sai so gio OS
+    23:59:40 : Chuan doan phan tu : Khoa Universal Descriptor : Luu ARMED_SESSION vao sessionStorage
+    23:59:45 : Kich hoat Web Worker Timer : Nhip tick 10ms doc lap : Dem nguoc mili-giay tren HUD
+    23:59:55 : Keep-Alive HEAD Socket Ping : Mo san TCP/TLS socket
+    23:59:59.250 : Precision Pre-Reload : Kiem tra nut cu hom qua : Kich hoat reload truoc 750ms
+    23:59:59.600 : Trang mount xong : HUD phuc hoi session : Re-highlight DOM : Khoa cung moc gio G
+    23:59:59.972 : Ban don T-28ms : Cuong che go disabled tren DOM : Dispatch W3C Pointer Events
+    00:00:00.000 : Goi tin cham API Server : Server mo cong ngay moi : Ghi nhan Top 1
+    00:00:00.050 : Hyper Burst ~40 CPS : May trang thai theo doi DOM : Guarded reload neu server cham
+    00:00:01.200 : Phat hien trang thai Saved : Dung ban : Cap nhat HUD : Don dep storage
+    00:00:10.000 : Safety Watchdog Timeout : Dong toan bo phien an toan : Ghi nhan log hoat dong
+```
+
+#### 1. Giai doan T - 60s den T - 50s (23:59:00 - 23:59:10): Danh thuc Background & Kich hoat Tab
+- **Su kien**: `chrome.alarms.onAlarm` kich hoat Background Service Worker voi ma `dh_task_<id>`.
+- **Hanh dong**:
+  - `scheduler.ts` khoa cung moc gio G tuyet doi: $00:00:00.000$ (tranh tinh nham sang ngay hom sau).
+  - Tim kiem tab co URL khop voi trang muc tieu qua `isSamePageUrl`.
+  - Goi `chrome.windows.update(windowId, { focused: true })` va `chrome.tabs.update(tabId, { active: true })`.
+- **Y nghia ky thuat**: Trinh duyet Chromium tu dong bop nghen (throttle) CPU va timer cua cac tab/cua so nam o che do background xuong tan 1000ms. Dua tab len mat truoc (active & focused) giup loai bo hoan toan co che bop nghen nay.
+- Neu tab da mo tu truoc va con du thoi gian ($\ge 20s$), he thong thuc hien pre-warm reload tab de giai phong DOM stale va lam sach bo nho.
+
+#### 2. Giai doan T - 50s den T - 20s (23:59:10 - 23:59:40): Hieu chuan Dong ho May chu (Domain Time Calibration)
+- **Su kien**: `timeCalibrator.calibrate(3, 4000, targetOrigin)` gui 3 request `HEAD` lien tiep toi origin server.
+- **Hanh dong**:
+  - Trich xuat tieu de `Date` trong response HTTP va do thoi gian khuu hoi 2 chieu ($RTT$).
+  - Tinh toan do lech chuan: $\theta = T_{\text{server}} - (T_{\text{client\_receive}} - RTT / 2)$.
+- **Y nghia ky thuat**: Dong ho he dieu hanh cua may tinh nguoi dung thuong bi lech tu 100ms den hang ngan mili-giay so voi may chu. Buoc nay triet tieu hoan toan do lech, dong bo gio may tinh ve sat gio cua may chu muc tieu trong pham vi $\pm 10ms$.
+
+#### 3. Giai doan T - 20s den T - 15s (23:59:40 - 23:59:45): Chuan doan Muc tieu & Thiet lap Phien SSOT
+- **Su kien**: `scheduler.ts` gui message `TRIGGER_HUNT` toi tab, content script tiep nhan qua `HuntCoordinator`.
+- **Hanh dong**:
+  - `TargetDiagnostics.inspect(targetElement)` danh gia nut muc tieu.
+  - Xac dinh tier la `speed_priority` (nhan dien dac thu trang diem danh doi thuong SPA nhu `caffiliate.vn`).
+  - Tu dong cau hinh che do nhap chuot `hyper` (khoang cach 25ms, ~40 CPS, dwell time 8ms) va lead ban don $T - 28ms$.
+  - Luu phien truc chien vao `sessionStorage` (`ARMED_SESSION_KEY`): bao gom slot gio, gio tuy chinh, `preReloadLeadMs`, `universalDescriptor`, va `diagnostics`.
+
+#### 4. Giai doan T - 15s den T - 5s (23:59:45 - 23:59:55): Khoi dong Web Worker Timer Khong Tre
+- **Su kien**: `TimerWorker` (`timer_worker.ts`) nhan lenh khoi chay luong Worker rieng.
+- **Hanh dong**:
+  - Web Worker phat nhip tick on dinh moi 10ms tren mot Background Thread rieng biet.
+  - Hoan toan khong bi anh huong neu UI Main Thread cua trang bi dung (freeze) boi cac animation hay React re-render.
+  - Floating HUD tren man hinh hien thi dong ho dem nguoc mili-giay thoi gian thuc sat sao tung nhip tick.
+
+#### 5. Mien T - 5.000s (23:59:55.000): Keep-Alive Socket Pre-warming
+- **Su kien**: `HuntEngine` phat mot request ngam `fetch(url, { method: "HEAD", keepalive: true, cache: "no-store" })`.
+- **Hanh dong**:
+  - Bat tay ket noi TCP va thiet lap phien bao mat TLS/SSL san voi may chu.
+- **Y nghia ky thuat**: Ket noi giu o trang thai mo va nong (warm socket). Khi gio G den va extension phat cu click, goi tin HTTP se duoc day di ngay tren socket co san ma khong mat 30ms - 80ms cho TCP handshake va TLS negotiation.
+
+#### 6. Mien T - 750ms (23:59:59.250): Precision Pre-Reload Don Dau
+- **Su kien**: `HuntEngine` kiem tra trang thai nut muc tieu tren man hinh.
+- **Hanh dong**:
+  - Phat hien nut van o trang thai cua ngay hom truoc (`disabled = true` hoac `state = "saved"`).
+  - Ghi nhan bien dem `dh_reload_count_DROP = 1` vao `sessionStorage`.
+  - Goi `window.location.reload()` de trinh duyet tai lai trang truoc gio G 750ms (hoac theo thoi gian nguoi dung chon: 1.5s).
+- **Y nghia ky thuat**: Cac trang React SPA khong co co che tu dong reset nut diem danh theo thoi gian thuc ma phai tai lai trang de lay ma phien ngay moi. Reload truoc 750ms dam bao trang hoan tat tai ma truoc gio G 150ms.
+
+#### 7. Giai doan T - 750ms den T - 150ms (23:59:59.250 - 23:59:59.850): Tai lai Trang & Phuc hoi Phien Tuyet Doi (Zero-State Loss)
+- **Su kien**: Trinh duyet tai lai trang tu bo nho cache trong 200ms - 400ms. Content script va Floating HUD mount lai.
+- **Hanh dong**:
+  - `HuntCoordinator` doc ngay `ARMED_SESSION_KEY` tu `sessionStorage` trong $< 2ms$.
+  - `FloatingHUD` phuc hoi toan bo giao dien:
+    - Giu nguyen trang thai `Armed = true`.
+    - Khoi phuc targetSlot, customTime, tuy chon preReloadLead.
+    - Khoa cung mốc dem nguoc `armedTargetTimestampRef.current` (00:00:00.000), khong bi lech moc gio.
+    - Tu dong highlight lai nut DOM tren man hinh voi vien xanh neon `dh-target-highlight`.
+  - `ElementResolver.relocateUniversal`: Dinh vi lai nut DOM vua duoc React dung moi thong qua van tay noi dung va cay phan cap chi trong $< 10ms$.
+
+#### 8. Mien T - 28ms (23:59:59.972): Ban don gio G & Cuong che go `disabled` DOM
+- **Su kien**: Bo dem cham moc $T - (RTT / 2) \approx T - 28ms$.
+- **Hanh dong**:
+  - `HuntEngine` lap tuc can thiep truc tiep vao phan tu DOM:
+    - Go bo thuoc tinh `disabled = false`.
+    - Thiet lap `aria-disabled="false"`.
+    - Xoa bo class `.disabled` khoi danh sach class cua nut.
+  - Bo qua hoan toan quy dao chuot cong Bezier (`skipApproach: true`).
+  - Bat dau phat su kien click ngay lap tuc trong 0.1ms ma khong can doi React tick cycle (tiet kiem 30ms - 80ms).
+
+#### 9. Giai doan T - 28ms den T = 0ms (23:59:59.972 - 00:00:00.000): Dispatch W3C Events & Di chuyen Mang
+- **Su kien**: `HumanClicker` phat chuoi su kien chuot W3C Pointer Events Level 3:
+  `pointerdown` $\to$ `mousedown` $\to$ `pointerup` $\to$ `mouseup` $\to$ `click`.
+- **Hanh dong**:
+  - Toa do click duoc phan bo ngau nhien Bivariate Gaussian quanh tam nut.
+  - Thoi gian de chuot (physical dwell time): 8ms.
+  - Trinh duyet dong goi goi tin HTTP POST / GET diem danh va ban ra card mang.
+  - Goi tin di chuyen tren ha tang mang Internet trong thoi gian $\approx 25-28ms$.
+
+#### 10. Mien T = 00:00:00.000 (Dung gio G nua dem): Goi tin cham Dich (Server Arrival)
+- **Su kien**: Goi tin HTTP cham vao API Gateway cua may chu `caffiliate.vn` dung tich tac $00:00:00.000$.
+- **Hanh dong**:
+  - May chu vua mo cong tiep nhan luot diem danh cua ngay moi.
+  - Goi tin cua DealHunter duoc server tiep nhan dau tien trong danh sach request gui ve, xac lap thu hang Top 1 tuyet doi.
+
+#### 11. Giai doan T + 0ms den T + 500ms (00:00:00.000 - 00:00:00.500): Duy tri Loat ban Hyper Burst (~40 CPS)
+- **Su kien**: `HuntEngine` tiep tuc phat chuoi click voi chu ky 25ms/click.
+- **Hanh dong**:
+  - Phong ngua truong hop goi tin dau tien bi drop mang hoac server yeu cau nhieu lan xac nhan.
+  - `ElementResolver.isTargetCompleted` theo doi lien tuc:
+    - DOM mutation tren nut (chu doi thanh "Da diem danh", "Da nhan").
+    - Toast thong bao thanh cong xuat hien tren man hinh.
+    - SVG checkmark hoac thuoc tinh W3C ARIA cap nhat.
+
+#### 12. Giai doan T + 250ms den T + 2500ms (00:00:00.250 - 00:00:02.500): Guarded Post-Drop Reload Loop (Neu backend cham)
+- **Su kien**: Neu backend cua trang cap nhat cham, qua gio G ma nut van chua mo khoa:
+- **Hanh dong**:
+  - Tu dong kich hoat reload lap lai co kiem soat qua `dh_reload_count_DROP` (toi da 3 lan, moi lan cach nhau $\ge 650ms$).
+  - **Dac tinh 0ms latency**: Vua phat hien nut tro nen kha dung o bat ky tich tac nao, extension lap tuc huy lenh reload va ban click ngay lap tuc.
+
+#### 13. Giai doan T + 500ms den T + 3000ms: Xac nhan Hoan tat & Don dep Phien
+- **Su kien**: `isTargetCompleted` xac nhan hoan tat (`state = "saved"`).
+- **Hanh dong**:
+  - `HuntEngine` ngung ban click ngay lap tuc de bao ve server va tai khoan.
+  - Floating HUD doi sang huy hieu xanh: `Saved` / `Hoan tat`.
+  - `HuntCoordinator` don dep `ARMED_SESSION_KEY`, `dh_reload_count` khoi `sessionStorage`.
+  - Cap nhat trang thai nhiem vu trong `chrome.storage.local` thanh `completed`.
+
+#### 14. Giai doan T + 3000ms den T + 10s (00:00:03 - 00:00:10): Safety Watchdog Teardown
+- **Su kien**: Bo hen gio bao ve an toan 10s hoat dong.
+- **Hanh dong**:
+  - Neu qua 10 giay sau gio G ma van khong nhan duoc phan hoi thanh cong (vi du: server trang sup do, rot mang), he thong chu dong dung toan bo vong lap san.
+  - Giai phong tai nguyen bo nho, dam bao an toan 100% cho trinh duyet va luu log ket qua de nguoi dung tra cuu.
 
 ---
 
