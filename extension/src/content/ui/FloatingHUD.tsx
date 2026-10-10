@@ -1241,44 +1241,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               </div>
             </div>
           </div>
-
-          {/* Pre-reload timing option */}
-          <div className="mt-2 flex items-center justify-between gap-1.5 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/10 text-[10px]">
-            <span className="font-medium text-slate-400">Reload đón giờ G:</span>
-            <div className="flex items-center gap-1">
-              {(
-                [
-                  [750, "750ms"],
-                  [1500, "1.5s"],
-                  [0, "Tắt"],
-                ] as const
-              ).map(([lead, label]) => {
-                const isActive = (lead === 0 && !preReloadEnabled) || (preReloadEnabled && preReloadLeadMs === lead);
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    disabled={isArmed}
-                    onClick={() => {
-                      if (lead === 0) {
-                        setPreReloadEnabled(false);
-                      } else {
-                        setPreReloadEnabled(true);
-                        setPreReloadLeadMs(lead);
-                      }
-                    }}
-                    className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-semibold transition ${
-                      isActive
-                        ? "bg-emerald-500/30 text-emerald-300 ring-1 ring-emerald-500/50"
-                        : "text-slate-400 hover:text-slate-200"
-                    } disabled:opacity-50`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         {/* Card 3: Universal Target locking */}

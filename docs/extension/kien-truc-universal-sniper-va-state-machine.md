@@ -242,13 +242,10 @@ Ham `isMajorMarketplace` phan chia pham vi hoat dong:
 Tren cac trang React SPA khong co co che tu dong mo khoa nut theo thoi gian thuc ma can reload trang de lay session ngay moi (`caffiliate.vn`):
 1. **T - 5s (Keep-Alive Socket Pre-warming)**:
    - Ngam gui request `HEAD` voi `cache: "no-store"` va `keepalive: true` toi origin server de giu am socket TCP/TLS, tranh ton thoi gian bat tay TLS handshake khi click.
-2. **$T - \text{preReloadLeadMs}$ (Precision Pre-Reload & Tuy Chon Cau Hinh)**:
-   - He thong cung cap bo chon thoi gian reload linh hoat tren Floating HUD de phu hop voi tung toc do mang va dac thu trang web:
-     - **`750ms` (Mac dinh)**: Thich hop cho mang on dinh, trang SPA nhe tai lai trong 200ms - 400ms.
-     - **`1.5s`**: Danh cho mang co do tre cao hoac trang SPA nang, nhieu asset can them thoi gian mount DOM.
-     - **`Tat (0ms)`**: Danh cho cac trang tu cap nhat nut qua WebSocket / Polling khong can tai lai toan trang.
-   - Neu nut muc tieu van o trang thai khoa cua ngay hom truoc (`disabled` hoac `saved`), tu dong kich hoat reload truoc $T - \text{preReloadLeadMs}$ de trang kip hoan tat tai lai ma va CSS truoc gio G 100ms - 200ms.
-   - Toan bo trang thai phien san (`ARMED_SESSION_KEY`) bao gom slot gio, gio tuy chinh, thoi gian reload, va target descriptor duoc luu tru an toan trong `sessionStorage` va tu dong phuc hoi 100% khi trang mount lai.
+2. **$T - 750ms$ (Precision Pre-Reload Tu Dong 100%)**:
+   - Thuat toan van hanh hoan toan tu dong duoi nen ma khong can nguoi dung phai can thiep hay chon thu cong tren giao dien HUD.
+   - Tai giay thu $59.25s$ truoc gio G ($T - 750ms$), he thong tu dong kiem tra trang thai nut muc tieu. Neu nut van o trang thai khoa cua ngay hom truoc (`disabled` hoac `saved`), dong co tu dong kich hoat reload truoc 750ms de trang kip hoan tat tai lai ma va CSS truoc gio G 100ms - 200ms.
+   - Toan bo trang thai phien san (`ARMED_SESSION_KEY`) bao gom slot gio, gio tuy chinh, va target descriptor duoc luu tru an toan trong `sessionStorage` va tu dong phuc hoi 100% khi trang mount lai.
 3. **Cua so 3 giay quanh gio G ($[T + 150ms, T + 2500ms]$) & Co Che Dead Click Recovery**:
    - Ap dung co che reload lap lai co kiem soat qua `sessionStorage` (`dh_reload_count_${DROP}`):
    - Toi da 3 lan reload, moi lan cach nhau toi thieu 500ms de dam bao trinh duyet kip mount DOM tu bo nho cache.

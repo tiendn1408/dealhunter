@@ -104,24 +104,22 @@ Dung khi ban dang theo doi truc tiep tren man hinh va can kich hoat san mot nut 
    - **`00:00`**: San vao dung nua dem tiep theo (00:00:00).
    - **`+1m` / `+1p`**: San vao dau phut tiep theo.
    - **`Custom` / `Tuy chinh`**: Nhap gio bat ky theo dinh dang `HH:mm:ss`. He thong kiem tra tinh hop le va canh bao neu gio nhap khong dung dinh dang.
-2. **Cau hinh Reload don dau (Pre-reload Lead Time)**:
-   - **`750ms` (Mac dinh)**: Tu dong reload trang truoc gio G 750ms de trang kip lay phien lam viec ngay moi ma khong ton thoi gian cho doi. Phu hop nhat voi cac trang React SPA nhu `caffiliate.vn`.
-   - **`1.5s`**: Danh cho duong truyen mang cham hoac trang web co ma nguon nang can them thoi gian mount DOM.
-   - **`Tat (Off)`**: Danh cho cac trang tu cap nhat nut theo thoi gian thuc khong can tai lai toan bo trang web.
-3. **Khoa nut muc tieu (Target Button)**:
+2. **Khoa nut muc tieu (Target Button)**:
    - Bam nut **`Pick button`** (**`Chon nut`**): Re chuot len man hinh den nut ban muon click (nut Luu voucher, nut Mua ngay, nut Dat cho). Nut se duoc lam noi bat voi vien xanh neon `dh-target-highlight`. Click vao nut de khoa muc tieu.
    - Hoac bam **`Auto-detect`** (**`Tu quet`**): Neu dang o tren Shopee, tien ich tu dong quet va de xuat nut voucher hop le dau tien tren man hinh.
    - Neu muon huy chon nut da khoa, bam bieu tuong nut **X** ben canh ten muc tieu de reset ve trang thai ban dau.
-4. **Kiem tra dong bo dong ho**:
+3. **Kiem tra dong bo dong ho**:
    - Bang HUD hien thi thoi gian thuc va do lech giua may tinh va server (vi du: `+120ms ±15ms`).
    - Bam bieu tuong xoay tron ben canh de can chinh lai neu can.
-5. **Bam thu 1 click (Test click)**:
+4. **Bam thu 1 click (Test click)**:
    - Bam **`Test click (1x)`** (**`Bam thu 1 click`**) de kiem tra xem chuoi pointer events co truyen dung vao nut muc tieu hay khong.
 
 ### Buoc 4: Kich hoat truc chien (Arm Sniper)
 1. Bam nut lon: **`Arm sniper`** (**`Kich hoat san`**).
 2. Nut chuyen sang trang thai **`Disarm`** (**`Huy kich hoat`**) va bang HUD bat dau dem nguoc mili-giay den gio G.
-3. **Co che bao toan phien qua Reload**: Neu chon Reload (`750ms` hoac `1.5s`), khi trang reload, Floating HUD va dong co san se tu dong khoi phuc toan bo thiet lap va muc tieu da chon tu `sessionStorage`, giu nguyen trang thai Armed va tiep tuc dem nguoc chinh xac ma khong bi gian doan.
+3. **Thuat toan Precision Pre-Reload tu dong 100%**:
+   - Nguoi dung khong can phai cau hinh thu cong. Tai giay thu 59.25s truoc gio G (T - 750ms), he thong tu dong kiem tra trang thai nut. Neu nut van bi khoa tu ngay hom truoc, extension tu dong reload don dau de trang kip lay phien moi.
+   - Khi trang reload, Floating HUD va dong co san tu dong khoi phuc toan bo thiet lap va muc tieu tu `sessionStorage`, giu nguyen trang thai Armed va tiep tuc dem nguoc chinh xac khong bi gian doan.
 4. Ban co the bam nut Minimize (`-`) de thu gon HUD xuong thanh trang thai nho gon o goc man hinh.
 5. Dung gio G (co tinh lead 150ms hoac 28ms tren `speed_priority`), he thong se tu dong kich hoat chuoi click adaptive cho den khi trang web xac nhan luu thanh cong hoac het thoi gian san.
 
