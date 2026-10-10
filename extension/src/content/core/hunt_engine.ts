@@ -136,6 +136,13 @@ export function startHunt(opts: HuntOptions): () => void {
   let scrolled = false;
   let done = false;
   let keepAliveSent = false;
+  let hadDisabledOnMount = Boolean(
+    opts.locked && (
+      opts.locked.hasAttribute("disabled") ||
+      opts.locked.getAttribute("aria-disabled") === "true" ||
+      (opts.locked as any).disabled
+    )
+  );
   const initialPageUrl = typeof window !== "undefined" ? window.location.href : "";
 
   const finish = (result: HuntResult, detail: string) => {
@@ -338,6 +345,15 @@ export function startHunt(opts: HuntOptions): () => void {
       const isFireMoment = t >= opts.targetTimestamp - preFireLeadMs;
       const isLockedTarget = Boolean(isLockedHunt && el);
 
+      // Track if target was initially disabled prior to DOM unblocking
+      if (
+        el &&
+        !hadDisabledOnMount &&
+        (el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true" || (el as any).disabled)
+      ) {
+        hadDisabledOnMount = true;
+      }
+
       // Speed-priority instant unblock:
       // Do not wait for React timer or re-render cycle to remove disabled attributes.
       // At fire moment (T - preFireLeadMs), unblock locked target immediately.
@@ -387,12 +403,12 @@ export function startHunt(opts: HuntOptions): () => void {
         }
       }
 
-      // 2. Guarded reload loop: reload until active button appears (window [T + 250, T + 2250], max 3 reloads)
+      // 2. Guarded reload loop: reload until active button appears (window [T + 150, T + 2500], max 3 reloads)
+      // Dead Click Recovery: Even if probe click(s) were fired, if target remains locked, missing, or unresponsive in yesterday's state, trigger guarded reload!
       if (
         isReloadEnabled &&
-        t >= opts.targetTimestamp + 250 &&
-        t <= opts.targetTimestamp + 2250 &&
-        clicks === 0
+        t >= opts.targetTimestamp + 150 &&
+        t <= opts.targetTimestamp + 2500
       ) {
         const reloadCount = typeof sessionStorage !== "undefined"
           ? parseInt(sessionStorage.getItem(`dh_reload_count_${opts.targetTimestamp}`) || "0", 10)
@@ -401,16 +417,25 @@ export function startHunt(opts: HuntOptions): () => void {
           ? parseInt(sessionStorage.getItem(`dh_last_reload_time_${opts.targetTimestamp}`) || "0", 10)
           : 0;
 
+        const isButtonMissing = !el;
+        const isStaleFromYesterday = Boolean(el && elementResolver.getButtonState(el) === "saved");
+        const isUnclickableAtDrop = Boolean(clicks === 0 && (isButtonMissing || !isTargetClickable || isStaleFromYesterday));
+        const isDeadClickProbe = Boolean(
+          clicks > 0 &&
+          hadDisabledOnMount &&
+          t - lastClickAt >= 150
+        );
+
         if (
           reloadCount < 3 &&
-          t - lastReloadTime >= 650 &&
-          (!el || !isTargetClickable || elementResolver.getButtonState(el) === "saved")
+          t - lastReloadTime >= 500 &&
+          (isUnclickableAtDrop || isDeadClickProbe)
         ) {
           if (typeof sessionStorage !== "undefined") {
             sessionStorage.setItem(`dh_reload_count_${opts.targetTimestamp}`, String(reloadCount + 1));
             sessionStorage.setItem(`dh_last_reload_time_${opts.targetTimestamp}`, String(t));
           }
-          opts.onStatus?.(`Reloading until active button detected (${reloadCount + 1}/3)...`);
+          opts.onStatus?.(`Reloading: target inactive or unresponsive after probe click (${reloadCount + 1}/3)...`);
           if (opts.onEmergencyReload) {
             opts.onEmergencyReload();
           } else if (typeof window !== "undefined") {

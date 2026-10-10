@@ -249,9 +249,15 @@ Tren cac trang React SPA khong co co che tu dong mo khoa nut theo thoi gian thuc
      - **`Tat (0ms)`**: Danh cho cac trang tu cap nhat nut qua WebSocket / Polling khong can tai lai toan trang.
    - Neu nut muc tieu van o trang thai khoa cua ngay hom truoc (`disabled` hoac `saved`), tu dong kich hoat reload truoc $T - \text{preReloadLeadMs}$ de trang kip hoan tat tai lai ma va CSS truoc gio G 100ms - 200ms.
    - Toan bo trang thai phien san (`ARMED_SESSION_KEY`) bao gom slot gio, gio tuy chinh, thoi gian reload, va target descriptor duoc luu tru an toan trong `sessionStorage` va tu dong phuc hoi 100% khi trang mount lai.
-3. **Cua so 3 giay quanh gio G ($[T - \text{preReloadLeadMs}, T + 2250ms]$)**:
+3. **Cua so 3 giay quanh gio G ($[T + 150ms, T + 2500ms]$) & Co Che Dead Click Recovery**:
    - Ap dung co che reload lap lai co kiem soat qua `sessionStorage` (`dh_reload_count_${DROP}`):
-   - Toi da 3 lan reload, moi lan cach nhau toi thieu 650ms de tranh spam may chu.
+   - Toi da 3 lan reload, moi lan cach nhau toi thieu 500ms de dam bao trinh duyet kip mount DOM tu bo nho cache.
+   - **Phat hien Dead Click (Cưỡng chế thất bại)**:
+     - Khi extension cuong che go `disabled` tren DOM va phat cu click tham do vao gio G, neu sau 150ms:
+       + Nut van bi khoa boi State noi bo cua React hoac van mang nhan `saved` tu ngay hom truoc;
+       + Nut khong ton tai tren DOM (`el === null`);
+       + Khong co bat ky phan hoi thanh cong hay bien doi DOM nao;
+     - **He thong nhan dien ngay day la Cu Click Chet (Dead Click) do server backend mo tre** -> **TUYET DOI KHONG SPAM CLICK TIEP TUC** tren nut chet nay ma lap tuc kich hoat **Guarded Reload ngay** de keo du lieu ngay moi tu may chu!
    - **Vua phat hien nut kha dung (`isTargetClickable && state !== "saved"`) la lap tuc dung reload va click ngay (0ms tre)**.
    - **Phong ngua False Positive**: Ham danh gia `isTargetCompleted` khong duoc ngoc nhan thuoc tinh `disabled` ban dau cua ngay hom truoc la da thanh cong. He thong chi cong nhan thanh cong khi da co it nhat 1 cu click duoc phat di hoac DOM co su bien doi trang thai sau gio G.
    - Khi co click thanh cong hoac deal hoan tat, tu dong don dep toan bo bien dem trong `sessionStorage`.
@@ -490,15 +496,16 @@ He thong tu dong ap dung chien luoc rieng biet tuy thuoc vao do nhay cam cua he 
    - Khi React huy phan tu DOM cu va chen phan tu DOM moi vao cay tai gio G, `elementResolver.relocateUniversal(desc)` su dung chu ky noi dung (`matchesContentSignature`) va bo neo vi tri (`documentTop`, `ancestorSelector`) de tim lai nut moi trong 1 tick (10ms), khong lam dut gay chuoi click.
 3. **Chong click lap vao trang thai cu hom truoc**:
    - Neu tai gio G nut tren man hinh van dang o trang thai `saved` tu ngay hom truoc, he thong kiem tra `state !== "saved"` truoc khi ban click, tranh lang phi luot click vao nut chua duoc lam moi.
-4. **Gioi han reload chong spam (Anti-Spam Reload Throttling)**:
+4. **Gioi han reload va Dead Click Recovery (Anti-Spam & Dead Click Protection)**:
    - Moi lan reload duoc ghi nhan vao `dh_reload_count_${DROP}` va `dh_last_reload_time_${DROP}` trong `sessionStorage`.
-   - Chi cho phep reload cach nhau toi thieu 650ms va toi da 3 lan trong cua so 3 giay. Khi so luot click $\ge 1$, co che reload bi khoa hoan toan.
+   - Chi cho phep reload cach nhau toi thieu 500ms va toi da 3 lan trong cua so 3 giay de tranh spam may chu.
+   - Khi da phat cu click tham do (clicks $\ge 1$) nhung nut khong phan hoi hoac van mang trang thai cu cua ngay hom truoc sau 150ms (Dead Click), he thong van chu dong kich hoat Guarded Reload de tim phien moi tu server thay vi tiep tuc spam click vo nghia.
 
 ---
 
 ## 11. Quy Chuan Chat Luong va Kiem Thu
 
-- **Unit Tests**: 206/206 tests pass tren 18 test suites (`npm test` / `npx vitest run`).
+- **Unit Tests**: 207/207 tests pass tren 18 test suites (`npm test` / `npx vitest run`).
 - **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.
 - **Production Build**: Bien dich hoan tat sach se `popup.js`, `background.js`, `content.js` va `content.css`.
 - **Zero-Emoji**: Tuyet doi khong su dung emoji trong ma nguon, log, test va tai lieu.

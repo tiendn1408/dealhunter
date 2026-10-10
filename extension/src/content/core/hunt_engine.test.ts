@@ -775,6 +775,41 @@ describe("startHunt", () => {
     expect(finalOutcome?.clicks).toBe(6);
     expect(finalOutcome?.detail).toContain("Hyper burst dispatched (6 clicks)");
   });
+
+  it("triggers guarded reload after probe click if button remains disabled or stale in speed_priority (Dead Click Recovery)", () => {
+    let now = DROP - 28;
+    const ticker = new ManualTicker();
+    const btn = document.createElement("button");
+    btn.textContent = "Điểm danh";
+    btn.setAttribute("disabled", "true");
+    document.body.appendChild(btn);
+
+    const reloadSpy = vi.fn();
+
+    startHunt({
+      targetTimestamp: DROP,
+      now: () => now,
+      locked: btn,
+      platformTier: "speed_priority",
+      dualDefenseReload: true,
+      onEmergencyReload: reloadSpy,
+      ticker,
+      onDone: () => {},
+    });
+
+    // Fire probe click at T - 28ms
+    ticker.tick();
+
+    // Advance 160ms past drop: probe click fired, but button re-disabled/stale
+    btn.setAttribute("disabled", "true");
+    now = DROP + 180;
+    ticker.tick();
+
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(`dh_reload_count_${DROP}`)).toBe("1");
+
+    sessionStorage.clear();
+  });
 });
 
 
