@@ -245,9 +245,9 @@ export function startHunt(opts: HuntOptions): () => void {
         }
       }
 
-      // Precision Pre-Reload at T - 750ms if button is still in previous day's / inactive state
+      // Precision Pre-Reload at T - 750ms: ONLY if dualDefenseReload is explicitly set and button is disabled or in yesterday's saved state
       if (
-        (effectiveTier === "speed_priority" || opts.dualDefenseReload) &&
+        opts.dualDefenseReload &&
         untilDrop <= 750 &&
         untilDrop >= 350 &&
         clicks === 0
@@ -257,14 +257,8 @@ export function startHunt(opts: HuntOptions): () => void {
           : 0;
         if (reloadCount === 0) {
           const el = resolve(false);
-          const isClickableNow = Boolean(
-            el &&
-            !el.hasAttribute("disabled") &&
-            el.getAttribute("aria-disabled") !== "true" &&
-            !el.classList.contains("disabled") &&
-            elementResolver.getButtonState(el) !== "saved"
-          );
-          if (!isClickableNow) {
+          const isStale = Boolean(el && (el.hasAttribute("disabled") || elementResolver.getButtonState(el) === "saved"));
+          if (isStale) {
             if (typeof sessionStorage !== "undefined") {
               sessionStorage.setItem(`dh_reload_count_${opts.targetTimestamp}`, "1");
               sessionStorage.setItem(`dh_last_reload_time_${opts.targetTimestamp}`, String(t));
@@ -389,7 +383,7 @@ export function startHunt(opts: HuntOptions): () => void {
 
       // 2. Guarded reload loop: reload until active button appears (window [T - 750, T + 2250], max 3 reloads)
       if (
-        (effectiveTier === "speed_priority" || opts.dualDefenseReload) &&
+        opts.dualDefenseReload &&
         t >= opts.targetTimestamp + 250 &&
         t <= opts.targetTimestamp + 2250 &&
         clicks === 0
@@ -418,6 +412,14 @@ export function startHunt(opts: HuntOptions): () => void {
           }
           return;
         }
+      }
+
+      // With locked target at fire moment, proactively unblock disabled attributes on DOM to strike with zero latency
+      if (isFireMoment && isLockedTarget && el) {
+        if (el.hasAttribute("disabled")) el.removeAttribute("disabled");
+        if (el.getAttribute("aria-disabled") === "true") el.setAttribute("aria-disabled", "false");
+        if (el.classList.contains("disabled")) el.classList.remove("disabled");
+        if ((el as any).disabled) (el as any).disabled = false;
       }
 
       const state = el ? elementResolver.getButtonState(el) : "unknown";

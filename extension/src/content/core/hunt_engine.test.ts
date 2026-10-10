@@ -589,7 +589,7 @@ describe("startHunt", () => {
     vi.unstubAllGlobals();
   });
 
-  it("triggers precision pre-reload at T - 750ms if button is still disabled in speed priority", () => {
+  it("triggers precision pre-reload at T - 750ms if button is still disabled with dualDefenseReload", () => {
     let now = DROP - 700; // T - 700ms
     const ticker = new ManualTicker();
     const btn = document.createElement("button");
@@ -604,6 +604,7 @@ describe("startHunt", () => {
       now: () => now,
       locked: btn,
       platformTier: "speed_priority",
+      dualDefenseReload: true,
       onEmergencyReload: reloadSpy,
       ticker,
       onDone: () => {},
@@ -673,6 +674,7 @@ describe("startHunt", () => {
       now: () => now,
       locked: btn,
       platformTier: "speed_priority",
+      dualDefenseReload: true,
       onEmergencyReload: reloadSpy,
       ticker,
       onDone: () => {},
