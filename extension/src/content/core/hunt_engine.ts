@@ -151,6 +151,9 @@ export function startHunt(opts: HuntOptions): () => void {
   if (typeof document !== "undefined" && document.documentElement) {
     document.documentElement.removeAttribute("data-dh-checked-in");
     document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+    document.documentElement.removeAttribute("data-dh-strike-tier");
+    document.documentElement.removeAttribute("data-dh-strike-method");
+    document.documentElement.removeAttribute("data-dh-strike-latency");
   }
   let hadDisabledOnMount = Boolean(
     opts.locked && (
@@ -233,6 +236,18 @@ export function startHunt(opts: HuntOptions): () => void {
       lastStatusAt = t;
       opts.onStatus?.(message);
     }
+  };
+
+  const getAdapterSuccessDetail = (): string => {
+    if (typeof document !== "undefined" && document.documentElement) {
+      const tier = document.documentElement.getAttribute("data-dh-strike-tier");
+      const method = document.documentElement.getAttribute("data-dh-strike-method");
+      const lat = document.documentElement.getAttribute("data-dh-strike-latency");
+      if (tier && method) {
+        return `Tier ${tier}: ${method}` + (lat ? ` (${lat}ms)` : "");
+      }
+    }
+    return "Target confirmed completed by platform adapter";
   };
 
   let spinArmed = false;
@@ -463,7 +478,7 @@ export function startHunt(opts: HuntOptions): () => void {
           (typeof document !== "undefined" && document.documentElement?.getAttribute("data-dh-checked-in") === "true") ||
           (adapter?.isButtonFinished && el && adapter.isButtonFinished(el))
         ) {
-          return finish("saved", "Target confirmed completed by platform adapter");
+          return finish("saved", getAdapterSuccessDetail());
         }
 
         const activeBaseline = baselineTextAtDrop ?? initialText;
@@ -606,7 +621,7 @@ export function startHunt(opts: HuntOptions): () => void {
             (typeof document !== "undefined" && document.documentElement?.getAttribute("data-dh-checked-in") === "true") ||
             (adapter?.isButtonFinished && el && adapter.isButtonFinished(el))
           ) {
-            return finish("saved", "Target confirmed completed by platform adapter");
+            return finish("saved", getAdapterSuccessDetail());
           }
 
           const activeBaseline = baselineTextAtDrop ?? initialText;

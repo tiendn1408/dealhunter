@@ -138,6 +138,7 @@ const en = {
     `Found ${count} button(s); locked first one — check green outline.`,
   noButtonFound: "No clickable target button found on this page.",
   armedWaitingDrop: "Armed · Auto-clicking at drop time.",
+  turnstileChallengePrompt: "Cloudflare Security Verification · Please tick [ ] Verify you are human",
   initialHUDPrompt: "Standby · Pick target on page to begin.",
   outcome: {
     saved: "Voucher saved — confirmed by the page",
@@ -308,6 +309,7 @@ const vi: TranslationCatalog = {
     `Tìm thấy ${count} nút; đã chọn nút đầu tiên — kiểm tra viền xanh lá.`,
   noButtonFound: "Không tìm thấy nút mục tiêu nào có thể bấm trên trang này.",
   armedWaitingDrop: "Đang săn · Sẽ tự click vào giờ G.",
+  turnstileChallengePrompt: "Xác minh bảo mật Cloudflare · Vui lòng tick [ ] Verify you are human",
   initialHUDPrompt: "Chế độ chờ · Hãy chọn nút trên trang để bắt đầu.",
   outcome: {
     saved: "Đã lưu voucher — trang web đã xác nhận",

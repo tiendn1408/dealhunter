@@ -1,3 +1,5 @@
+import { Language } from "../../lib/i18n";
+
 export interface MarketplaceAdapter {
   platformName: string;
   isMatchUrl(url: string): boolean;
@@ -27,7 +29,7 @@ export interface MarketplaceAdapter {
   /**
    * Optional platform directive: dynamic status text override for HUD (return null/undefined to use default)
    */
-  getStatusOverride?(): string | null;
+  getStatusOverride?(lang?: Language): string | null;
 }
 
 

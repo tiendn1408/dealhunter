@@ -4,7 +4,11 @@
   if (typeof window === "undefined" || window.__dh_caffiliate_bridge_installed) return;
   window.__dh_caffiliate_bridge_installed = true;
 
-  var strikeInProgress = false;
+  var prewarmedTurnstileToken = "";
+  var prewarmedAt = 0;
+  var isPrewarmingTurnstile = false;
+  var lastStrikeAt = 0;
+  var strikeAttempts = 0;
 
   function markCheckedIn() {
     try {
@@ -12,6 +16,57 @@
         document.documentElement.setAttribute("data-dh-checked-in", "true");
       }
     } catch (e) {}
+  }
+
+  function recordTelemetry(tier, method, success, error, latencyMs) {
+    try {
+      var tel = {
+        tier: tier,
+        method: method,
+        success: success,
+        latencyMs: typeof latencyMs === "number" ? latencyMs : 0,
+        turnstilePrewarmed: Boolean(prewarmedTurnstileToken || window._dh_turnstile_prewarmed),
+        timestamp: new Date().toISOString(),
+        error: error ? String(error) : null
+      };
+
+      if (typeof window !== "undefined") {
+        window.__dh_telemetry = tel;
+        if (!window.__dh_telemetry_history) {
+          window.__dh_telemetry_history = [];
+        }
+        window.__dh_telemetry_history.push(tel);
+      }
+
+      if (typeof document !== "undefined" && document.documentElement) {
+        document.documentElement.setAttribute("data-dh-strike-tier", String(tier));
+        document.documentElement.setAttribute("data-dh-strike-method", method);
+        document.documentElement.setAttribute("data-dh-strike-latency", String(tel.latencyMs));
+      }
+
+      var styleHeader = "background: #0f172a; color: #38bdf8; font-weight: bold; padding: 2px 6px; border-radius: 3px;";
+      var styleTier = success
+        ? "background: #065f46; color: #34d399; font-weight: bold; padding: 2px 6px; border-radius: 3px;"
+        : "background: #7f1d1d; color: #f87171; font-weight: bold; padding: 2px 6px; border-radius: 3px;";
+
+      var statusText = success ? "SUCCESS" : "FAILED";
+      console.info(
+        "%c[DealHunter]%c[Tier " + tier + "] " + method + " -> " + statusText + " (" + tel.latencyMs + "ms)",
+        styleHeader,
+        styleTier,
+        tel
+      );
+    } catch (e) {}
+  }
+
+  // Quick helper for DevTools console inspection
+  if (typeof window !== "undefined") {
+    window.dhTelemetry = function() {
+      return window.__dh_telemetry;
+    };
+    window.dhHistory = function() {
+      return window.__dh_telemetry_history || [];
+    };
   }
 
   function getAppInstance() {
@@ -83,20 +138,80 @@
 
   setInterval(checkCompletionState, 150);
 
+  function prewarmTurnstile() {
+    if (isPrewarmingTurnstile) return;
+    isPrewarmingTurnstile = true;
+
+    try {
+      if (typeof window !== "undefined" && window.CheckInTurnstile && typeof window.CheckInTurnstile.getToken === "function") {
+        var origGetToken = window.CheckInTurnstile.getToken;
+
+        // Wrap getToken so any subsequent call (e.g. from app.checkIn) resolves instantly with cached token
+        if (!origGetToken.__dh_wrapped) {
+          window.CheckInTurnstile.getToken = function() {
+            if (prewarmedTurnstileToken && (Date.now() - prewarmedAt < 240000)) {
+              return Promise.resolve(prewarmedTurnstileToken);
+            }
+            return origGetToken.apply(this, arguments);
+          };
+          window.CheckInTurnstile.getToken.__dh_wrapped = true;
+          window.CheckInTurnstile.getToken.__dh_orig = origGetToken;
+        }
+
+        var fetchStart = Date.now();
+        var fetcher = window.CheckInTurnstile.getToken.__dh_orig || origGetToken;
+        fetcher.call(window.CheckInTurnstile).then(function(token) {
+          if (token && typeof token === "string") {
+            prewarmedTurnstileToken = token;
+            prewarmedAt = Date.now();
+            window._dh_turnstile_prewarmed = token;
+            var lat = Date.now() - fetchStart;
+            console.info(
+              "%c[DealHunter]%c[Pre-Warm] Cloudflare Turnstile token cached successfully (" + lat + "ms)",
+              "background: #0f172a; color: #38bdf8; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
+              "background: #065f46; color: #34d399; font-weight: bold; padding: 2px 6px; border-radius: 3px;"
+            );
+          }
+        }).catch(function(err) {
+          console.warn(
+            "%c[DealHunter]%c[Pre-Warm] Cloudflare Turnstile pre-fetch warning: " + err,
+            "background: #0f172a; color: #38bdf8; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
+            "background: #78350f; color: #fbbf24; font-weight: bold; padding: 2px 6px; border-radius: 3px;"
+          );
+        }).finally(function() {
+          isPrewarmingTurnstile = false;
+        });
+      }
+    } catch (e) {
+      isPrewarmingTurnstile = false;
+    }
+  }
+
   function handlePrewarm() {
     try {
       if (typeof document !== "undefined" && document.documentElement) {
         document.documentElement.removeAttribute("data-dh-checked-in");
         document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+        document.documentElement.removeAttribute("data-dh-strike-tier");
+        document.documentElement.removeAttribute("data-dh-strike-method");
+        document.documentElement.removeAttribute("data-dh-strike-latency");
       }
 
-      // Pre-warm TCP + TLS socket connection to reduce API latency by 100-200ms
-      // Strictly avoid prematurely invoking Turnstile.getToken() to prevent widget race condition / token resets
+      console.info(
+        "%c[DealHunter]%c[Pre-Warm] Pre-warming sequence started (Socket keep-alive + Turnstile pre-fetch)",
+        "background: #0f172a; color: #38bdf8; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
+        "background: #1e293b; color: #94a3b8; padding: 2px 6px;"
+      );
+
+      // 1. Pre-warm TCP + TLS socket connection to reduce API latency by 100-200ms
       if (typeof fetch === "function") {
         fetch("/api/v2/xeng/check-in-secure", { method: "OPTIONS", keepalive: true }).catch(function() {});
       }
 
-      // Preload Cloudflare Turnstile script if not already present, ensuring widget script is parsed ahead of drop
+      // 2. Pre-fetch Cloudflare Turnstile token ahead of 00:00:00 (TTL is 300s, eliminates 200ms latency)
+      prewarmTurnstile();
+
+      // 3. Preload Cloudflare Turnstile script if not already present
       if (typeof window !== "undefined" && !window.turnstile && typeof document !== "undefined") {
         var existingLink = document.querySelector('link[href*="challenges.cloudflare.com/turnstile"]');
         if (!existingLink) {
@@ -110,27 +225,156 @@
     } catch (e) {}
   }
 
+  async function executeDirectApi(appInst) {
+    try {
+      var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+      var csrfToken =
+        (appInst && appInst.state && appInst.state.csrfToken) ||
+        (csrfMeta ? csrfMeta.getAttribute("content") : "") ||
+        "";
+
+      var turnstileToken =
+        prewarmedTurnstileToken ||
+        window._dh_turnstile_prewarmed ||
+        "";
+
+      if (!turnstileToken && window.CheckInTurnstile && typeof window.CheckInTurnstile.getToken === "function") {
+        turnstileToken = await window.CheckInTurnstile.getToken();
+      }
+
+      var ts = Date.now().toString();
+      var nonce = Math.random().toString(36).substring(2, 15);
+      var signature = "";
+
+      if (appInst && typeof appInst.generateSignature === "function") {
+        signature = await appInst.generateSignature(ts, nonce);
+      }
+
+      var headers = {
+        "Content-Type": "application/json",
+      };
+      if (csrfToken) headers["x-csrf-token"] = csrfToken;
+      if (signature) headers["x-signature"] = signature;
+      headers["x-timestamp"] = ts;
+      headers["x-nonce"] = nonce;
+
+      var resp = await fetch("/api/v2/xeng/check-in-secure", {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify({
+          "cf-turnstile-response": turnstileToken || "",
+        }),
+      });
+
+      if (resp.ok) {
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function executeDomButtonClick() {
+    try {
+      var btn = document.getElementById("btnCheckIn") || document.getElementById("caffiliate-checkin-btn");
+      if (!btn) {
+        btn = document.querySelector('button[id*="CheckIn" i], button[id*="checkin" i], button[id*="diemdanh" i]');
+      }
+      if (!btn) {
+        var allButtons = Array.from(document.querySelectorAll("button, [role='button']"));
+        btn = allButtons.find(function(b) {
+          return /điểm danh|diem danh|nhận xèng/i.test(b.textContent || "");
+        }) || null;
+      }
+
+      if (btn) {
+        if ("disabled" in btn) btn.disabled = false;
+        btn.removeAttribute("disabled");
+        btn.setAttribute("aria-disabled", "false");
+        btn.classList.remove("disabled", "pointer-events-none");
+        btn.style.pointerEvents = "auto";
+        btn.click();
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function fallbackToApiThenDom(appInst, strikeStartTime) {
+    console.warn(
+      "%c[DealHunter]%c[Fallback] Triggering Tier 2 (Direct API: /api/v2/xeng/check-in-secure)...",
+      "background: #0f172a; color: #38bdf8; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
+      "background: #78350f; color: #fbbf24; font-weight: bold; padding: 2px 6px; border-radius: 3px;"
+    );
+
+    var apiStartTime = Date.now();
+    executeDirectApi(appInst).then(function(ok) {
+      var apiLat = Date.now() - apiStartTime;
+      if (ok) {
+        recordTelemetry(2, "Direct API: /api/v2/xeng/check-in-secure", true, null, apiLat);
+        markCheckedIn();
+      } else {
+        recordTelemetry(2, "Direct API: /api/v2/xeng/check-in-secure", false, "Response status not OK", apiLat);
+        console.warn(
+          "%c[DealHunter]%c[Fallback] Tier 2 unsuccessful, triggering Tier 3 (DOM Click: #btnCheckIn)...",
+          "background: #0f172a; color: #38bdf8; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
+          "background: #78350f; color: #fbbf24; font-weight: bold; padding: 2px 6px; border-radius: 3px;"
+        );
+        var domStartTime = Date.now();
+        var domOk = executeDomButtonClick();
+        var domLat = Date.now() - domStartTime;
+        recordTelemetry(3, "DOM Click: #btnCheckIn", domOk, domOk ? null : "Target button not found", domLat);
+        if (domOk) markCheckedIn();
+      }
+    }).catch(function(err) {
+      var apiLat = Date.now() - apiStartTime;
+      recordTelemetry(2, "Direct API: /api/v2/xeng/check-in-secure", false, err, apiLat);
+      console.warn(
+        "%c[DealHunter]%c[Fallback] Tier 2 exception, triggering Tier 3 (DOM Click: #btnCheckIn)...",
+        "background: #0f172a; color: #38bdf8; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
+        "background: #78350f; color: #fbbf24; font-weight: bold; padding: 2px 6px; border-radius: 3px;"
+      );
+      var domStartTime = Date.now();
+      var domOk = executeDomButtonClick();
+      var domLat = Date.now() - domStartTime;
+      recordTelemetry(3, "DOM Click: #btnCheckIn", domOk, domOk ? null : "Target button not found", domLat);
+      if (domOk) markCheckedIn();
+    });
+  }
+
   function handleStrike() {
-    // Single Precision Shot: strictly prevent duplicate executions
-    if (strikeInProgress) return;
-    strikeInProgress = true;
-    setTimeout(function() {
-      strikeInProgress = false;
-    }, 6000);
+    var now = Date.now();
+    // Micro-burst rate-limiter: allow up to 3 rapid attempts spaced >= 30ms apart
+    if (now - lastStrikeAt < 30) return;
+    lastStrikeAt = now;
+    strikeAttempts++;
+    if (strikeAttempts > 4) return;
+
+    // Stop immediately if already confirmed checked in
+    if (typeof document !== "undefined" && document.documentElement && document.documentElement.getAttribute("data-dh-checked-in") === "true") {
+      return;
+    }
 
     try {
       if (typeof document !== "undefined" && document.documentElement) {
-        document.documentElement.removeAttribute("data-dh-checked-in");
         document.documentElement.removeAttribute("data-dh-turnstile-challenge");
       }
 
-      var win = window;
-      var appInst = getAppInstance();
-      var appExecuted = false;
+      var strikeStartTime = Date.now();
+      console.info(
+        "%c[DealHunter]%c[Strike] Strike initiated at " + new Date().toISOString() + " (Attempt #" + strikeAttempts + ")",
+        "background: #0f172a; color: #38bdf8; font-weight: bold; padding: 2px 6px; border-radius: 3px;",
+        "background: #1e293b; color: #f8fafc; font-weight: bold; padding: 2px 6px; border-radius: 3px;"
+      );
 
+      var appInst = getAppInstance();
+      var inAppTriggered = false;
+
+      // -----------------------------------------------------------------
+      // TRƯỜNG HỢP 1 (Ưu tiên 1): Gọi hàm in-app checkIn()
+      // Chạy thẳng trong scope Vue/app của trang với Turnstile đã pre-warmed (0ms)
+      // -----------------------------------------------------------------
       if (appInst) {
         if (appInst.state) {
-          // Explicit targeted guard reset only - avoid broad regex pattern matching
           appInst.state.todayCheckedIn = false;
           if ("isCheckedIn" in appInst.state) appInst.state.isCheckedIn = false;
           if ("checkInLocked" in appInst.state) appInst.state.checkInLocked = false;
@@ -138,126 +382,78 @@
           if ("isCheckingIn" in appInst.state) appInst.state.isCheckingIn = false;
         }
 
-        // Priority 1A: Exact checkIn function
         if (typeof appInst.checkIn === "function") {
           try {
             var ret = appInst.checkIn();
-            appExecuted = true;
+            inAppTriggered = true;
             if (ret && typeof ret.then === "function") {
               ret.then(function() {
+                var lat = Date.now() - strikeStartTime;
+                recordTelemetry(1, "In-App: app.checkIn()", true, null, lat);
                 markCheckedIn();
-              }).catch(function() {});
+              }).catch(function(err) {
+                var lat = Date.now() - strikeStartTime;
+                recordTelemetry(1, "In-App: app.checkIn()", false, err, lat);
+                fallbackToApiThenDom(appInst, strikeStartTime);
+              });
+            } else {
+              var lat = Date.now() - strikeStartTime;
+              recordTelemetry(1, "In-App: app.checkIn()", true, null, lat);
+              markCheckedIn();
             }
-          } catch (e) {}
+          } catch (e) {
+            inAppTriggered = false;
+            var lat = Date.now() - strikeStartTime;
+            recordTelemetry(1, "In-App: app.checkIn()", false, e, lat);
+          }
         }
 
-        // Priority 1B: Method name regex matching
-        if (!appExecuted) {
+        if (!inAppTriggered) {
           for (var m of Object.keys(appInst)) {
             if (typeof appInst[m] === "function" && /^(check_?in|claim|diem_?danh|attendance|reward)/i.test(m)) {
               try {
                 var retB = appInst[m].call(appInst);
-                appExecuted = true;
+                inAppTriggered = true;
                 if (retB && typeof retB.then === "function") {
                   retB.then(function() {
+                    var lat = Date.now() - strikeStartTime;
+                    recordTelemetry(1, "In-App: app." + m + "()", true, null, lat);
                     markCheckedIn();
-                  }).catch(function() {});
+                  }).catch(function(err) {
+                    var lat = Date.now() - strikeStartTime;
+                    recordTelemetry(1, "In-App: app." + m + "()", false, err, lat);
+                    fallbackToApiThenDom(appInst, strikeStartTime);
+                  });
+                } else {
+                  var lat = Date.now() - strikeStartTime;
+                  recordTelemetry(1, "In-App: app." + m + "()", true, null, lat);
+                  markCheckedIn();
                 }
                 break;
-              } catch (e) {}
-            }
-          }
-        }
-
-        // Priority 1C: Deep source code search (works even with obfuscation/minification)
-        if (!appExecuted) {
-          for (var m2 of Object.keys(appInst)) {
-            var fn = appInst[m2];
-            if (typeof fn === "function" && m2 !== "init" && m2 !== "setupTabs") {
-              try {
-                var code = fn.toString();
-                if (code.includes("CheckInTurnstile") || code.includes("check-in") || code.includes("todayCheckedIn")) {
-                  var retC = fn.call(appInst);
-                  appExecuted = true;
-                  if (retC && typeof retC.then === "function") {
-                    retC.then(function() {
-                      markCheckedIn();
-                    }).catch(function() {});
-                  }
-                  break;
-                }
-              } catch (e) {}
+              } catch (e) {
+                inAppTriggered = false;
+                var lat = Date.now() - strikeStartTime;
+                recordTelemetry(1, "In-App: app." + m + "()", false, e, lat);
+              }
             }
           }
         }
       }
 
-      // Priority 2: Unblock and trigger real DOM button ONLY IF in-page app was not executed
-      if (!appExecuted) {
-        var btn = document.getElementById("btnCheckIn") || document.getElementById("caffiliate-checkin-btn");
-        if (!btn) {
-          btn = document.querySelector('button[id*="CheckIn" i], button[id*="checkin" i], button[id*="diemdanh" i]');
+      // -----------------------------------------------------------------
+      // Nếu Trường hợp 1 không chạy được (không có app / lỗi đồng bộ),
+      // lập tức kích hoạt chuỗi fallback: Trường hợp 2 (API) -> Trường hợp 3 (DOM)
+      // -----------------------------------------------------------------
+      if (!inAppTriggered) {
+        if (!appInst) {
+          recordTelemetry(1, "In-App: app.checkIn()", false, "App instance not found", 0);
         }
-        if (!btn) {
-          var allButtons = Array.from(document.querySelectorAll("button, [role='button']"));
-          btn = allButtons.find(function(b) {
-            return /điểm danh|diem danh|nhận xèng/i.test(b.textContent || "");
-          }) || null;
-        }
-
-        if (btn) {
-          if ("disabled" in btn) btn.disabled = false;
-          btn.removeAttribute("disabled");
-          btn.setAttribute("aria-disabled", "false");
-          btn.classList.remove("disabled", "pointer-events-none");
-          btn.style.pointerEvents = "auto";
-          try {
-            btn.click();
-          } catch (e) {}
-        }
+        fallbackToApiThenDom(appInst, strikeStartTime);
       }
-
-      // Priority 3: Direct API fallback ONLY IF neither app nor button could be triggered
-      if (!appExecuted && !document.getElementById("btnCheckIn") && !document.getElementById("caffiliate-checkin-btn")) {
-        (async function() {
-          try {
-            var csrfMeta = document.querySelector('meta[name="csrf-token"]');
-            var csrfToken =
-              (appInst && appInst.state && appInst.state.csrfToken) ||
-              (csrfMeta ? csrfMeta.getAttribute("content") : "") ||
-              "";
-            var googleId = (appInst && appInst.state && appInst.state.googleId) || "";
-            var turnstileToken = win._dh_turnstile_prewarmed || "";
-            if (!turnstileToken && win.CheckInTurnstile && typeof win.CheckInTurnstile.getToken === "function") {
-              turnstileToken = await win.CheckInTurnstile.getToken();
-            }
-            var ts = Date.now().toString();
-            var nonce = Math.random().toString(36).substring(2, 15);
-            var signature = "";
-            if (appInst && typeof appInst.generateSignature === "function") {
-              signature = await appInst.generateSignature(ts, nonce);
-            }
-            var resp = await fetch("/api/v2/xeng/check-in-secure", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-CSRF-TOKEN": csrfToken,
-              },
-              body: JSON.stringify({
-                googleId: googleId,
-                timestamp: ts,
-                nonce: nonce,
-                turnstileToken: turnstileToken,
-                signature: signature,
-              }),
-            });
-            if (resp.ok) {
-              markCheckedIn();
-            }
-          } catch (err) {}
-        })();
-      }
-    } catch (err) {}
+    } catch (err) {
+      recordTelemetry(1, "In-App: app.checkIn()", false, err, 0);
+      fallbackToApiThenDom(null, Date.now());
+    }
   }
 
   window.addEventListener("dh-caffiliate-prewarm", handlePrewarm);

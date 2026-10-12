@@ -383,6 +383,9 @@ export class HuntCoordinator {
     if (typeof document !== "undefined" && document.documentElement) {
       document.documentElement.removeAttribute("data-dh-checked-in");
       document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+      document.documentElement.removeAttribute("data-dh-strike-tier");
+      document.documentElement.removeAttribute("data-dh-strike-method");
+      document.documentElement.removeAttribute("data-dh-strike-latency");
     }
 
     if (typeof sessionStorage !== "undefined") {
@@ -412,6 +415,9 @@ export class HuntCoordinator {
     if (typeof document !== "undefined" && document.documentElement) {
       document.documentElement.removeAttribute("data-dh-checked-in");
       document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+      document.documentElement.removeAttribute("data-dh-strike-tier");
+      document.documentElement.removeAttribute("data-dh-strike-method");
+      document.documentElement.removeAttribute("data-dh-strike-latency");
     }
     if (!this.state.isArmed) {
       this.setState({

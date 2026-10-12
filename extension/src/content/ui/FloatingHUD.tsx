@@ -358,7 +358,16 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         const outcome = coordState.outcome;
         const view = getResultView(outcome.result);
         setStatusMsg({
-          render: (trans) => `${trans.outcome[outcome.result]} · ${trans.clicksLabel(outcome.clicks)}`,
+          render: (trans, currentLang) => {
+            const base = `${trans.outcome[outcome.result]} · ${trans.clicksLabel(outcome.clicks)}`;
+            if (outcome.detail && outcome.detail.startsWith("Tier ")) {
+              const tierText = currentLang === "vi"
+                ? outcome.detail.replace(/^Tier (\d+):/, "Tầng $1:")
+                : outcome.detail;
+              return `${trans.outcome[outcome.result]} · ${tierText}`;
+            }
+            return base;
+          },
           tone: view.tone,
         });
       } else if (coordState.statusText) {
@@ -392,6 +401,24 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           setStatusMsg({
             render: (_trans, currentLang) =>
               currentLang === "vi" ? `Đang chờ đến giờ săn: ${secs}` : `Waiting for the drop: ${secs}`,
+            tone: coordState.tone,
+          });
+        } else if (
+          coordState.statusText.includes("Cloudflare") ||
+          coordState.statusText.includes("Verify you are human")
+        ) {
+          setStatusMsg({
+            render: (trans) => trans.turnstileChallengePrompt,
+            tone: coordState.tone,
+          });
+        } else if (coordState.statusText.startsWith("Burst complete")) {
+          const countNum =
+            parseInt(coordState.statusText.replace(/[^0-9]/g, ""), 10) || 0;
+          setStatusMsg({
+            render: (trans, currentLang) =>
+              currentLang === "vi"
+                ? `Đã xong đợt bấm (${trans.clicksLabel(countNum)}) · Đang chờ xác nhận...`
+                : `Burst complete (${trans.clicksLabel(countNum)}) · Awaiting server update...`,
             tone: coordState.tone,
           });
         } else {

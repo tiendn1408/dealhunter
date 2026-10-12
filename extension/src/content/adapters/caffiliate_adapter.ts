@@ -1,5 +1,6 @@
 import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
+import { Language, getTranslation } from "../../lib/i18n";
 
 /**
  * Dedicated high-speed accelerator for Caffiliate rewards / check-in platform.
@@ -162,9 +163,9 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
   /**
    * Overrides HUD status prompt when Turnstile challenge is blocking check-in.
    */
-  getStatusOverride(): string | null {
+  getStatusOverride(lang?: Language): string | null {
     if (this.isTurnstilePending()) {
-      return "Xác minh bảo mật Cloudflare · Vui lòng tick [ ] Verify you are human";
+      return getTranslation(lang || "en").turnstileChallengePrompt;
     }
     return null;
   }
@@ -181,6 +182,9 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
       if (document.documentElement) {
         document.documentElement.removeAttribute("data-dh-checked-in");
         document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+        document.documentElement.removeAttribute("data-dh-strike-tier");
+        document.documentElement.removeAttribute("data-dh-strike-method");
+        document.documentElement.removeAttribute("data-dh-strike-latency");
       }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("dh-caffiliate-prewarm"));

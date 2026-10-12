@@ -74,6 +74,8 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     });
     expect(adapter.isTurnstilePending()).toBe(true);
     expect(adapter.getStatusOverride()).toContain("Cloudflare");
+    expect(adapter.getStatusOverride("vi")).toContain("Xác minh bảo mật Cloudflare");
+    expect(adapter.getStatusOverride("en")).toContain("Cloudflare Security Verification");
     spy.mockRestore();
     expect(adapter.isTurnstilePending()).toBe(false);
   });
