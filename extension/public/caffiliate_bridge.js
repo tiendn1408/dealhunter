@@ -18,6 +18,15 @@
     } catch (e) {}
   }
 
+  function getCookie(name) {
+    try {
+      var match = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
+      return match ? decodeURIComponent(match[2]) : "";
+    } catch (e) {
+      return "";
+    }
+  }
+
   function recordTelemetry(tier, method, success, error, latencyMs) {
     try {
       var tel = {
@@ -136,21 +145,40 @@
     } catch (e) {}
   }
 
-  setInterval(checkCompletionState, 150);
+  var completionTimer = setInterval(function() {
+    checkCompletionState();
+    if (
+      typeof document !== "undefined" &&
+      document.documentElement &&
+      document.documentElement.getAttribute("data-dh-checked-in") === "true"
+    ) {
+      clearInterval(completionTimer);
+      // Reduce polling frequency after confirmation to save system resources
+      setInterval(checkCompletionState, 5000);
+    }
+  }, 150);
 
   function prewarmTurnstile() {
     if (isPrewarmingTurnstile) return;
     isPrewarmingTurnstile = true;
 
     try {
-      if (typeof window !== "undefined" && window.CheckInTurnstile && typeof window.CheckInTurnstile.getToken === "function") {
+      if (
+        typeof window !== "undefined" &&
+        window.CheckInTurnstile &&
+        typeof window.CheckInTurnstile.getToken === "function"
+      ) {
         var origGetToken = window.CheckInTurnstile.getToken;
 
-        // Wrap getToken so any subsequent call (e.g. from app.checkIn) resolves instantly with cached token
+        // Wrap getToken so the first call resolves instantly with cached token,
+        // and any subsequent fallback calls obtain a fresh token from Cloudflare.
         if (!origGetToken.__dh_wrapped) {
           window.CheckInTurnstile.getToken = function() {
             if (prewarmedTurnstileToken && (Date.now() - prewarmedAt < 240000)) {
-              return Promise.resolve(prewarmedTurnstileToken);
+              var cached = prewarmedTurnstileToken;
+              prewarmedTurnstileToken = "";
+              window._dh_turnstile_prewarmed = "";
+              return Promise.resolve(cached);
             }
             return origGetToken.apply(this, arguments);
           };
@@ -181,6 +209,19 @@
         }).finally(function() {
           isPrewarmingTurnstile = false;
         });
+      } else {
+        isPrewarmingTurnstile = false;
+        // Retry polling if CheckInTurnstile script is still loading lazily
+        var retries = 0;
+        var retryTimer = setInterval(function() {
+          retries++;
+          if (window.CheckInTurnstile || retries > 6) {
+            clearInterval(retryTimer);
+            if (window.CheckInTurnstile && !prewarmedTurnstileToken) {
+              prewarmTurnstile();
+            }
+          }
+        }, 300);
       }
     } catch (e) {
       isPrewarmingTurnstile = false;
@@ -231,6 +272,9 @@
       var csrfToken =
         (appInst && appInst.state && appInst.state.csrfToken) ||
         (csrfMeta ? csrfMeta.getAttribute("content") : "") ||
+        (window.Laravel && window.Laravel.csrfToken) ||
+        window.csrfToken ||
+        getCookie("XSRF-TOKEN") ||
         "";
 
       var turnstileToken =
@@ -239,7 +283,17 @@
         "";
 
       if (!turnstileToken && window.CheckInTurnstile && typeof window.CheckInTurnstile.getToken === "function") {
-        turnstileToken = await window.CheckInTurnstile.getToken();
+        var fetcher = window.CheckInTurnstile.getToken.__dh_orig || window.CheckInTurnstile.getToken;
+        turnstileToken = await fetcher.call(window.CheckInTurnstile);
+      }
+
+      if (!turnstileToken) {
+        var hiddenInput = document.querySelector('input[name="cf-turnstile-response"]');
+        if (hiddenInput && hiddenInput.value) {
+          turnstileToken = hiddenInput.value;
+        } else if (window.turnstile && typeof window.turnstile.getResponse === "function") {
+          turnstileToken = window.turnstile.getResponse();
+        }
       }
 
       var ts = Date.now().toString();
@@ -350,7 +404,11 @@
     if (strikeAttempts > 4) return;
 
     // Stop immediately if already confirmed checked in
-    if (typeof document !== "undefined" && document.documentElement && document.documentElement.getAttribute("data-dh-checked-in") === "true") {
+    if (
+      typeof document !== "undefined" &&
+      document.documentElement &&
+      document.documentElement.getAttribute("data-dh-checked-in") === "true"
+    ) {
       return;
     }
 
@@ -449,6 +507,20 @@
           recordTelemetry(1, "In-App: app.checkIn()", false, "App instance not found", 0);
         }
         fallbackToApiThenDom(appInst, strikeStartTime);
+      }
+
+      // Autonomous micro-burst retry: if not confirmed checked-in within 35ms,
+      // retry up to 3 total attempts to absorb any minor server gate delay
+      if (strikeAttempts < 3) {
+        setTimeout(function() {
+          if (
+            typeof document !== "undefined" &&
+            document.documentElement &&
+            document.documentElement.getAttribute("data-dh-checked-in") !== "true"
+          ) {
+            handleStrike();
+          }
+        }, 35);
       }
     } catch (err) {
       recordTelemetry(1, "In-App: app.checkIn()", false, err, 0);

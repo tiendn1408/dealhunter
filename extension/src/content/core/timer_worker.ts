@@ -33,15 +33,23 @@ export class WorkerTimer {
         const blob = new Blob([workerCode], { type: "application/javascript" });
         const url = URL.createObjectURL(blob);
         const w = new Worker(url);
-        URL.revokeObjectURL(url);
+        let blobRevoked = false;
+        const revokeBlob = () => {
+          if (!blobRevoked) {
+            blobRevoked = true;
+            try { URL.revokeObjectURL(url); } catch {}
+          }
+        };
 
         w.onmessage = (e) => {
+          revokeBlob();
           if (e.data === "tick" && this.onTickCallback) {
             this.onTickCallback();
           }
         };
 
         w.onerror = (err) => {
+          revokeBlob();
           console.warn("[DealHunter] Web Worker runtime error, falling back to window timer:", err);
           try {
             w.terminate();

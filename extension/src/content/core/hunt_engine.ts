@@ -382,7 +382,7 @@ export function startHunt(opts: HuntOptions): () => void {
           }
           const remaining = (opts.targetTimestamp - preFireLeadMs) - currentT;
           if (remaining > 6) {
-            if (typeof requestAnimationFrame === "function") {
+            if (typeof document !== "undefined" && !document.hidden && typeof requestAnimationFrame === "function") {
               requestAnimationFrame(spinPoll);
             } else {
               setTimeout(spinPoll, 1);

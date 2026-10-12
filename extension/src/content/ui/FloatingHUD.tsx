@@ -358,16 +358,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         const outcome = coordState.outcome;
         const view = getResultView(outcome.result);
         setStatusMsg({
-          render: (trans, currentLang) => {
-            const base = `${trans.outcome[outcome.result]} · ${trans.clicksLabel(outcome.clicks)}`;
-            if (outcome.detail && outcome.detail.startsWith("Tier ")) {
-              const tierText = currentLang === "vi"
-                ? outcome.detail.replace(/^Tier (\d+):/, "Tầng $1:")
-                : outcome.detail;
-              return `${trans.outcome[outcome.result]} · ${tierText}`;
-            }
-            return base;
-          },
+          render: (trans) => `${trans.outcome[outcome.result]} · ${trans.clicksLabel(outcome.clicks)}`,
           tone: view.tone,
         });
       } else if (coordState.statusText) {
