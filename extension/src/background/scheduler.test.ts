@@ -400,5 +400,71 @@ describe("taskScheduler", () => {
     expect(closedTask?.status).toBe("failed");
     expect(closedTask?.lastResult?.detail).toBe("Target tab was closed before drop");
   });
+
+  it("automatically rolls over daily task to next day upon completion", async () => {
+    const task: ScheduledTask = {
+      id: "task-daily-1",
+      targetHour: 0,
+      targetMinute: 0,
+      targetSecond: 0,
+      targetUrl: "https://app.caffiliate.vn/rewards",
+      label: "Daily Check-in",
+      mode: "full_auto",
+      isDaily: true,
+      status: "pending",
+      createdAt: Date.now(),
+    };
+
+    await taskScheduler.scheduleTask(task);
+    expect(alarms["dh_task_task-daily-1"]).toBeDefined();
+
+    // Mark task completed via handleTaskStatusUpdate
+    await taskScheduler.handleTaskStatusUpdate("task-daily-1", "completed", {
+      result: "saved",
+      clicks: 1,
+      detail: "Checked in successfully",
+      finishedAt: Date.now(),
+    });
+
+    const store = await chrome.storage.local.get("dh_scheduled_tasks");
+    const updated = (store.dh_scheduled_tasks as ScheduledTask[]).find((t) => t.id === "task-daily-1");
+    expect(updated).toBeDefined();
+    // Status must be reset to pending for the next day
+    expect(updated?.status).toBe("pending");
+    expect(updated?.isDaily).toBe(true);
+    expect(updated?.lastResult?.result).toBe("saved");
+    // TargetAt must be in the future (tomorrow)
+    expect(updated?.targetAt).toBeGreaterThan(Date.now());
+    // Alarm must be re-registered for the new drop
+    expect(alarms["dh_task_task-daily-1"]).toBeDefined();
+  });
+
+  it("recovers and reschedules expired daily task during browser downtime", async () => {
+    // Task that was scheduled for in the past
+    const task: ScheduledTask = {
+      id: "task-daily-expired",
+      targetHour: 0,
+      targetMinute: 0,
+      targetSecond: 0,
+      targetAt: Date.now() - 3600_000, // 1 hour ago
+      targetUrl: "https://app.caffiliate.vn/rewards",
+      label: "Daily Check-in Expired",
+      mode: "full_auto",
+      isDaily: true,
+      status: "pending",
+      createdAt: Date.now() - 7200_000,
+    };
+
+    localStore["dh_scheduled_tasks"] = [task];
+
+    await taskScheduler.restorePendingAlarms();
+
+    const store = await chrome.storage.local.get("dh_scheduled_tasks");
+    const restored = (store.dh_scheduled_tasks as ScheduledTask[]).find((t) => t.id === "task-daily-expired");
+    expect(restored).toBeDefined();
+    expect(restored?.status).toBe("pending");
+    expect(restored?.targetAt).toBeGreaterThan(Date.now());
+    expect(alarms["dh_task_task-daily-expired"]).toBeDefined();
+  });
 });
 

@@ -14,9 +14,21 @@ import { isSamePageUrl } from "../lib/url";
 import "./ui/style.css";
 
 function isTopWindow(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
   try {
-    return window.top === window;
+    if (window.top !== window) return false;
+    const contentType = document.contentType || "";
+    if (
+      contentType === "image/svg+xml" ||
+      contentType === "application/xml" ||
+      contentType === "text/xml" ||
+      contentType === "application/pdf" ||
+      (document.documentElement && document.documentElement.nodeName.toLowerCase() === "svg") ||
+      !(document.createElement("div") && document.createElement("div").style)
+    ) {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }

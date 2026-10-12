@@ -1,8 +1,12 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { getAdapterForUrl, ADAPTERS } from "./index";
 import { isECommerceVoucherOrDealPage, isECommerceProductPage, detectPlatformAuthOrCaptchaBlock } from "../index";
 
 describe("Marketplace Adapters & Multi-Platform Registry", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
   it("registers all core e-commerce marketplace adapters", () => {
     const names = ADAPTERS.map((a) => a.platformName);
     expect(names).toContain("shopee");
@@ -32,6 +36,137 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     expect(getAdapterForUrl("https://shop.tiktok.com/view/product/123456")?.platformName).toBe("tiktok");
     expect(getAdapterForUrl("https://www.tiktok.com/@creator/video/123")?.platformName).toBe("tiktok");
   });
+
+  it("resolves appropriate adapter for Caffiliate and disables destructive reload", () => {
+    const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards");
+    expect(adapter).not.toBeNull();
+    expect(adapter?.platformName).toBe("caffiliate");
+    expect(adapter?.shouldDisableReload?.()).toBe(true);
+    expect(adapter?.maxClicks).toBe(1);
+    expect(adapter?.windowMs).toBe(8000);
+
+    const simAdapter = getAdapterForUrl("http://localhost:3100/");
+    expect(simAdapter).not.toBeNull();
+    expect(simAdapter?.platformName).toBe("caffiliate");
+    expect(simAdapter?.shouldDisableReload?.()).toBe(true);
+    expect(simAdapter?.maxClicks).toBe(1);
+    expect(simAdapter?.windowMs).toBe(8000);
+  });
+
+  it("detects Turnstile challenge pending and overrides status prompt", () => {
+    const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards") as any;
+    expect(adapter).not.toBeNull();
+    expect(adapter.isTurnstilePending()).toBe(false);
+    expect(adapter.getStatusOverride()).toBeNull();
+
+    // Trigger via data-dh-turnstile-challenge attribute
+    document.documentElement.setAttribute("data-dh-turnstile-challenge", "active");
+    expect(adapter.isTurnstilePending()).toBe(true);
+    expect(adapter.getStatusOverride()).toContain("Cloudflare");
+    document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+    expect(adapter.isTurnstilePending()).toBe(false);
+
+    // Trigger via Cloudflare iframe selector in DOM
+    const origQuery = document.querySelector.bind(document);
+    const spy = vi.spyOn(document, "querySelector").mockImplementation((sel: string) => {
+      if (sel.includes("challenges.cloudflare.com")) return document.createElement("iframe") as any;
+      return origQuery(sel);
+    });
+    expect(adapter.isTurnstilePending()).toBe(true);
+    expect(adapter.getStatusOverride()).toContain("Cloudflare");
+    spy.mockRestore();
+    expect(adapter.isTurnstilePending()).toBe(false);
+  });
+
+  it("finds primary check-in button and verifies completion state on Caffiliate", () => {
+    const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards");
+    expect(adapter).not.toBeNull();
+
+    // Setup DOM with real button and static "Xèng Của Bạn" text
+    document.body.innerHTML = `
+      <div id="rewards-container">
+        <div id="xeng-card" class="xeng-card">
+          <span id="xeng-label">Xèng Của Bạn</span>
+          <span id="xeng-count">100 Xu</span>
+        </div>
+        <button id="btnCheckIn" class="pointer-events-none disabled" disabled>
+          <span id="btnCheckInText">Điểm danh</span>
+        </button>
+      </div>
+    `;
+
+    const realBtn = document.getElementById("btnCheckIn") as HTMLElement;
+
+    // Finding buttons finds the real button
+    const buttons = adapter?.findVoucherButtons();
+    expect(buttons).toContain(realBtn);
+
+    // Initial button not finished
+    expect(adapter?.isButtonFinished(realBtn)).toBe(false);
+
+    // Finished button
+    realBtn.innerHTML = "<span>Đã điểm danh #1</span>";
+    expect(adapter?.isButtonFinished(realBtn)).toBe(true);
+
+    // Also finishes arbitrary elements when data-dh-checked-in is marked by bridge
+    document.body.innerHTML = '<div id="other-node">Some text</div>';
+    const otherNode = document.getElementById("other-node") as HTMLElement;
+    expect(adapter?.isButtonFinished(otherNode)).toBe(false);
+    document.documentElement.setAttribute("data-dh-checked-in", "true");
+    expect(adapter?.isButtonFinished(otherNode)).toBe(true);
+    document.documentElement.removeAttribute("data-dh-checked-in");
+  });
+
+  it("dynamically discovers check-in button on Caffiliate even if ID changes", () => {
+    const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards");
+    expect(adapter).not.toBeNull();
+
+    // DOM with mutated ID and text matching
+    document.body.innerHTML = `
+      <div>
+        <button id="custom-dynamic-btn" class="pointer-events-none disabled" disabled>
+          <span>Điểm danh (+50)</span>
+        </button>
+      </div>
+    `;
+
+    const dynamicBtn = document.getElementById("custom-dynamic-btn") as HTMLElement;
+    const buttons = adapter?.findVoucherButtons();
+    expect(buttons).toContain(dynamicBtn);
+  });
+
+  it("handles preWarmStrike and executeDirectStrike safely on Caffiliate", () => {
+    const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards");
+    expect(adapter).not.toBeNull();
+
+    document.body.innerHTML = `
+      <div id="breadcrumb">
+        <span id="title-text">Điểm Danh</span>
+      </div>
+      <button id="btnCheckIn" class="pointer-events-none disabled" disabled>
+        <span>Điểm danh</span>
+      </button>
+    `;
+
+    const userSelectedTitle = document.getElementById("title-text") as HTMLElement;
+    const realBtn = document.getElementById("btnCheckIn") as HTMLButtonElement;
+
+    // Pre-warm strike should execute without throwing and should clean up stale flags
+    document.documentElement.setAttribute("data-dh-checked-in", "true");
+    document.documentElement.setAttribute("data-dh-turnstile-challenge", "active");
+    expect(() => adapter?.preWarmStrike?.()).not.toThrow();
+    expect(document.documentElement.getAttribute("data-dh-checked-in")).toBeNull();
+    expect(document.documentElement.getAttribute("data-dh-turnstile-challenge")).toBeNull();
+
+    // Direct strike execution should unblock both real button and user selected element
+    const strikeSuccess = adapter?.executeDirectStrike?.(userSelectedTitle);
+    expect(strikeSuccess).toBe(true);
+
+    expect(realBtn.disabled).toBe(false);
+    expect(realBtn.classList.contains("disabled")).toBe(false);
+    expect(userSelectedTitle.classList.contains("disabled")).toBe(false);
+  });
+
 
   it("returns null for non-marketplace domains", () => {
     expect(getAdapterForUrl("https://example.com/item/1")).toBeNull();

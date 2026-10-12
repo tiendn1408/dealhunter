@@ -12,6 +12,7 @@ import { Language, getTranslation } from "../../lib/i18n";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TargetDiagnosticsSummary } from "../../lib/types";
 import { isSamePageUrl } from "../../lib/url";
+import { getAdapterForUrl } from "../adapters";
 import { DEALHUNTER_LOGO_DATA_URI } from "./logo_data";
 import {
   Crosshair,
@@ -31,6 +32,7 @@ import {
   BookmarkCheck,
   Trash2,
   CalendarClock,
+  Repeat,
 } from "lucide-react";
 
 interface FloatingHUDProps {
@@ -114,6 +116,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const [targetSummary, setTargetSummary] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [isTargetSaved, setIsTargetSaved] = useState(false);
+  const [isDailySchedule, setIsDailySchedule] = useState(false);
   const [diagnostics, setDiagnostics] = useState<TargetDiagnosticsSummary | null>(null);
 
   // Dragging state
@@ -637,6 +640,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       targetUrl: window.location.href,
       label: `${timeLabel} · ${name}`,
       mode: "full_auto",
+      isDaily: isDailySchedule,
       savedTargetId: saved?.id,
       descriptor: universalDescRef.current,
       preWarmSeconds: 60,
@@ -651,7 +655,10 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         action: MESSAGE_ACTIONS.SCHEDULE_TASK,
         task,
       });
-      setStatusMsg({ render: (trans) => trans.quickScheduleSuccess, tone: "success" });
+      setStatusMsg({
+        render: (trans) => (isDailySchedule ? trans.quickScheduleDailySuccess : trans.quickScheduleSuccess),
+        tone: "success",
+      });
     } catch (err) {
       console.warn("Schedule from HUD failed:", err);
       // L4: Show error in status instead of console only
@@ -862,7 +869,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     if (picking) {
       cleanupPickerRef.current?.();
     }
-    const buttons = elementResolver.findCollectButtons();
+    const adapter = typeof window !== "undefined" ? getAdapterForUrl(window.location.href) : null;
+    const buttons = adapter?.findVoucherButtons ? adapter.findVoucherButtons() : elementResolver.findCollectButtons();
     if (buttons.length > 0) {
       lockTarget(buttons[0]);
       setStatusMsg({
@@ -1330,16 +1338,32 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                   <span>{t.saveTarget}</span>
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleScheduleFromHUD}
-                disabled={isArmed || !universalDescRef.current}
-                className="dh-sub-btn flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-semibold transition disabled:opacity-50"
-                title={t.quickScheduleFromHUD}
-              >
-                <CalendarClock className="h-3 w-3 text-emerald-300" />
-                <span>{t.quickScheduleFromHUD}</span>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleScheduleFromHUD}
+                  disabled={isArmed || !universalDescRef.current}
+                  className="dh-sub-btn flex-1 flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-semibold transition disabled:opacity-50"
+                  title={t.quickScheduleFromHUD}
+                >
+                  <CalendarClock className="h-3 w-3 text-emerald-300" />
+                  <span>{t.quickScheduleFromHUD}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDailySchedule(!isDailySchedule)}
+                  disabled={isArmed}
+                  className={`dh-sub-btn px-2 flex items-center justify-center gap-1 rounded-lg text-[10px] font-semibold transition disabled:opacity-50 ${
+                    isDailySchedule
+                      ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                  title={t.dailyScheduleCheckbox}
+                >
+                  <Repeat className={`h-2.5 w-2.5 ${isDailySchedule ? "text-emerald-300" : "text-slate-400"}`} />
+                  <span>{t.dailyScheduleBadge}</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -8,6 +8,7 @@ import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TaskStatus, TargetDiagnosticsSummary } from "../../lib/types";
 import { nextExactDropAt } from "../../lib/drop_time";
 import { isSamePageUrl } from "../../lib/url";
+import { getAdapterForUrl } from "../adapters";
 
 export const ARMED_SESSION_KEY = "dh_armed_session";
 
@@ -156,8 +157,10 @@ export class HuntCoordinator {
         // ignore
       }
     }
+    const adapter = getAdapterForUrl(typeof window !== "undefined" ? window.location.href : "");
+    const shouldDisableReload = adapter?.shouldDisableReload?.() ?? false;
     const effectiveReload =
-      diag?.strategy === "reactive_no_reload"
+      shouldDisableReload || diag?.strategy === "reactive_no_reload"
         ? false
         : params.dualDefenseReload ?? (diag?.strategy === "static_dual_defense");
 
@@ -210,18 +213,24 @@ export class HuntCoordinator {
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
       preReloadLeadMs: params.preReloadLeadMs,
+      preFireLeadMs:
+        (params as any).preFireLeadMs ??
+        timeSyncClient.getRecommendedPreFireLeadMs(diag?.platformTier),
       platformTier: diag?.platformTier,
       windowMs:
         (params as any).windowMs ??
+        adapter?.windowMs ??
         (diag?.platformTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityWindowMs : HUNT_DEFAULTS.windowMs),
       maxClicks:
         (params as any).maxClicks ??
+        adapter?.maxClicks ??
         (diag?.platformTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityMaxClicks : undefined),
       onStatus: (msg) => {
         const isFiring = msg.includes("active") || msg.startsWith("Saving");
+        const isWarning = msg.includes("Cloudflare") || msg.includes("Verify");
         this.setState({
           statusText: msg,
-          tone: isFiring ? "firing" : "armed",
+          tone: isWarning ? "warning" : isFiring ? "firing" : "armed",
         });
       },
       onDone: (outcome) => {
@@ -371,6 +380,11 @@ export class HuntCoordinator {
     }
     this.currentSession = null;
 
+    if (typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.removeAttribute("data-dh-checked-in");
+      document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+    }
+
     if (typeof sessionStorage !== "undefined") {
       try {
         sessionStorage.removeItem(ARMED_SESSION_KEY);
@@ -395,6 +409,10 @@ export class HuntCoordinator {
    * Resets finished outcome and status so that stale hunt results are not re-surfaced.
    */
   resetOutcome(): void {
+    if (typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.removeAttribute("data-dh-checked-in");
+      document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+    }
     if (!this.state.isArmed) {
       this.setState({
         outcome: undefined,

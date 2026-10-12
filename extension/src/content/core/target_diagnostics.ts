@@ -1,5 +1,6 @@
 import { elementResolver } from "./element_resolver";
 import { TargetDiagnosticsSummary, ReloadStrategy, PageFramework, PlatformTier } from "../../lib/types";
+import { caffiliateAdapter } from "../adapters/caffiliate_adapter";
 
 /**
  * Identifies major marketplace platforms (Shopee, Lazada, TikTok Shop)
@@ -145,7 +146,11 @@ export class TargetDiagnostics {
     let strategy: ReloadStrategy = "reactive_no_reload";
     let confidence = 50;
 
-    if (hasCountdownTimer) {
+    const currentUrl = typeof window !== "undefined" ? window.location?.href || "" : "";
+    if (caffiliateAdapter.isMatchUrl(currentUrl)) {
+      strategy = "reactive_no_reload";
+      confidence = 95;
+    } else if (hasCountdownTimer) {
       strategy = "reactive_no_reload";
       confidence = 85;
     } else if (framework !== "unknown") {

@@ -1,8 +1,9 @@
 import { MESSAGE_ACTIONS, STORAGE_KEYS } from "../../lib/constants";
-import { ClockCalibration } from "../../lib/types";
+import { ClockCalibration, PlatformTier } from "../../lib/types";
 
 export class TimeSyncClient {
   private offsetMs: number = 0;
+  private rttMs: number = 0;
   private isCalibrated: boolean = false;
   private errorMs: number = 1000;
   private serverHost: string = "";
@@ -98,6 +99,7 @@ export class TimeSyncClient {
 
   applyCalibration(cal: ClockCalibration): void {
     this.offsetMs = cal.offsetMs;
+    this.rttMs = cal.rttMs ?? 0;
     this.errorMs = cal.errorMs ?? 1000;
     this.isCalibrated = !!cal.calibrated;
     this.serverHost = cal.serverHost || "";
@@ -118,6 +120,33 @@ export class TimeSyncClient {
 
   getErrorMs(): number {
     return this.errorMs;
+  }
+
+  getRttMs(): number {
+    return this.rttMs;
+  }
+
+  /**
+   * Computes recommended pre-fire lead (ms) for the current target platform.
+   * On major marketplaces, zero lead prevents triggering strict pre-drop bot defenses.
+   * On speed-priority platforms, compensates for network latency (RTT / 2) to ensure
+   * the request lands at the remote server right at 00:00:00.000.
+   */
+  getRecommendedPreFireLeadMs(tier?: PlatformTier): number {
+    if (tier === "major_marketplace") return 0;
+
+    const domain = this.getCurrentDomain();
+    const isLocal = domain === "localhost" || domain === "127.0.0.1" || !domain;
+    if (isLocal) {
+      return 28; // Safe default for local simulator
+    }
+
+    if (this.rttMs > 0) {
+      // Dynamic network latency compensation: one-way flight time RTT / 2 clamped between 28ms and 180ms
+      return Math.min(180, Math.max(28, Math.round(this.rttMs / 2)));
+    }
+
+    return 28;
   }
 
   /**

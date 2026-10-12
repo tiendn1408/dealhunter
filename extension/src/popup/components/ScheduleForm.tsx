@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Plus, Bookmark, Globe, Crosshair, Sparkles, CheckCircle2, ChevronDown } from "lucide-react";
+import { CalendarClock, Plus, Bookmark, Globe, Crosshair, Sparkles, CheckCircle2, ChevronDown, Repeat } from "lucide-react";
 import { ScheduledTask, SavedPageTarget, ClickProfileMode } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { nextExactDropAt, formatVN, parseTimeString } from "../../lib/drop_time";
@@ -54,6 +54,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
   // Target time state
   const nextSale = useMemo(() => getNextSaleDrop(Date.now()), []);
   const [timeInput, setTimeInput] = useState<string>(nextSale.timeStr);
+  const [isDaily, setIsDaily] = useState<boolean>(false);
   const [clickProfileMode, setClickProfileMode] = useState<ClickProfileMode>("adaptive");
   const [submitting, setSubmitting] = useState(false);
   const t = getTranslation(lang);
@@ -185,6 +186,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         targetUrl: finalUrl,
         label: finalLabel,
         mode: "full_auto",
+        isDaily,
         savedTargetId: targetSnapshot?.id,
         descriptor: targetSnapshot?.descriptor,
         dualDefenseReload: targetSnapshot?.dualDefenseReload ?? true,
@@ -439,6 +441,57 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
           <span className="text-[9px] font-semibold text-rose-400">{t.invalidTimeFormat}</span>
         )}
       </div>
+
+      {/* Daily Repeat Switch */}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={isDaily}
+        onClick={() => setIsDaily(!isDaily)}
+        className={`group flex w-full items-center justify-between rounded-xl px-3 py-2 transition text-left select-none ${
+          isDaily
+            ? "bg-emerald-500/10 ring-1 ring-emerald-500/30"
+            : "bg-black/30 ring-1 ring-white/5 hover:bg-white/[0.02] hover:ring-white/10"
+        }`}
+      >
+        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+          <div
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition ${
+              isDaily
+                ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+                : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-slate-300"
+            }`}
+          >
+            <Repeat className="h-3.5 w-3.5" />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span
+              className={`text-[11px] font-semibold transition ${
+                isDaily ? "text-emerald-300" : "text-slate-200 group-hover:text-white"
+              }`}
+            >
+              {t.dailyScheduleCheckbox}
+            </span>
+            <span className="text-[9px] text-slate-400 truncate leading-tight">
+              {t.dailyScheduleHint}
+            </span>
+          </div>
+        </div>
+
+        {/* Custom iOS-style toggle switch */}
+        <div
+          aria-hidden="true"
+          className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out ${
+            isDaily ? "bg-emerald-500 shadow-sm shadow-emerald-500/40" : "bg-slate-800 ring-1 ring-white/10"
+          }`}
+        >
+          <span
+            className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-sm transition duration-200 ease-in-out ${
+              isDaily ? "translate-x-[14px]" : "translate-x-0.5"
+            }`}
+          />
+        </div>
+      </button>
 
       {/* Submit Button */}
       <button

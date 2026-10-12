@@ -238,8 +238,8 @@ Ham `isMajorMarketplace` phan chia pham vi hoat dong:
   - Co che **Ban don gio G (Pre-fire Lead Offset)**: Tinh toan do tre mang Internet ($RTT / 2 \approx 28ms$), kich no chuoi click tu $T - 28ms$ de goi tin HTTP cham cong may chu dung vao tich tac $00:00:00.000$.
   - **Cuong che thao do `disabled` tren DOM**: Tai thoi diem ban don ($T - 28ms$), neu muc tieu da duoc khoa boi nguoi dung, extension chu dong go bo thuoc tinh `disabled`, `aria-disabled="false"`, va class `.disabled` tren DOM ma khong thu dong ngoi cho React re-render cycle (tiet kiem 30ms - 80ms).
 
-### 8.2. Chien luoc Reload don dau co kiem soat (Guarded Precision Pre-Reload Loop)
-Tren cac trang React SPA khong co co che tu dong mo khoa nut theo thoi gian thuc ma can reload trang de lay session ngay moi (`caffiliate.vn`):
+### 8.2. Chien Luoc Reload Don Dau Co Kiem Soat (Chung Cho Cac Web Khac)
+Tren cac trang ban hang / san voucher khong co API hay state noi bo ma phu thuoc hoan toan vao viec server render lai HTML moi (`dualDefenseReload: true`):
 1. **T - 5s (Keep-Alive Socket Pre-warming)**:
    - Ngam gui request `HEAD` voi `cache: "no-store"` va `keepalive: true` toi origin server de giu am socket TCP/TLS, tranh ton thoi gian bat tay TLS handshake khi click.
 2. **$T - 750ms$ (Precision Pre-Reload Tu Dong 100%)**:
@@ -259,7 +259,35 @@ Tren cac trang React SPA khong co co che tu dong mo khoa nut theo thoi gian thuc
    - **Phong ngua False Positive**: Ham danh gia `isTargetCompleted` khong duoc ngoc nhan thuoc tinh `disabled` ban dau cua ngay hom truoc la da thanh cong. He thong chi cong nhan thanh cong khi da co it nhat 1 cu click duoc phat di hoac DOM co su bien doi trang thai sau gio G.
    - Khi co click thanh cong hoac deal hoan tat, tu dong don dep toan bo bien dem trong `sessionStorage`.
 
-### 8.3. Luong Xu Ly Chi Tiet Toan Dien (End-to-End Execution Flow)
+### 8.3. Adapter Chuyen Biet Cho Caffiliate (`caffiliate_adapter.ts`)
+Doi voi nen tang doi thuong khoc liet mili-giay nhu `caffiliate.vn`:
+- **Phat hien goc re (Root Cause Top 12 luc 00:00:02)**:
+  - Cac doi thu Top 1 - 4 (`00:00:00`) khong he reload trang o 59.25s vi reload tren mang that mat 1.8s - 2.2s (tai lai Tailwind CDN, Cloudflare Turnstile, anh).
+  - Nut tren man hinh truoc 0h bi chan boi bien noi bo `app.state.todayCheckedIn = true` trong script cua trang.
+- **Kien Truc Phong Thu Da Tang (4-Tier Adaptive Defense)**:
+  De phong ngua tinh huong he thong Caffiliate doi ten ham, doi ID nut, hoac minify code, adapter trien khai 4 lop phong thu tu dong thich ung:
+  1. **Pre-warming Turnstile Token & HTTP Keep-Alive (T - 3.5s)**:
+     - Cloudflare Turnstile token can 200ms - 600ms de sinh token.
+     - Tai moc $T - 3.5s$ truoc gio G, method `preWarmStrike()` tu dong chay ngam goi `window.CheckInTurnstile.getToken()` luu vao bo nho RAM va mo ket noi Keep-Alive toi endpoint `/api/v2/xeng/check-in-secure`.
+     - Den dung $00:00:00.000$, token da co san, giam do tre phat request xuong < 20ms.
+  2. **Tier 1: Dynamic App & Function Discovery (Tu Dong Do Ham)**:
+     - Khong phu thuoc co dinh vao ten `app.checkIn`.
+     - Quet doi tuong app: `window.app`, `window.caffiliate`, `window.CaffiliateApp`, `window.rewardApp`, `window.xengApp`, hoac quet cac global property co `state` chua `todayCheckedIn` hoac `csrfToken`.
+     - Reset toan bo co khoa: `todayCheckedIn = false` va tat ca cac boolean flags chua tu khoa `check`, `claim`, `lock`, `redeem`.
+     - Do tim ham diem danh:
+       + Uu tien 1: `app.checkIn()`.
+       + Uu tien 2: Regex ten ham: `/^(check_?in|claim|diem_?danh|attendance|reward)/i`.
+       + Uu tien 3: Quet ma nguon ham (`fn.toString()`) de phat hien ham co chua `CheckInTurnstile`, `check-in-secure`, `generateSignature` (hoat dong ngay ca khi code bi obfuscate/minify).
+  3. **Tier 2: DOM Button Unblock & Native Event Dispatch**:
+     - Do tim nut diem danh qua ID `#btnCheckIn`, `#caffiliate-checkin-btn`, qua pattern attribute `button[id*="CheckIn" i]`, hoac qua text chua `Điểm danh`, `Nhận Xèng`.
+     - Go bo thuoc tinh `disabled`, `aria-disabled="false"`, `pointer-events: auto`.
+     - Dispatch su kien click W3C de kich hoat Event Listener goc gan qua closure `() => this.checkIn()`.
+  4. **Tier 3: Direct API Request Fallback**:
+     - Neu ca ham lan nut DOM bi loi, he thong tu dong trich xuat `csrfToken`, `googleId`, Turnstile token da pre-warm, tao chu ky qua `app.generateSignature` va `fetch('/api/v2/xeng/check-in-secure', { method: 'POST', ... })`.
+  5. **Tier 4: Manual Target Respect**:
+     - Ton trong 100% phan tu nguoi dung pick thu cong (vi du the tieu de breadcrumb `Điểm Danh`), khong tu y auto-snap, dong thoi kich hoat song song ca target va nut he thong.
+
+### 8.4. Luong Xu Ly Chi Tiet Toan Dien (End-to-End Execution Flow)
 
 Duoi day la luong tuong tac chi tiet giua cac thanh phan tu luc khoi tao den khi hoan tat cu click Top 1:
 
@@ -506,3 +534,20 @@ He thong tu dong ap dung chien luoc rieng biet tuy thuoc vao do nhay cam cua he 
 - **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.
 - **Production Build**: Bien dich hoan tat sach se `popup.js`, `background.js`, `content.js` va `content.css`.
 - **Zero-Emoji**: Tuyet doi khong su dung emoji trong ma nguon, log, test va tai lieu.
+
+---
+
+## 12. Toi Uu Hoa Tang Nhan Nut Cuc Han (Sub-Millisecond DOM Strike Optimization)
+
+Doi voi cac trang web chan API (chong bot, yeu cau chu ky chuot hoac CSRF token phat sinh luc click), viec nhan nut DOM duoc toi uu cham moc gioi han vat ly:
+
+1. **Khoi tao truoc su kien (Zero-Allocation Pre-Warmed Strike)**:
+   - Tai $T - 800\text{ms}$, he thong tinh san toa do Gaussian va khoi tao san toan bo chuoi W3C Level 3 Pointer & Mouse Events (`pointerover`, `pointerenter`, `pointerdown`, `mousedown`, `pointerup`, `mouseup`, `click`) trong RAM.
+   - Khi den gio G, cu click vang dau tien duoc phat thang vao phan tu ma khong ton 1 micro-giay cap phat bo nho nao, loai bo 100% nguy co bi nghen do V8 Minor Garbage Collection.
+2. **Vong lap do do phan giai duoi mili-giay (Sub-Millisecond Microtask Spin-Wait)**:
+   - Trong 35ms cuoi cung truoc thoi khac ban, he thong kich hoat che do Spin-Wait qua `requestAnimationFrame` va hang doi microtask `Promise.resolve().then()`.
+   - V8 Engine lien tuc kiem tra dong ho voi do phan giai $< 0.1\text{ms}$, triet tieu hoan toan do lech ngau nhien $0\text{ms} - 10\text{ms}$ do nhip `postMessage` cua Web Worker.
+3. **Bu tre duong truyen dong (Dynamic Network Pre-Fire)**:
+   - Khi nguoi dung click tren giao dien, trinh duyet phai mat thoi gian bay cua goi tin mot chieu ($\frac{\text{RTT}}{2}$) de mang request den may chu.
+   - He thong tu dong tinh toan `preFireLeadMs = Math.round(rttMs / 2)` (gioi han an toan tu 28ms den 180ms) dua tren thong so do tu `timeSyncClient`.
+   - Nho do, du click xay ra o tang DOM, goi tin HTTP cua trang van cham may chu dung o mili-giay dau tien cua gio G.

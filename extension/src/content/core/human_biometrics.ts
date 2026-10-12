@@ -408,3 +408,92 @@ export function dispatchRealisticMouseEventSequence(
     return false;
   }
 }
+
+export interface PreWarmedEventSequence {
+  coords: { clientX: number; clientY: number };
+  pointerover: PointerEvent;
+  pointerenter: PointerEvent;
+  pointerdown: PointerEvent;
+  mousedown: MouseEvent;
+  pointerup: PointerEvent;
+  mouseup: MouseEvent;
+  click: MouseEvent;
+}
+
+/**
+ * Pre-allocates a realistic W3C Level 3 Pointer & Mouse event sequence in RAM
+ * ahead of the golden drop moment (e.g. at T - 500ms).
+ * This eliminates V8 heap allocations and prevents Garbage Collection (GC) pauses
+ * right at the critical millisecond of the strike.
+ */
+export function createPreWarmedMouseEventSequence(
+  element: HTMLElement,
+  coords: { clientX: number; clientY: number }
+): PreWarmedEventSequence {
+  const { clientX, clientY } = coords;
+  const screenX = typeof window !== "undefined" ? clientX + (window.screenX || 0) : clientX;
+  const screenY = typeof window !== "undefined" ? clientY + (window.screenY || 0) : clientY;
+  const view = typeof window !== "undefined" ? window : null;
+
+  const baseInit = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view,
+    clientX,
+    clientY,
+    screenX,
+    screenY,
+  };
+
+  const pointerBaseInit = {
+    ...baseInit,
+    pointerId: 1,
+    pointerType: "mouse" as const,
+    isPrimary: true,
+    width: 1,
+    height: 1,
+    tiltX: 0,
+    tiltY: 0,
+  };
+
+  return {
+    coords,
+    pointerover: new PointerEvent("pointerover", { ...pointerBaseInit, button: 0, buttons: 0, pressure: 0 }),
+    pointerenter: new PointerEvent("pointerenter", { ...pointerBaseInit, button: 0, buttons: 0, pressure: 0 }),
+    pointerdown: new PointerEvent("pointerdown", { ...pointerBaseInit, button: 0, buttons: 1, pressure: 0.5 }),
+    mousedown: new MouseEvent("mousedown", { ...baseInit, button: 0, buttons: 1, detail: 1 }),
+    pointerup: new PointerEvent("pointerup", { ...pointerBaseInit, button: 0, buttons: 0, pressure: 0 }),
+    mouseup: new MouseEvent("mouseup", { ...baseInit, button: 0, buttons: 0, detail: 1 }),
+    click: new MouseEvent("click", { ...baseInit, button: 0, buttons: 0, detail: 1 }),
+  };
+}
+
+/**
+ * Dispatches the pre-warmed event sequence with zero memory allocations.
+ */
+export function dispatchPreWarmedSequence(
+  element: HTMLElement,
+  sequence: PreWarmedEventSequence
+): boolean {
+  if (!element || !element.isConnected) return false;
+
+  try {
+    element.dispatchEvent(sequence.pointerover);
+    element.dispatchEvent(sequence.pointerenter);
+    element.dispatchEvent(sequence.pointerdown);
+    element.dispatchEvent(sequence.mousedown);
+    try {
+      element.focus();
+    } catch {
+      // ignore
+    }
+    element.dispatchEvent(sequence.pointerup);
+    element.dispatchEvent(sequence.mouseup);
+    element.dispatchEvent(sequence.click);
+    return true;
+  } catch (err) {
+    console.warn("[HumanBiometrics] Pre-warmed dispatch failed:", err);
+    return false;
+  }
+}

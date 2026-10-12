@@ -53,12 +53,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === MESSAGE_ACTIONS.TASK_STATUS_UPDATE) {
     if (message.taskId && message.status) {
-      if (message.status !== "running") {
-        taskScheduler.clearRunningTab(message.taskId);
-      }
       const lastResult = message.result ? { ...message.result, finishedAt: Date.now() } : undefined;
-      storage
-        .updateTaskStatus(message.taskId, message.status, lastResult)
+      taskScheduler
+        .handleTaskStatusUpdate(message.taskId, message.status, lastResult)
         .then(() => sendResponse({ success: true }))
         .catch((err) => sendResponse({ success: false, error: (err as Error).message }));
       return true;

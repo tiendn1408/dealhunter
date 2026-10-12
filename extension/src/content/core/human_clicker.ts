@@ -3,6 +3,9 @@ import {
   computeNextInterval,
   dispatchRealisticMouseEventSequence,
   generateBezierTrajectory,
+  createPreWarmedMouseEventSequence,
+  dispatchPreWarmedSequence,
+  PreWarmedEventSequence,
   CLICK_PROFILES,
   ClickProfileMode,
   Point2D,
@@ -24,6 +27,45 @@ export class HumanClicker {
   private burstCount: number = 0;
   private maxBurstClicks: number = 50;
   private lastCursorPos: Point2D = { x: 0, y: 0 };
+  private preWarmedSequence: PreWarmedEventSequence | null = null;
+  private preWarmedTarget: HTMLElement | null = null;
+
+  /**
+   * Pre-allocates realistic W3C Level 3 event objects in RAM ahead of drop moment
+   * to eliminate V8 heap allocation and avoid GC pauses during the golden strike.
+   */
+  preWarmStrike(element: HTMLElement): void {
+    if (!element || !element.isConnected) return;
+    try {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const coords = calculateHumanClickCoordinates(rect);
+        this.preWarmedSequence = createPreWarmedMouseEventSequence(element, coords);
+        this.preWarmedTarget = element;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Dispatches the pre-warmed strike sequence with zero allocations.
+   * If pre-warmed sequence is absent or target changed, falls back to dispatchClick.
+   */
+  dispatchPreWarmedStrike(element: HTMLElement, options?: HumanClickOptions): boolean {
+    if (this.preWarmedSequence && this.preWarmedTarget === element && element.isConnected) {
+      const seq = this.preWarmedSequence;
+      this.preWarmedSequence = null;
+      this.preWarmedTarget = null;
+      this.lastCursorPos = { x: seq.coords.clientX, y: seq.coords.clientY };
+      const success = dispatchPreWarmedSequence(element, seq);
+      if (success) {
+        this.burstCount++;
+      }
+      return success;
+    }
+    return this.dispatchClick(element, options);
+  }
 
   /**
    * Dispatches realistic pointerover -> pointerenter -> pointerdown -> mousedown -> focus -> pointerup -> mouseup -> click

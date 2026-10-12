@@ -13,6 +13,7 @@ export interface ScheduledTask {
   targetUrl: string;
   label: string;
   mode: "semi_auto" | "full_auto";
+  isDaily?: boolean; // When true, automatically rolls over to the next day after execution
   keyword?: string; // fallback voucher keyword
   savedTargetId?: string; // linked SavedPageTarget
   descriptor?: {

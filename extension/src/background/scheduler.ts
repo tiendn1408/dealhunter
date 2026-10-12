@@ -26,7 +26,7 @@ export class TaskScheduler {
         const task = tasks.find((t) => t.id === taskId);
         if (task && task.status === "running") {
           console.warn(`[TaskScheduler] Tab ${tabId} closed while task ${taskId} was active. Marking failed!`);
-          await storage.updateTaskStatus(taskId, "failed", {
+          await this.handleTaskStatusUpdate(taskId, "failed", {
             result: "not_found",
             clicks: 0,
             detail: "Target tab was closed before drop",
@@ -37,6 +37,47 @@ export class TaskScheduler {
         // ignore
       }
     });
+  }
+
+  /**
+   * Handles task status update and automatically rolls over daily tasks to tomorrow.
+   */
+  async handleTaskStatusUpdate(
+    taskId: string,
+    status: ScheduledTask["status"],
+    lastResult?: ScheduledTask["lastResult"]
+  ): Promise<void> {
+    const tasks = await storage.getTasks();
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    if (status !== "running") {
+      this.clearRunningTab(taskId);
+    }
+
+    if (task.isDaily && (status === "completed" || status === "failed" || status === "missed")) {
+      const now = Date.now();
+      const second = task.targetSecond ?? 0;
+      // Calculate next day drop timestamp (offset by 60s to guarantee rolling over to next day)
+      const nextTarget = nextExactDropAt(task.targetHour, task.targetMinute, second, now + 60_000);
+      task.targetAt = nextTarget;
+      task.status = "pending";
+      if (lastResult) task.lastResult = lastResult;
+      await storage.saveTasks(tasks);
+
+      // Re-register alarm for the next drop
+      const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
+      const preWarmTime = nextTarget - preWarmMs;
+      const alarmTime = Math.max(preWarmTime, now + 500);
+      const alarmName = `dh_task_${task.id}`;
+      chrome.alarms.create(alarmName, { when: alarmTime });
+      console.log(
+        `[TaskScheduler] Daily task ${task.id} rolled over to next drop at ${new Date(nextTarget).toLocaleString()}`
+      );
+      return;
+    }
+
+    await storage.updateTaskStatus(taskId, status, lastResult);
   }
 
   clearRunningTab(taskId: string): void {
@@ -93,13 +134,34 @@ export class TaskScheduler {
         task.targetAt = target;
 
         if (now > target + 15_000) {
-          console.warn(`[TaskScheduler] Task ${task.id} expired during downtime. Marking missed!`);
-          await storage.updateTaskStatus(task.id, "missed", {
-            result: "timeout",
-            clicks: 0,
-            detail: "Drop deadline expired during browser/extension downtime",
-            finishedAt: now,
-          });
+          if (task.isDaily) {
+            // Daily task expired while browser/extension was down: roll over to the upcoming drop
+            const nextTarget = nextExactDropAt(task.targetHour, task.targetMinute, second, now);
+            task.targetAt = nextTarget;
+            task.status = "pending";
+            task.lastResult = {
+              result: "timeout",
+              clicks: 0,
+              detail: "Drop deadline expired during downtime (rescheduled for next drop)",
+              finishedAt: now,
+            };
+            await storage.saveTasks(tasks);
+            const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
+            const preWarmTime = nextTarget - preWarmMs;
+            const alarmTime = Math.max(preWarmTime, now + 500);
+            chrome.alarms.create(`dh_task_${task.id}`, { when: alarmTime });
+            console.log(
+              `[TaskScheduler] Daily task ${task.id} recovered and rescheduled for next drop at ${new Date(nextTarget).toLocaleString()}`
+            );
+          } else {
+            console.warn(`[TaskScheduler] Task ${task.id} expired during downtime. Marking missed!`);
+            await storage.updateTaskStatus(task.id, "missed", {
+              result: "timeout",
+              clicks: 0,
+              detail: "Drop deadline expired during browser/extension downtime",
+              finishedAt: now,
+            });
+          }
         } else {
           const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
           const preWarmTime = target - preWarmMs;
@@ -158,6 +220,16 @@ export class TaskScheduler {
 
     // H2 / H3: If the alarm triggered past drop deadline grace window (15s), mark missed and abort!
     if (now > targetTimestamp + 15_000) {
+      if (task.isDaily) {
+        console.warn(`[TaskScheduler] Daily task ${task.id} alarm fired past drop deadline. Rolling over.`);
+        await this.handleTaskStatusUpdate(task.id, "missed", {
+          result: "timeout",
+          clicks: 0,
+          detail: "Drop deadline expired before alarm triggered (device asleep or off)",
+          finishedAt: now,
+        });
+        return;
+      }
       console.warn(`[TaskScheduler] Task ${task.id} alarm fired past drop deadline. Marking missed.`);
       await storage.updateTaskStatus(taskId, "missed", {
         result: "timeout",

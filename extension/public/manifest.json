@@ -21,6 +21,16 @@
       "matches": [
         "<all_urls>"
       ],
+      "exclude_matches": [
+        "*://*/*.svg",
+        "*://*/*.svg?*",
+        "*://*/*.pdf",
+        "*://*/*.pdf?*",
+        "*://*/*.xml",
+        "*://*/*.xml?*",
+        "*://*/*.json",
+        "*://*/*.json?*"
+      ],
       "js": [
         "content.js"
       ],
@@ -28,6 +38,18 @@
         "content.css"
       ],
       "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://*.caffiliate.vn/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "caffiliate_bridge.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
     }
   ],
   "action": {
@@ -57,7 +79,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "icons/*.png"
+        "icons/*.png",
+        "caffiliate_bridge.js"
       ],
       "matches": [
         "<all_urls>"

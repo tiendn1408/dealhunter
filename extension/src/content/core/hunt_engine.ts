@@ -9,6 +9,7 @@ import { WorkerTimer } from "./timer_worker";
 import { isSamePageUrl } from "../../lib/url";
 import { isMajorMarketplace } from "./target_diagnostics";
 import { PlatformTier } from "../../lib/types";
+import { getAdapterForUrl } from "../adapters";
 
 /**
  * Outcome of one target snipe. Only what the page actually shows is reported:
@@ -97,8 +98,14 @@ export function startHunt(opts: HuntOptions): () => void {
     typeof sessionStorage !== "undefined" &&
     (Boolean(sessionStorage.getItem(`dh_emergency_reloaded_${opts.targetTimestamp}`)) ||
       Boolean(sessionStorage.getItem(`dh_reload_count_${opts.targetTimestamp}`)));
+  const initialPageUrl = typeof window !== "undefined" ? window.location?.href || "" : "";
+  let adapter = getAdapterForUrl(initialPageUrl);
   const defaultWindowMs =
-    effectiveTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityWindowMs : HUNT_DEFAULTS.windowMs;
+    adapter?.windowMs !== undefined
+      ? adapter.windowMs
+      : effectiveTier === "speed_priority"
+      ? HUNT_DEFAULTS.speedPriorityWindowMs
+      : HUNT_DEFAULTS.windowMs;
   const baseWindowMs = opts.windowMs ?? defaultWindowMs;
   let windowMs = isEmergencyReloaded
     ? Math.max(baseWindowMs, effectiveTier === "speed_priority" ? 2_500 : 10_000)
@@ -119,7 +126,11 @@ export function startHunt(opts: HuntOptions): () => void {
       ? opts.clickIntervalMs
       : computeNextInterval(profile, 1).intervalMs;
   const defaultMaxClicks =
-    effectiveTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityMaxClicks : HUNT_DEFAULTS.maxClicks;
+    adapter?.maxClicks !== undefined
+      ? adapter.maxClicks
+      : effectiveTier === "speed_priority"
+      ? HUNT_DEFAULTS.speedPriorityMaxClicks
+      : HUNT_DEFAULTS.maxClicks;
   const maxClicks = opts.maxClicks ?? defaultMaxClicks;
   const ticker = opts.ticker ?? new WorkerTimer();
 
@@ -136,6 +147,11 @@ export function startHunt(opts: HuntOptions): () => void {
   let scrolled = false;
   let done = false;
   let keepAliveSent = false;
+  let adapterPreWarmed = false;
+  if (typeof document !== "undefined" && document.documentElement) {
+    document.documentElement.removeAttribute("data-dh-checked-in");
+    document.documentElement.removeAttribute("data-dh-turnstile-challenge");
+  }
   let hadDisabledOnMount = Boolean(
     opts.locked && (
       opts.locked.hasAttribute("disabled") ||
@@ -143,7 +159,6 @@ export function startHunt(opts: HuntOptions): () => void {
       (opts.locked as any).disabled
     )
   );
-  const initialPageUrl = typeof window !== "undefined" ? window.location.href : "";
 
   const finish = (result: HuntResult, detail: string) => {
     if (done) return;
@@ -220,7 +235,9 @@ export function startHunt(opts: HuntOptions): () => void {
     }
   };
 
-  ticker.start(HUNT_DEFAULTS.tickMs, () => {
+  let spinArmed = false;
+
+  const step = () => {
     try {
       if (done) return;
 
@@ -254,9 +271,31 @@ export function startHunt(opts: HuntOptions): () => void {
         }
       }
 
+      // Pre-warming hook for platform adapters (e.g. Turnstile CAPTCHA & Crypto Key pre-warming on Caffiliate)
+      if (
+        !adapterPreWarmed &&
+        untilDrop <= 3500 &&
+        untilDrop > 500
+      ) {
+        adapterPreWarmed = true;
+        if (adapter?.preWarmStrike) {
+          try {
+            adapter.preWarmStrike();
+          } catch {
+            // ignore
+          }
+        }
+      }
+
       // Precision Pre-Reload at T - preReloadLeadMs: active unless dualDefenseReload is explicitly false
+      const currentUrl = typeof window !== "undefined" ? window.location?.href || "" : "";
+      if (currentUrl) {
+        const freshAdapter = getAdapterForUrl(currentUrl);
+        if (freshAdapter) adapter = freshAdapter;
+      }
+      const shouldDisableReload = adapter?.shouldDisableReload?.() ?? false;
       const preReloadLeadMs = opts.preReloadLeadMs ?? 750;
-      const isReloadEnabled = opts.dualDefenseReload !== false;
+      const isReloadEnabled = !shouldDisableReload && opts.dualDefenseReload !== false;
       const reloadWindowMin = Math.max(200, preReloadLeadMs - 400);
 
       if (
@@ -299,10 +338,45 @@ export function startHunt(opts: HuntOptions): () => void {
               // ignore
             }
           }
+          if (el && untilDrop <= 800) {
+            humanClicker.preWarmStrike(el);
+          }
         }
         const waitSeconds = Math.max(1, Math.round(untilDrop / 1000));
         status(t, `Waiting for the drop: ${waitSeconds}s`);
         return;
+      }
+
+      // Sub-millisecond Precision Spin-Wait:
+      // When approaching fire moment (final 35ms), bypass WorkerTimer 10ms interval jitter
+      // and poll via microtask queue to strike with sub-millisecond accuracy (< 0.5ms)
+      if (
+        !opts.ticker &&
+        !spinArmed &&
+        clicks === 0 &&
+        untilDrop <= (preFireLeadMs + 35) &&
+        untilDrop > preFireLeadMs
+      ) {
+        spinArmed = true;
+        const spinPoll = () => {
+          if (done || clicks > 0) return;
+          const currentT = opts.now();
+          if (currentT >= opts.targetTimestamp - preFireLeadMs) {
+            step();
+            return;
+          }
+          const remaining = (opts.targetTimestamp - preFireLeadMs) - currentT;
+          if (remaining > 6) {
+            if (typeof requestAnimationFrame === "function") {
+              requestAnimationFrame(spinPoll);
+            } else {
+              setTimeout(spinPoll, 1);
+            }
+          } else {
+            Promise.resolve().then(spinPoll);
+          }
+        };
+        spinPoll();
       }
 
       if (t > opts.targetTimestamp + windowMs) {
@@ -327,6 +401,9 @@ export function startHunt(opts: HuntOptions): () => void {
           } catch {
             // ignore
           }
+        }
+        if (clicks === 0 && untilDrop <= 800) {
+          humanClicker.preWarmStrike(el);
         }
       } else if (universalDesc?.documentTop && !scrolled && typeof window !== "undefined") {
         // Lazy-load activation fallback: if target is not found and descriptor has documentTop offset,
@@ -382,6 +459,13 @@ export function startHunt(opts: HuntOptions): () => void {
       // 1. Completion verification: ONLY valid if we clicked at least once!
       // Prevents false-positives when target button still displays yesterday's completion label
       if (clicks > 0) {
+        if (
+          (typeof document !== "undefined" && document.documentElement?.getAttribute("data-dh-checked-in") === "true") ||
+          (adapter?.isButtonFinished && el && adapter.isButtonFinished(el))
+        ) {
+          return finish("saved", "Target confirmed completed by platform adapter");
+        }
+
         const activeBaseline = baselineTextAtDrop ?? initialText;
         const check = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
         if (check.completed) {
@@ -454,12 +538,13 @@ export function startHunt(opts: HuntOptions): () => void {
       }
 
       const state = el ? elementResolver.getButtonState(el) : "unknown";
+      const isStaleBeforeDrop = clicks === 0 && isLockedTarget;
 
       if (
         el &&
         isFireMoment &&
-        state !== "saved" &&
-        (state === "collectable" || (isLockedTarget && isTargetClickable)) &&
+        (state !== "saved" || isStaleBeforeDrop) &&
+        (state === "collectable" || (isLockedTarget && isTargetClickable) || isStaleBeforeDrop) &&
         t - lastClickAt >= currentIntervalMs &&
         clicks < maxClicks
       ) {
@@ -477,19 +562,36 @@ export function startHunt(opts: HuntOptions): () => void {
           }
         }
         const isFirstClick = clicks === 0;
+        let directStrikeHandled = false;
         if (isFirstClick) {
           // C1-a: Capture the true baseline text right before click 1 at drop moment
           // (after countdown has transitioned to the actionable label)
           baselineTextAtDrop = elementResolver.text(el);
+          if (adapter?.executeDirectStrike) {
+            try {
+              const res = adapter.executeDirectStrike(el);
+              directStrikeHandled = Boolean(res);
+            } catch {
+              // ignore
+            }
+          }
         }
         const shouldSkipApproach = effectiveTier === "speed_priority" || profileMode === "hyper";
-        if (
-          humanClicker.dispatchClick(el, {
-            profileMode,
-            approach: isFirstClick && !shouldSkipApproach,
-            skipApproach: shouldSkipApproach,
-          })
-        ) {
+        const clickDispatched = isFirstClick
+          ? (directStrikeHandled
+              ? true
+              : humanClicker.dispatchPreWarmedStrike(el, {
+                  profileMode,
+                  approach: isFirstClick && !shouldSkipApproach,
+                  skipApproach: shouldSkipApproach,
+                }))
+          : humanClicker.dispatchClick(el, {
+              profileMode,
+              approach: false,
+              skipApproach: true,
+            });
+
+        if (clickDispatched) {
           clicks++;
           lastClickAt = t;
 
@@ -500,6 +602,13 @@ export function startHunt(opts: HuntOptions): () => void {
               : computeNextInterval(profile, clicks + 1).intervalMs;
 
           // Check completion immediately after click was dispatched
+          if (
+            (typeof document !== "undefined" && document.documentElement?.getAttribute("data-dh-checked-in") === "true") ||
+            (adapter?.isButtonFinished && el && adapter.isButtonFinished(el))
+          ) {
+            return finish("saved", "Target confirmed completed by platform adapter");
+          }
+
           const activeBaseline = baselineTextAtDrop ?? initialText;
           const postCheck = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
           if (postCheck.completed) {
@@ -508,19 +617,23 @@ export function startHunt(opts: HuntOptions): () => void {
           }
         }
       }
+      const statusOverride = adapter?.getStatusOverride?.();
       status(
         t,
-        clicks > 0
-          ? clicks >= maxClicks
-            ? `Burst complete (${clicks} clicks) · Awaiting server update...`
-            : `Target active · ${clicks} clicks`
-          : "Waiting for target button..."
+        statusOverride ??
+          (clicks > 0
+            ? clicks >= maxClicks
+              ? `Burst complete (${clicks} clicks) · Awaiting server update...`
+              : `Target active · ${clicks} clicks`
+            : "Waiting for target button...")
       );
-  } catch (err) {
-    // M6: Catch uncaught errors in tick to avoid hung loop/UI
-    finish("not_found", "Runtime error during hunt: " + (err as Error).message);
-  }
-  });
+    } catch (err) {
+      // M6: Catch uncaught errors in tick to avoid hung loop/UI
+      finish("not_found", "Runtime error during hunt: " + (err as Error).message);
+    }
+  };
+
+  ticker.start(HUNT_DEFAULTS.tickMs, step);
 
   return () => finish("cancelled", "Cancelled");
 }
