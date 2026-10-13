@@ -1,6 +1,7 @@
 import { elementResolver } from "./element_resolver";
 import { TargetDiagnosticsSummary, ReloadStrategy, PageFramework, PlatformTier } from "../../lib/types";
 import { caffiliateAdapter } from "../adapters/caffiliate_adapter";
+import { isSiteHost } from "../../lib/url";
 
 /**
  * Identifies major marketplace platforms (Shopee, Lazada, TikTok Shop)
@@ -9,20 +10,12 @@ import { caffiliateAdapter } from "../adapters/caffiliate_adapter";
 export function isMajorMarketplace(url?: string): boolean {
   const targetUrl = url || (typeof window !== "undefined" ? window.location?.href || "" : "");
   if (!targetUrl) return false;
-  try {
-    const host = new URL(targetUrl, "https://example.com").hostname.toLowerCase();
-    return (
-      host.includes("shopee.") ||
-      host.includes("lazada.") ||
-      host.includes("tiktok.com")
-    );
-  } catch {
-    return (
-      targetUrl.includes("shopee.") ||
-      targetUrl.includes("lazada.") ||
-      targetUrl.includes("tiktok.com")
-    );
-  }
+  return (
+    isSiteHost(targetUrl, "shopee.") ||
+    isSiteHost(targetUrl, "lazada.") ||
+    isSiteHost(targetUrl, "tiki.vn") ||
+    isSiteHost(targetUrl, "tiktok.com")
+  );
 }
 
 export class TargetDiagnostics {

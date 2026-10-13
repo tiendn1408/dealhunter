@@ -23,9 +23,18 @@ export interface CompletionStatus {
   completed: boolean;
   state: ButtonState;
   reason: string;
+  /** Only the button turning disabled: also happens while a request runs, so it must last longer. */
+  weak?: boolean;
 }
 
 /** Identifies a voucher card independently of the button node, which React may replace at drop time. */
+export interface CompletionCheckOptions {
+  /** The engine removed `disabled` itself, so a disabled button again is not a completion signal. */
+  ignoreDisabled?: boolean;
+  /** Notifications present before the first click (see snapshotToasts). */
+  toastBaseline?: Map<Element, string>;
+}
+
 export interface VoucherDescriptor {
   cardText: string; // voucher card text without the button label
 }
@@ -217,10 +226,8 @@ export function detectVisualChromaticTone(el: HTMLElement): "success" | "exhaust
  * for immediate post-click success or exhaustion confirmations using pure structural,
  * SVG icon, chromatic tone, and HTML5/W3C data contracts without language-specific dictionaries.
  */
-export function checkPageToastConfirmation(): CompletionStatus | null {
-  if (typeof document === "undefined") return null;
-
-  const toastSelectors = [
+/** Notification-like containers a site may use to confirm (or refuse) an action. */
+const TOAST_SELECTORS = [
     '[role="alert"]',
     '[role="status"]',
     '[aria-live="assertive"]',
@@ -263,21 +270,38 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
     'div[class*="feedback" i]',
     'div[class*="notice" i]',
     'div[class*="popup" i]',
-  ];
+];
 
-  let elements: HTMLElement[] = [];
+/** DealHunter's own UI, never a site notification. */
+const OWN_UI_SELECTOR = "#dealhunter-hud-root, #dealhunter-badge-root, #dh-picker-overlay";
+
+function queryToasts(): HTMLElement[] {
   try {
-    elements = Array.from(document.querySelectorAll<HTMLElement>(toastSelectors.join(", ")));
+    return Array.from(document.querySelectorAll<HTMLElement>(TOAST_SELECTORS.join(", ")));
   } catch {
-    return null;
+    return [];
   }
+}
 
-  for (const el of elements) {
+/**
+ * Notifications already on the page (with their text) before the first click. A banner, cart
+ * counter or old message that was there before we clicked says nothing about our click.
+ */
+export function snapshotToasts(): Map<Element, string> {
+  const out = new Map<Element, string>();
+  if (typeof document === "undefined") return out;
+  for (const el of queryToasts()) out.set(el, (el.textContent || "").trim());
+  return out;
+}
+
+export function checkPageToastConfirmation(baseline?: Map<Element, string>): CompletionStatus | null {
+  if (typeof document === "undefined") return null;
+
+  for (const el of queryToasts()) {
     if (!el.isConnected) continue;
-    // Strictly exclude DealHunter's own HUD and container elements
-    if (el.closest("#dealhunter-hud-root, [class*='dh-'], [data-dealhunter]")) {
-      continue;
-    }
+    if (el.closest(OWN_UI_SELECTOR)) continue;
+    // Unchanged since before the click: not an answer to it
+    if (baseline && baseline.get(el) === (el.textContent || "").trim()) continue;
 
     const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 0, height: 0 };
     const hasDimensions = rect.width > 0 || rect.height > 0 || el.offsetWidth > 0 || el.offsetHeight > 0;
@@ -291,7 +315,6 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
 
     const rawCls = (typeof el.className === "string" ? el.className : "").toLowerCase();
     const dataType = (el.getAttribute("data-type") || el.getAttribute("data-status") || el.getAttribute("data-state") || "").toLowerCase();
-    const role = (el.getAttribute("role") || "").toLowerCase();
 
     // 1. Structural icon evaluation (SVG geometry / Icon library technical tokens)
     const hasSuccessIcon = hasCompletionIcon(el);
@@ -349,14 +372,7 @@ export function checkPageToastConfirmation(): CompletionStatus | null {
       };
     }
 
-    // 4. W3C ARIA Live Region role="status" announcing post-click update
-    if (role === "status" && el.textContent?.trim()) {
-      return {
-        completed: true,
-        state: "saved",
-        reason: "W3C status region confirmed action completion",
-      };
-    }
+    // A live region merely having text (cart count, "loading", ...) is not a confirmation.
   }
 
   return null;
@@ -389,13 +405,7 @@ export class ElementResolver {
       if (!label && el.children.length === 0) continue;
 
       // Exclude HUD, badge, and overlay elements
-      if (
-        typeof el.closest === "function" &&
-        (el.closest("#dealhunter-hud-root") ||
-          el.closest("#dh-picker-overlay") ||
-          el.closest("#dealhunter-badge-root") ||
-          el.closest(".dh-root"))
-      ) {
+      if (typeof el.closest === "function" && (el.closest(OWN_UI_SELECTOR) || el.closest(".dh-root"))) {
         continue;
       }
 
@@ -421,7 +431,7 @@ export class ElementResolver {
       // Exclude dangerous payment / purchase buttons from automatic scanning
       if (
         /(?:^|[\s_-])(checkout|buy-now|btn-buy|payment|place-order|pay)(?:$|[\s_-])/i.test(cls) ||
-        /^(mua ngay|mua với voucher|thanh toán|đặt hàng|place order|checkout|buy now)$/i.test(label)
+        /^(mua ngay|mua với voucher|mua hàng|thanh toán|đặt hàng|place order|checkout|buy now|pay now)(?![a-zà-ỹ])/i.test(label)
       ) {
         continue;
       }
@@ -523,7 +533,12 @@ export class ElementResolver {
    * Confirms action success via stable state updates, ARIA attributes,
    * and text mutations without requiring language-specific dictionaries.
    */
-  isTargetCompleted(button: HTMLElement | null, initialText?: string, clicksCount = 0): CompletionStatus {
+  isTargetCompleted(
+    button: HTMLElement | null,
+    initialText?: string,
+    clicksCount = 0,
+    opts: CompletionCheckOptions = {}
+  ): CompletionStatus {
     // 1. Target not in DOM: disconnection from DOM is NOT proof of success (could be redirect/captcha/re-render)
     if (!button || !button.isConnected) {
       return { completed: false, state: "gone", reason: "Target element not in DOM" };
@@ -543,10 +558,12 @@ export class ElementResolver {
     // 2. Behavioral state transitions after clicks dispatched
     if (clicksCount > 0) {
       // 2a. Transition to disabled after click (anti-double-click / idempotency)
+      // Not evidence when we removed `disabled` ourselves: the page simply restored its own lock.
       const isDisabled =
-        button.hasAttribute("disabled") ||
-        button.getAttribute("aria-disabled") === "true" ||
-        /(?:^|[\s_-])disabled(?:$|[\s_-])/i.test(cls);
+        !opts.ignoreDisabled &&
+        (button.hasAttribute("disabled") ||
+          button.getAttribute("aria-disabled") === "true" ||
+          /(?:^|[\s_-])disabled(?:$|[\s_-])/i.test(cls));
 
       // 2b. Text mutation after click (ignoring clock countdowns)
       let hasTextMutated = false;
@@ -577,7 +594,8 @@ export class ElementResolver {
           : hasSuccessIcon
           ? "Target gained completion icon"
           : "Target gained completion style";
-        return { completed: true, state: "saved", reason };
+        const weak = isDisabled && !hasTextMutated && !hasSuccessIcon && !hasCompletedClass;
+        return { completed: true, state: "saved", reason, weak };
       }
 
       // 2e. Card container behavioral mutation after click (language-agnostic)
@@ -609,7 +627,7 @@ export class ElementResolver {
       }
 
       // 2f. Page-level toast notification confirmation (Shopee/Lazada/TikTok)
-      const toastCheck = checkPageToastConfirmation();
+      const toastCheck = checkPageToastConfirmation(opts.toastBaseline);
       if (toastCheck) {
         return toastCheck;
       }
@@ -732,38 +750,73 @@ export class ElementResolver {
   relocate(desc: VoucherDescriptor): HTMLElement | null {
     const wanted = valueTokens(desc.cardText);
     if (wanted.size === 0) return null;
-    for (const el of this.allVoucherButtons()) {
-      if (matchesTokens(wanted, valueTokens(this.describe(el).cardText))) return el;
-    }
-    return null;
+    const matches = this.allVoucherButtons().filter((el) =>
+      matchesTokens(wanted, valueTokens(this.describe(el).cardText))
+    );
+    // Several cards with the same values: no way to tell which one, so none.
+    return matches.length === 1 ? matches[0] : null;
   }
 
   /**
-   * Validates whether a candidate element strictly matches the content/value signature of the descriptor.
+   * Whether a candidate is the same target as the descriptor, judged by content (never by position):
+   * - with a card: the card's values (amounts, %, dates) and its words (shop / title) must match,
+   *   so "Giảm 50k" of another shop is rejected; the button label itself may change (countdown ->
+   *   "Lưu"),
+   * - without any card text: the button's own label must match (digits and clocks ignored).
    */
   matchesContentSignature(candidate: HTMLElement, desc: UniversalTargetDescriptor): boolean {
     const hasTokens = Boolean(desc.valueTokens && desc.valueTokens.length > 0);
     const hasContainer = Boolean(desc.containerText && desc.containerText.trim().length > 0);
 
     if (!hasTokens && !hasContainer) {
-      return true;
+      const want = labelKey(desc.initialText || "");
+      const got = labelKey(this.text(candidate));
+      if (want || got) return want === got;
+      // Icon-only button: compare what describes it instead
+      const attr = (el: HTMLElement | null, name: string) => el?.getAttribute(name) || "";
+      return (
+        (desc.attributes["aria-label"] || "") === attr(candidate, "aria-label") &&
+        (desc.attributes["title"] || "") === attr(candidate, "title") &&
+        (desc.attributes["class"] || "") === attr(candidate, "class")
+      );
     }
 
     const card = this.findVoucherContainer(candidate);
     const cardText = card ? this.text(card).replace(this.text(candidate), "").trim() : "";
+    if (!cardText) return false;
 
-    if (hasTokens) {
-      const candidateTokens = valueTokens(cardText);
-      const wanted = new Set(desc.valueTokens!);
-      return matchesTokens(wanted, candidateTokens);
-    }
+    if (hasTokens && !matchesTokens(new Set(desc.valueTokens!), valueTokens(cardText))) return false;
 
     if (hasContainer) {
-      if (!cardText) return false;
-      return cardText.includes(desc.containerText!) || desc.containerText!.includes(cardText);
+      const wantedWords = cardWords(desc.containerText!);
+      if (wantedWords.size > 0) {
+        const gotWords = cardWords(cardText);
+        let shared = 0;
+        for (const w of wantedWords) if (gotWords.has(w)) shared++;
+        // Values already matched: words may change a lot (countdown "Bắt đầu sau" -> "Đang diễn ra");
+        // which of several matching cards is the picked one is decided by similarity ranking.
+        return shared / wantedWords.size >= (hasTokens ? 0.4 : 0.6);
+      }
+      if (!hasTokens) return cardText.includes(desc.containerText!) || desc.containerText!.includes(cardText);
     }
-
     return true;
+  }
+
+  /**
+   * Among several candidates that all match the content, takes the one at the picked position only
+   * when it is clearly there (within 40px, the next one at least 120px away). Otherwise the target is
+   * ambiguous and nothing is returned: better not to click than to click the wrong one.
+   */
+  private pickUnambiguous(candidates: HTMLElement[], desc: UniversalTargetDescriptor): HTMLElement | null {
+    if (candidates.length === 1) return candidates[0];
+    if (candidates.length === 0 || !desc.rect) return null;
+    const scored = candidates
+      .map((c) => {
+        const r = c.getBoundingClientRect ? c.getBoundingClientRect() : { top: 0, left: 0 };
+        return { c, d: Math.hypot(r.left - desc.rect!.left, r.top - desc.rect!.top) };
+      })
+      .sort((a, b) => a.d - b.d);
+    return scored[0].d <= 40 && scored[1].d >= 120 ? scored[0].c : null;
   }
 
   /**
@@ -773,143 +826,81 @@ export class ElementResolver {
    * Never falls back to arbitrary spatial guessing.
    */
   relocateUniversal(desc: UniversalTargetDescriptor): HTMLElement | null {
-    // 1. By ID
+    // 1. By ID: an id the page gives only to this element identifies it even if its texts changed
+    // (e.g. "Đã điểm danh #3" yesterday, "Điểm danh" today).
     if (desc.id) {
       const el = document.getElementById(desc.id);
       if (el && el.isConnected) {
-        const norm = this.normalizeTarget(el);
-        if (this.matchesContentSignature(norm, desc)) return norm;
-      }
-    }
-
-    // 2. By uniqueSelector
-    if (desc.uniqueSelector) {
-      try {
-        const el = document.querySelector<HTMLElement>(desc.uniqueSelector);
-        if (el && el.isConnected) {
-          const norm = this.normalizeTarget(el);
-          if (this.matchesContentSignature(norm, desc)) return norm;
+        let unique = true;
+        try {
+          unique = document.querySelectorAll(`#${safeCssEscape(desc.id)}`).length === 1;
+        } catch {
+          // keep unique
         }
-      } catch {
-        // ignore selector syntax errors
+        const norm = this.normalizeTarget(el);
+        if (unique || this.matchesContentSignature(norm, desc)) return norm;
       }
     }
 
-    // 3. By specific unique attributes
+    // 2. Every element that still matches the target's content. Structure (selectors, DOM path,
+    // position) is only used to break ties, never on its own: after a re-render it may point at a
+    // neighbour.
+    const all = Array.from(document.querySelectorAll<HTMLElement>(desc.tagName || BUTTON_SELECTOR));
+    const matching = new Set<HTMLElement>();
+    for (const el of all) {
+      if (!el.isConnected || el.closest(OWN_UI_SELECTOR)) continue;
+      const norm = this.normalizeTarget(el);
+      if (this.matchesContentSignature(norm, desc)) matching.add(norm);
+    }
+    if (matching.size <= 1) return [...matching][0] ?? null;
+
+    // 3. Several match: keep the ones whose card and label are the most similar to the picked one
+    const scored = [...matching].map((el) => ({ el, score: this.similarity(el, desc) }));
+    const best = Math.max(...scored.map((x) => x.score));
+    const top = scored.filter((x) => best - x.score < 1e-6).map((x) => x.el);
+    if (top.length === 1) return top[0];
+
+    // 4. Still tied: a structural hint that points at exactly one of them
+    const hinted = new Set<HTMLElement>();
+    const hint = (el: Element | null) => {
+      if (!el) return;
+      const norm = this.normalizeTarget(el as HTMLElement);
+      if (top.includes(norm)) hinted.add(norm);
+    };
+    try {
+      if (desc.uniqueSelector) hint(document.querySelector(desc.uniqueSelector));
+    } catch {
+      // ignore selector syntax errors
+    }
     for (const attr of ["data-testid", "data-test-id", "name", "aria-label"]) {
       const val = desc.attributes[attr];
-      if (val) {
-        try {
-          const el = document.querySelector<HTMLElement>(`[${attr}="${safeCssEscape(val)}"]`);
-          if (el && el.isConnected) {
-            const norm = this.normalizeTarget(el);
-            if (this.matchesContentSignature(norm, desc)) return norm;
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    // 4. By parentSelector + childIndex
-    if (desc.parentSelector && typeof desc.childIndex === "number") {
+      if (!val) continue;
       try {
-        const parent = document.querySelector(desc.parentSelector);
-        if (parent && parent.children[desc.childIndex]) {
-          const el = parent.children[desc.childIndex] as HTMLElement;
-          if (el && el.isConnected) {
-            const norm = this.normalizeTarget(el);
-            if (this.matchesContentSignature(norm, desc)) return norm;
-          }
-        }
+        document.querySelectorAll(`[${attr}="${safeCssEscape(val)}"]`).forEach(hint);
       } catch {
         // ignore
       }
     }
+    if (hinted.size === 1) return [...hinted][0];
 
-    const all = document.querySelectorAll<HTMLElement>(desc.tagName || BUTTON_SELECTOR);
+    // 5. Last: the picked position, only if unambiguous
+    return this.pickUnambiguous(top, desc);
+  }
 
-    // 5. By tag name + initial text match (strictly verifying content signature)
-    const candidates: HTMLElement[] = [];
-    for (const el of all) {
-      if (!el.isConnected) continue;
-      const norm = this.normalizeTarget(el);
-      if (!this.matchesContentSignature(norm, desc)) continue;
-
-      const txt = this.text(norm);
-      if (txt && desc.initialText && txt === desc.initialText) {
-        if (desc.id && norm.id && desc.id !== norm.id && !desc.containerText) {
-          continue;
-        }
-        candidates.push(norm);
-      }
+  /** How close a matching candidate is to the picked target: card words (Jaccard) + same label. */
+  private similarity(candidate: HTMLElement, desc: UniversalTargetDescriptor): number {
+    const card = this.findVoucherContainer(candidate);
+    const cardText = card ? this.text(card).replace(this.text(candidate), "").trim() : "";
+    const want = cardWords(desc.containerText || "");
+    const got = cardWords(cardText);
+    let words = 1;
+    if (want.size > 0 || got.size > 0) {
+      let shared = 0;
+      for (const w of want) if (got.has(w)) shared++;
+      words = shared / (want.size + got.size - shared);
     }
-
-    if (candidates.length === 1) {
-      return candidates[0];
-    }
-
-    if (candidates.length > 1 && desc.rect) {
-      let closest: HTMLElement = candidates[0];
-      let minDist = Infinity;
-      for (const c of candidates) {
-        const r = c.getBoundingClientRect ? c.getBoundingClientRect() : { top: 0, left: 0 };
-        const dist = Math.hypot(r.left - desc.rect.left, r.top - desc.rect.top);
-        if (dist < minDist) {
-          minDist = dist;
-          closest = c;
-        }
-      }
-      return closest;
-    }
-
-    // 5b. Card-matched fallback: when button text mutated (countdown ended or state changed),
-    // find buttons strictly within the matching card container (NO loose 150px spatial guessing)
-    if (desc.containerText || (desc.valueTokens && desc.valueTokens.length > 0)) {
-      const cardCandidates: HTMLElement[] = [];
-      for (const el of all) {
-        if (!el.isConnected) continue;
-        const norm = this.normalizeTarget(el);
-        if (this.matchesContentSignature(norm, desc)) {
-          cardCandidates.push(norm);
-        }
-      }
-
-      if (cardCandidates.length === 1) {
-        return cardCandidates[0];
-      }
-
-      if (cardCandidates.length > 1 && desc.rect) {
-        let closest = cardCandidates[0];
-        let minDist = Infinity;
-        for (const c of cardCandidates) {
-          const r = c.getBoundingClientRect ? c.getBoundingClientRect() : { top: 0, left: 0 };
-          const dist = Math.hypot(r.left - desc.rect.left, r.top - desc.rect.top);
-          if (dist < minDist) {
-            minDist = dist;
-            closest = c;
-          }
-        }
-        return closest;
-      }
-    }
-
-    // 6. Fallback to voucher or container relocation if value tokens exist
-    if (desc.containerText && desc.valueTokens && desc.valueTokens.length > 0) {
-      const voucherMatch = this.relocate({ cardText: desc.containerText });
-      if (voucherMatch && this.matchesContentSignature(voucherMatch, desc)) return voucherMatch;
-
-      const wanted = new Set(desc.valueTokens);
-      for (const el of all) {
-        const card = this.findVoucherContainer(el);
-        if (card && sameSet(wanted, valueTokens(this.text(card)))) {
-          const norm = this.normalizeTarget(el);
-          if (this.matchesContentSignature(norm, desc)) return norm;
-        }
-      }
-    }
-
-    return null;
+    const sameLabel = labelKey(this.text(candidate)) === labelKey(desc.initialText || "") ? 0.5 : 0;
+    return words + sameLabel;
   }
 }
 
@@ -922,6 +913,17 @@ function valueTokens(text: string): Set<string> {
   const withoutClocks = text.replace(/\d{1,2}:\d{2}(?::\d{2})?/g, " ");
   const matches = withoutClocks.toLowerCase().match(/\d+(?:[.,]\d+)*(?:\s*(?:k|đ|₫|%|tr|triệu|m|b|฿|thb|rp|idr|rm|myr|₱|php|s\$|sgd|\$|€|nt\$))?/g) || [];
   return new Set(matches.map((m) => m.replace(/\s+/g, "")));
+}
+
+/** A button label without clocks, digits and spacing: "Lưu (12)" and "Lưu" are the same button. */
+function labelKey(text: string): string {
+  return text.replace(/\d{1,2}:\d{2}(?::\d{2})?/g, "").replace(/[\d\s.,:%()#+-]/g, "").toLowerCase();
+}
+
+/** Words of a card (shop, title, conditions), without numbers, for telling cards apart. */
+function cardWords(text: string): Set<string> {
+  const words = text.toLowerCase().replace(/\d{1,2}:\d{2}(?::\d{2})?/g, " ").match(/[a-zà-ỹđ]{2,}/gi) || [];
+  return new Set(words);
 }
 
 function sameSet(a: Set<string>, b: Set<string>): boolean {

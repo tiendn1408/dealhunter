@@ -144,6 +144,10 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     return Boolean(realBtn && realBtn !== button && done(realBtn));
   }
 
+  confirmsCompletion(button: HTMLElement): boolean {
+    return this.isButtonFinished(button);
+  }
+
   /**
    * Tells the hunting engine to strictly suppress destructive page reload (F5)
    * on Caffiliate, preventing 2-second reload latency penalties.

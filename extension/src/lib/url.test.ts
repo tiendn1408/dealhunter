@@ -56,3 +56,17 @@ describe("L2: URL scheme validation (isValidHttpUrl)", () => {
     expect(isValidHttpUrl(undefined as any)).toBe(false);
   });
 });
+
+describe("isSiteHost", () => {
+  it("matches the site and its subdomains on its country domains only", async () => {
+    const { isSiteHost } = await import("./url");
+    expect(isSiteHost("https://shopee.vn/m/x", "shopee.")).toBe(true);
+    expect(isSiteHost("https://shopee.co.id/", "shopee.")).toBe(true);
+    expect(isSiteHost("https://www.lazada.com.my/", "lazada.")).toBe(true);
+    expect(isSiteHost("https://shopee.evil.com/", "shopee.")).toBe(false);
+    expect(isSiteHost("https://example.com/?ref=shopee.vn", "shopee.")).toBe(false);
+    expect(isSiteHost("https://tiki.vn/a", "tiki.vn")).toBe(true);
+    expect(isSiteHost("https://nottiki.vn/a", "tiki.vn")).toBe(false);
+    expect(isSiteHost("https://shop.tiktok.com/x", "tiktok.com")).toBe(true);
+  });
+});

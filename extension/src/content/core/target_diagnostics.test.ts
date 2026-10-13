@@ -110,7 +110,8 @@ describe("targetDiagnostics", () => {
     expect(isMajorMarketplace("https://shop.tiktok.com/view/voucher")).toBe(true);
 
     expect(isMajorMarketplace("https://app.caffiliate.vn/rewards")).toBe(false);
-    expect(isMajorMarketplace("https://tiki.vn/khuyen-mai")).toBe(false);
+    expect(isMajorMarketplace("https://tiki.vn/khuyen-mai")).toBe(true);
+    expect(isMajorMarketplace("https://example.com/?ref=shopee.vn")).toBe(false);
     expect(isMajorMarketplace("https://example.com/checkin")).toBe(false);
   });
 

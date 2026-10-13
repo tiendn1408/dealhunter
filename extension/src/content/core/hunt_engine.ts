@@ -1,4 +1,4 @@
-import { elementResolver, VoucherDescriptor, UniversalTargetDescriptor } from "./element_resolver";
+import { elementResolver, snapshotToasts, VoucherDescriptor, UniversalTargetDescriptor } from "./element_resolver";
 import { humanClicker } from "./human_clicker";
 import {
   ClickProfileMode,
@@ -66,6 +66,13 @@ export interface HuntOptions {
   onStatus?: (message: string) => void;
   onDone: (outcome: HuntOutcome) => void;
 }
+
+/** A completion signal must hold this long before it counts. */
+const CONFIRM_STABLE_MS = 300;
+/** A button that only turned disabled (no other change) may just be waiting for its request. */
+const CONFIRM_WEAK_MS = 1500;
+/** A click that changed nothing for this long may be dead (page locked by its own state). */
+const DEAD_CLICK_MS = 600;
 
 export const HUNT_DEFAULTS = {
   leadMs: 150,
@@ -158,6 +165,19 @@ export function startHunt(opts: HuntOptions): () => void {
   let done = false;
   let keepAliveSent = false;
   let adapterPreWarmed = false;
+  // We clicked this drop before a reload (see dead-click recovery): a saved state now is our result.
+  const clickedKey = `dh_clicked_${opts.targetTimestamp}`;
+  let clickedBeforeReload = false;
+  try {
+    clickedBeforeReload = typeof sessionStorage !== "undefined" && sessionStorage.getItem(clickedKey) === "1";
+  } catch {
+    // ignore
+  }
+  // The engine removed `disabled` itself, so the page disabling it again proves nothing.
+  let unblockedByUs = false;
+  let toastBaseline: Map<Element, string> | undefined;
+  /** A completion signal seen but not yet stable (see CONFIRM_STABLE_MS); clicking pauses meanwhile. */
+  let pending: { state: "saved" | "exhausted"; reason: string; since: number } | null = null;
   let hadDisabledOnMount = Boolean(
     opts.locked && (
       opts.locked.hasAttribute("disabled") ||
@@ -174,6 +194,7 @@ export function startHunt(opts: HuntOptions): () => void {
       try {
         sessionStorage.removeItem(`dh_reload_count_${opts.targetTimestamp}`);
         sessionStorage.removeItem(`dh_last_reload_time_${opts.targetTimestamp}`);
+        sessionStorage.removeItem(clickedKey);
       } catch {
         // ignore
       }
@@ -182,8 +203,8 @@ export function startHunt(opts: HuntOptions): () => void {
   };
 
   const isLockedHunt = Boolean(opts.locked || opts.universalDescriptor);
-  if (!isLockedHunt && !opts.keyword) {
-    // Decision 0 / C3: Hunting without a locked target or keyword is strictly prohibited.
+  if (!isLockedHunt) {
+    // Decision 0 / C3: only the button the user picked is ever clicked; a keyword alone is not a target.
     ticker.stop();
     opts.onDone({ result: "not_found", clicks: 0, detail: "No target locked" });
     return () => {};
@@ -191,10 +212,12 @@ export function startHunt(opts: HuntOptions): () => void {
 
   // Re-find the target. A locked target is the ONLY acceptable target: if it cannot be found,
   // nothing is clicked (never fall back to a different button).
-  const resolve = (atDrop: boolean): HTMLElement | null => {
+  const resolve = (_atDrop: boolean): HTMLElement | null => {
     let el: HTMLElement | null = null;
     if (current && current.isConnected) {
-      if (universalDesc && !elementResolver.matchesContentSignature(current, universalDesc)) {
+      // Once clicked, the same node changing its label ("Điểm danh" -> "Đã điểm danh") is the answer
+      // we wait for, not a different button: keep it.
+      if (clicks === 0 && universalDesc && !elementResolver.matchesContentSignature(current, universalDesc)) {
         current = null;
       } else {
         el = current;
@@ -216,22 +239,7 @@ export function startHunt(opts: HuntOptions): () => void {
     }
 
     // If user locked a target and it cannot be relocated, NEVER fall back to another button
-    if (isLockedHunt) return null;
-
-    if (!atDrop || !opts.keyword) return null;
-    const candidates = elementResolver.findCollectButtons(opts.keyword);
-    current = candidates[0] ?? null;
-    if (current) {
-      if (!initialText) {
-        initialText = elementResolver.text(current);
-      }
-      universalDesc = elementResolver.describeUniversal(current);
-      descriptor = elementResolver.describe(current);
-      if (!current.classList.contains("dh-target-highlight")) {
-        current.classList.add("dh-target-highlight");
-      }
-    }
-    return current;
+    return null;
   };
 
   const status = (t: number, message: string) => {
@@ -239,6 +247,24 @@ export function startHunt(opts: HuntOptions): () => void {
       lastStatusAt = t;
       opts.onStatus?.(message);
     }
+  };
+
+  /**
+   * Finishes on a completion signal only once it has held for CONFIRM_STABLE_MS. Returns true
+   * while a signal is pending (no more clicks then: a second click could undo a save).
+   */
+  const settle = (check: { completed: boolean; state: string; reason: string; weak?: boolean }, t: number): boolean => {
+    if (!check.completed || (check.state !== "saved" && check.state !== "exhausted")) {
+      pending = null;
+      return false;
+    }
+    if (!pending || pending.state !== check.state) {
+      pending = { state: check.state, reason: check.reason, since: t };
+    }
+    if (t - pending.since >= (check.weak ? CONFIRM_WEAK_MS : CONFIRM_STABLE_MS)) {
+      finish(pending.state, pending.reason);
+    }
+    return true;
   };
 
   let spinArmed = false;
@@ -443,7 +469,10 @@ export function startHunt(opts: HuntOptions): () => void {
       // Speed-priority instant unblock:
       // Do not wait for React timer or re-render cycle to remove disabled attributes.
       // At fire moment (T - preFireLeadMs), unblock locked target immediately.
-      if (effectiveTier === "speed_priority" && isLockedTarget && isFireMoment && el) {
+      if (effectiveTier === "speed_priority" && isLockedTarget && isFireMoment && el && clicks === 0) {
+        if (el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true" || el.classList.contains("disabled")) {
+          unblockedByUs = true;
+        }
         if (el.hasAttribute("disabled")) {
           try { el.removeAttribute("disabled"); } catch {}
         }
@@ -465,25 +494,19 @@ export function startHunt(opts: HuntOptions): () => void {
         !el.classList.contains("disabled")
       );
 
-      // 1. Completion verification: ONLY valid if we clicked at least once!
-      // Prevents false-positives when target button still displays yesterday's completion label
-      if (clicks > 0) {
-        if (
-          adapter?.isButtonFinished && el && adapter.isButtonFinished(el)
-        ) {
+      // 1. Completion verification: ONLY valid if we clicked at least once (or before a reload of
+      // this drop): yesterday's "saved" label is not today's success.
+      if (clicks > 0 || clickedBeforeReload) {
+        if (el && adapter?.confirmsCompletion?.(el)) {
           return finish("saved", "The site confirmed completion");
         }
 
         const activeBaseline = baselineTextAtDrop ?? initialText;
-        const check = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
-        if (check.completed) {
-          if (check.state === "saved") return finish("saved", check.reason);
-          if (check.state === "exhausted") return finish("exhausted", check.reason);
-        }
-
-        const state = elementResolver.getButtonState(el);
-        if (state === "saved") return finish("saved", "The page shows the target as saved");
-        if (state === "exhausted") return finish("exhausted", "The target is fully claimed");
+        const check =
+          clicks > 0
+            ? elementResolver.isTargetCompleted(el, activeBaseline, clicks, { ignoreDisabled: unblockedByUs, toastBaseline })
+            : elementResolver.isTargetCompleted(el, undefined, 0);
+        if (settle(check, t)) return;
       } else if (t >= opts.targetTimestamp + 2000 && el) {
         // If drop has passed by at least 2s, clicks === 0, and page already explicitly marks it exhausted or saved
         const state = elementResolver.getButtonState(el);
@@ -512,10 +535,13 @@ export function startHunt(opts: HuntOptions): () => void {
         const isButtonMissing = !el;
         const isStaleFromYesterday = Boolean(el && elementResolver.getButtonState(el) === "saved");
         const isUnclickableAtDrop = Boolean(clicks === 0 && (isButtonMissing || !isTargetClickable || isStaleFromYesterday));
+        // Dead click: the click left the button locked and nothing answered for DEAD_CLICK_MS, long
+        // enough for the request to have come back (reloading earlier would cancel it).
         const isDeadClickProbe = Boolean(
           clicks > 0 &&
           hadDisabledOnMount &&
-          t - lastClickAt >= 150
+          !pending &&
+          t - lastClickAt >= DEAD_CLICK_MS
         );
 
         if (
@@ -538,7 +564,10 @@ export function startHunt(opts: HuntOptions): () => void {
       }
 
       // With locked target at fire moment, proactively unblock disabled attributes on DOM to strike with zero latency
-      if (isFireMoment && isLockedTarget && el) {
+      if (isFireMoment && isLockedTarget && el && clicks === 0) {
+        if (el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true" || el.classList.contains("disabled")) {
+          unblockedByUs = true;
+        }
         if (el.hasAttribute("disabled")) el.removeAttribute("disabled");
         if (el.getAttribute("aria-disabled") === "true") el.setAttribute("aria-disabled", "false");
         if (el.classList.contains("disabled")) el.classList.remove("disabled");
@@ -546,11 +575,18 @@ export function startHunt(opts: HuntOptions): () => void {
       }
 
       const state = el ? elementResolver.getButtonState(el) : "unknown";
-      const isStaleBeforeDrop = clicks === 0 && isLockedTarget;
+      // Yesterday's "saved" label is clicked through on the first click, unless we already clicked
+      // this drop before a reload (then it is today's result, handled above).
+      const isStaleBeforeDrop = clicks === 0 && isLockedTarget && !clickedBeforeReload;
+      // Only one click may land before the drop itself (the network lead); the rest follow it.
+      const beforeDrop = t < opts.targetTimestamp;
 
       if (
         el &&
         isFireMoment &&
+        !pending &&
+        !(beforeDrop && clicks >= 1) &&
+        state !== "exhausted" &&
         (state !== "saved" || isStaleBeforeDrop) &&
         (state === "collectable" || (isLockedTarget && isTargetClickable) || isStaleBeforeDrop) &&
         t - lastClickAt >= currentIntervalMs &&
@@ -575,6 +611,7 @@ export function startHunt(opts: HuntOptions): () => void {
           // C1-a: Capture the true baseline text right before click 1 at drop moment
           // (after countdown has transitioned to the actionable label)
           baselineTextAtDrop = elementResolver.text(el);
+          toastBaseline = snapshotToasts();
           // Platform strike (e.g. Caffiliate app.checkIn()) replaces the DOM click when available
           if (adapter?.executeDirectStrike) {
             try {
@@ -601,6 +638,13 @@ export function startHunt(opts: HuntOptions): () => void {
         if (clickDispatched) {
           clicks++;
           lastClickAt = t;
+          if (clicks === 1) {
+            try {
+              sessionStorage.setItem(clickedKey, "1");
+            } catch {
+              // ignore
+            }
+          }
 
           // Recompute next interval with biological variance and micro-pauses
           currentIntervalMs =
@@ -608,19 +652,15 @@ export function startHunt(opts: HuntOptions): () => void {
               ? opts.clickIntervalMs
               : computeNextInterval(profile, clicks + 1).intervalMs;
 
-          // Check completion immediately after click was dispatched
-          if (
-            adapter?.isButtonFinished && el && adapter.isButtonFinished(el)
-          ) {
+          // Check completion right after the click; it must still hold on the next ticks to count.
+          if (el && adapter?.confirmsCompletion?.(el)) {
             return finish("saved", "The site confirmed completion");
           }
-
           const activeBaseline = baselineTextAtDrop ?? initialText;
-          const postCheck = elementResolver.isTargetCompleted(el, activeBaseline, clicks);
-          if (postCheck.completed) {
-            if (postCheck.state === "saved") return finish("saved", postCheck.reason);
-            if (postCheck.state === "exhausted") return finish("exhausted", postCheck.reason);
-          }
+          settle(
+            elementResolver.isTargetCompleted(el, activeBaseline, clicks, { ignoreDisabled: unblockedByUs, toastBaseline }),
+            t
+          );
         }
       }
       const statusOverride = adapter?.getStatusOverride?.();

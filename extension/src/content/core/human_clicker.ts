@@ -17,6 +17,23 @@ export interface HumanClickOptions {
   skipApproach?: boolean;
 }
 
+/** DealHunter's own UI, which may sit over the page without blocking a click. */
+const OWN_UI_SELECTOR = "#dealhunter-hud-root, #dealhunter-badge-root, #dh-picker-overlay";
+
+/**
+ * Whether a click at these coordinates would really reach the element: it must have a size and not
+ * be covered by something else (a modal, captcha or cookie banner). A real user could not click it
+ * either, so neither do we.
+ */
+export function isClickableAt(element: HTMLElement, x: number, y: number): boolean {
+  const rect = element.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return false;
+  if (typeof document === "undefined" || typeof document.elementFromPoint !== "function") return true;
+  const topEl = document.elementFromPoint(x, y);
+  if (!topEl || topEl === element || element.contains(topEl) || topEl.contains(element)) return true;
+  return Boolean(topEl.closest(OWN_UI_SELECTOR));
+}
+
 /**
  * HumanClicker dispatches an authentic biometric sequence of synthetic pointer
  * and mouse events using Gaussian spatial clustering, Bezier trajectory approach,
@@ -55,6 +72,12 @@ export class HumanClicker {
   dispatchPreWarmedStrike(element: HTMLElement, options?: HumanClickOptions): boolean {
     if (this.preWarmedSequence && this.preWarmedTarget === element && element.isConnected) {
       const seq = this.preWarmedSequence;
+      if (!isClickableAt(element, seq.coords.clientX, seq.coords.clientY)) {
+        // Covered or collapsed since the strike was prepared
+        this.preWarmedSequence = null;
+        this.preWarmedTarget = null;
+        return false;
+      }
       this.preWarmedSequence = null;
       this.preWarmedTarget = null;
       this.lastCursorPos = { x: seq.coords.clientX, y: seq.coords.clientY };
@@ -75,23 +98,10 @@ export class HumanClicker {
     if (!element || !element.isConnected) return false;
 
     const rect = element.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
-      // M8: Never click invisible or collapsed zero-dimension elements
-      return false;
-    }
+    if (rect.width === 0 || rect.height === 0) return false; // M8: invisible / collapsed
 
     const coords = calculateHumanClickCoordinates(rect);
-
-    // M8: Verify element is not obscured by an overlay, modal, or captcha
-    if (typeof document !== "undefined" && typeof document.elementFromPoint === "function") {
-      const topEl = document.elementFromPoint(coords.clientX, coords.clientY);
-      if (topEl && topEl !== element && !element.contains(topEl) && !topEl.contains(element)) {
-        // Do not block click if overlapped by DealHunter's own HUD or overlays
-        if (!topEl.closest("#dealhunter-hud-root, [class*='dh-'], [data-dealhunter]")) {
-          return false;
-        }
-      }
-    }
+    if (!isClickableAt(element, coords.clientX, coords.clientY)) return false; // M8: covered
 
     // If approach is requested and previous cursor is away from target, simulate trajectory
     const shouldApproach = Boolean(
@@ -169,11 +179,10 @@ export class HumanClicker {
     const profile = CLICK_PROFILES[profileMode] ?? CLICK_PROFILES.pro_gamer;
 
     const rect = element.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
-      return this.dispatchClick(element, options);
-    }
+    if (rect.width === 0 || rect.height === 0) return false;
 
     const coords = calculateHumanClickCoordinates(rect);
+    if (!isClickableAt(element, coords.clientX, coords.clientY)) return false;
 
     const shouldApproach = Boolean(
       options?.approach &&

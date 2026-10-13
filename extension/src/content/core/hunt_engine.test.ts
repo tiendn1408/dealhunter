@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { startHunt, HuntOutcome, Ticker } from "./hunt_engine";
+import { elementResolver } from "./element_resolver";
 
 /** Ticker driven by the test: each step() advances the fake Shopee clock and fires one tick. */
 class ManualTicker implements Ticker {
@@ -127,27 +128,37 @@ describe("startHunt", () => {
     expect(h.outcome!.clicks).toBeLessThanOrEqual(200);
   });
 
-  it("only clicks the voucher matching the keyword", () => {
+  it("a keyword alone never makes the engine pick a button (only the user's picked target is clicked)", () => {
     document.body.innerHTML =
       voucherCard("small", "Giảm 10k đơn 99k") + voucherCard("big", "Giảm 500k đơn 2tr");
-    const small = vi.fn();
-    document.getElementById("small")!.addEventListener("click", small);
-    const big = document.getElementById("big")!;
-    big.addEventListener("click", () => (big.textContent = "Đã lưu"));
+    const any = vi.fn();
+    document.querySelectorAll("button").forEach((b) => b.addEventListener("click", any));
     const h = setup("500k");
     h.advanceTo(DROP + 1000);
-    expect(h.outcome?.result).toBe("saved");
-    expect(small).not.toHaveBeenCalled();
+    expect(h.outcome?.result).toBe("not_found");
+    expect(any).not.toHaveBeenCalled();
   });
 
-  it("starts clicking a voucher that only appears after the drop", () => {
-    const h = setup("500k");
-    h.advanceTo(DROP + 300);
+  it("starts clicking the picked voucher when it only appears after the drop", () => {
+    document.body.innerHTML = voucherCard("late", "Giảm 50k đơn 500k");
+    const desc = elementResolver.describeUniversal(document.getElementById("late")!);
+    document.body.innerHTML = "";
+    let now = DROP - 5000;
+    const ticker = new ManualTicker();
+    let outcome: HuntOutcome | null = null;
+    startHunt({ targetTimestamp: DROP, now: () => now, universalDescriptor: desc, ticker, windowMs: 3000, onDone: (o) => (outcome = o) });
+    const advanceTo = (t: number) => {
+      while (now < t && ticker.running) {
+        now += 10;
+        ticker.tick();
+      }
+    };
+    advanceTo(DROP + 300);
     document.body.innerHTML = voucherCard("late", "Giảm 50k đơn 500k");
     const late = document.getElementById("late")!;
     late.addEventListener("click", () => (late.textContent = "Đã lưu"));
-    h.advanceTo(DROP + 1500);
-    expect(h.outcome?.result).toBe("saved");
+    advanceTo(DROP + 1500);
+    expect((outcome as HuntOutcome | null)?.result).toBe("saved");
   });
 
   // Regression (found in real Chrome): the countdown text changes when React re-renders the card;
@@ -185,21 +196,6 @@ describe("startHunt", () => {
     expect(h.outcome?.result).toBe("not_found");
   });
 
-  it("with a keyword ignores vouchers that were already open before the drop", () => {
-    document.body.innerHTML =
-      voucherCard("open", "Giảm 10k đơn 99k") +
-      `<div class="voucher-card"><span>Giảm 50k đơn 500k</span><button id="drop" disabled>Lưu</button></div>`;
-    const open = vi.fn();
-    document.getElementById("open")!.addEventListener("click", open);
-    const h = setup("500k");
-    h.advanceTo(DROP - 50);
-    const drop = document.getElementById("drop")!;
-    drop.removeAttribute("disabled");
-    drop.addEventListener("click", () => (drop.textContent = "Đã lưu"));
-    h.advanceTo(DROP + 1000);
-    expect(h.outcome?.result).toBe("saved");
-    expect(open).not.toHaveBeenCalled();
-  });
 
   it("clicks a user-locked custom button on any website when enabled at drop", () => {
     document.body.innerHTML = `<div class="event-page"><button id="book-btn" disabled>Mua vé 00:00</button></div>`;
@@ -238,8 +234,11 @@ describe("startHunt", () => {
     });
     freshBtn.addEventListener("click", freshClicks);
 
+    // Only turning disabled is a weak signal (also happens while a request runs): it must last
     h.advanceTo(DROP + 500);
     expect(freshClicks).toHaveBeenCalled();
+    expect(h.outcome).toBeNull();
+    h.advanceTo(DROP + 2200);
     expect(h.outcome?.result).toBe("saved");
   });
 
@@ -250,7 +249,7 @@ describe("startHunt", () => {
       btn.textContent = "Checked in";
     });
     const h = setup(undefined, btn);
-    h.advanceTo(DROP + 200);
+    h.advanceTo(DROP + 500); // the new text has to hold for a moment
 
     expect(h.outcome?.result).toBe("saved");
     expect(h.outcome?.clicks).toBe(1);
@@ -552,8 +551,11 @@ describe("startHunt", () => {
     toast.innerHTML = '<svg class="icon-success"></svg><span>Voucher Saved</span>';
     document.body.appendChild(toast);
 
-    // Next tick
+    // Next ticks: the confirmation has to hold for a moment
     now += 100;
+    ticker.tick();
+    expect(outcome).toBeNull();
+    now += 350;
     ticker.tick();
 
     expect(outcome).not.toBeNull();
@@ -706,8 +708,10 @@ describe("startHunt", () => {
     // Click must be dispatched immediately
     expect(clickSpy).toHaveBeenCalledTimes(1);
 
-    // When text transitions to 'Đã điểm danh', it finishes saved
+    // When text transitions to 'Đã điểm danh' and stays, it finishes saved
     now += 50;
+    ticker.tick();
+    now += 350;
     ticker.tick();
     expect((outcome as HuntOutcome | null)?.result).toBe("saved");
   });
@@ -800,9 +804,13 @@ describe("startHunt", () => {
     // Fire probe click at T - 28ms
     ticker.tick();
 
-    // Advance 160ms past drop: probe click fired, but button re-disabled/stale
+    // Probe click fired, but the page re-disabled the button and nothing answered: after enough
+    // time for the request to come back (DEAD_CLICK_MS), reload
     btn.setAttribute("disabled", "true");
     now = DROP + 180;
+    ticker.tick();
+    expect(reloadSpy).not.toHaveBeenCalled();
+    now = DROP + 650;
     ticker.tick();
 
     expect(reloadSpy).toHaveBeenCalledTimes(1);

@@ -5,6 +5,11 @@ export interface MarketplaceAdapter {
   isMatchUrl(url: string): boolean;
   findVoucherButtons(keyword?: string): HTMLElement[];
   isButtonFinished(button: HTMLElement): boolean;
+  /**
+   * Optional: the site itself confirmed success (e.g. Caffiliate's own check-in state). The engine
+   * finishes on it at once; only adapters that can tell for sure implement it.
+   */
+  confirmsCompletion?(button: HTMLElement): boolean;
   extractProductInfo?(): { title: string; price: number; itemId?: string; shopId?: string } | null;
   /**
    * Optional platform strike used instead of the first click (e.g. Caffiliate: the page's own

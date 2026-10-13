@@ -1,11 +1,12 @@
 import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
+import { isSiteHost } from "../../lib/url";
 
 export class ShopeeAdapter implements MarketplaceAdapter {
   platformName = "shopee";
 
   isMatchUrl(url: string): boolean {
-    return url.includes("shopee.");
+    return isSiteHost(url, "shopee.");
   }
 
   findVoucherButtons(keyword?: string): HTMLElement[] {

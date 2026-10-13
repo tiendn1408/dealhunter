@@ -1,11 +1,12 @@
 import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
+import { isSiteHost } from "../../lib/url";
 
 export class TikTokAdapter implements MarketplaceAdapter {
   platformName = "tiktok";
 
   isMatchUrl(url: string): boolean {
-    return url.includes("tiktok.com");
+    return isSiteHost(url, "tiktok.com");
   }
 
   findVoucherButtons(keyword?: string): HTMLElement[] {

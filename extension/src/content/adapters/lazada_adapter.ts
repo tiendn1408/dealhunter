@@ -1,11 +1,12 @@
 import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
+import { isSiteHost } from "../../lib/url";
 
 export class LazadaAdapter implements MarketplaceAdapter {
   platformName = "lazada";
 
   isMatchUrl(url: string): boolean {
-    return url.includes("lazada.");
+    return isSiteHost(url, "lazada.");
   }
 
   findVoucherButtons(keyword?: string): HTMLElement[] {

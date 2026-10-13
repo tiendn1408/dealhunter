@@ -1,11 +1,12 @@
 import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
+import { isSiteHost } from "../../lib/url";
 
 export class TikiAdapter implements MarketplaceAdapter {
   platformName = "tiki";
 
   isMatchUrl(url: string): boolean {
-    return url.includes("tiki.vn");
+    return isSiteHost(url, "tiki.vn");
   }
 
   findVoucherButtons(keyword?: string): HTMLElement[] {

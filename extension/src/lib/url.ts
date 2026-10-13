@@ -63,3 +63,25 @@ export function isValidHttpUrl(rawUrl: string): boolean {
     return false;
   }
 }
+
+/**
+ * True when the URL's host is the given site or one of its subdomains. A site ending in "." matches
+ * any country TLD ("shopee." -> shopee.vn, shopee.co.id). A URL that only mentions the site in its
+ * path or query ("?ref=shopee.vn") does not match.
+ */
+export function isSiteHost(rawUrl: string, site: string): boolean {
+  let host: string;
+  try {
+    host = new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const labels = host.split(".");
+  if (site.endsWith(".")) {
+    // "<name>.<country suffix>": shopee.vn, shopee.co.id, shopee.com.my, but not shopee.evil.com
+    const i = labels.lastIndexOf(site.slice(0, -1));
+    if (i < 0) return false;
+    return /^(?:[a-z]{2,3}|(?:co|com)\.[a-z]{2})$/.test(labels.slice(i + 1).join("."));
+  }
+  return host === site || host.endsWith("." + site);
+}
