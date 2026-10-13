@@ -66,6 +66,7 @@ export const MESSAGE_ACTIONS = {
   CANCEL_TASK: "CANCEL_TASK",
   UPDATE_TASK: "UPDATE_TASK",
   OPEN_AND_PICK: "OPEN_AND_PICK",
+  GET_HUNT_STATE: "GET_HUNT_STATE",
 } as const;
 
 /** Message the DealHunter web app sends (chrome.runtime.sendMessage from the page) on sign-in, token refresh and sign-out. */

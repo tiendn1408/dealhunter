@@ -1,6 +1,11 @@
 export type Language = "en" | "vi";
 
 const en = {
+  stepsAllDone: "All 3 steps done",
+  homeHuntingNow: "Hunting now",
+  tipHuntingNow: "Hunting is on: keep this page open, DealHunter presses on time.",
+  clockShortReady: "Time synced",
+  clockShortFailed: "Computer clock",
   homeNextHuntLabel: "Next hunt",
   tipOpenShop: "Open the page with the voucher or button you want, then click the DealHunter icon.",
   tipPickButton: "On the page, the button turns green when chosen. You can pick it again any time.",
@@ -280,6 +285,11 @@ type DeepStringify<T> = {
 type TranslationCatalog = DeepStringify<typeof en>;
 
 const vi: TranslationCatalog = {
+  stepsAllDone: "Đã xong 3 bước",
+  homeHuntingNow: "Đang săn",
+  tipHuntingNow: "Đang săn: giữ trang này mở, DealHunter tự bấm đúng giờ.",
+  clockShortReady: "Đã canh giờ",
+  clockShortFailed: "Giờ máy tính",
   homeNextHuntLabel: "Lịch săn kế tiếp",
   tipOpenShop: "Mở trang có voucher hoặc nút bạn muốn săn, rồi bấm biểu tượng DealHunter.",
   tipPickButton: "Nút được chọn sẽ có viền xanh trên trang. Chọn lại lúc nào cũng được.",

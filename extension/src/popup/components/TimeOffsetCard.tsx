@@ -24,13 +24,15 @@ interface ClockStatusProps {
   lang: Language;
   activeUrl: string;
   activeDomain: string;
+  /** Short labels, right-aligned (the full sentence is the tooltip). */
+  compact?: boolean;
 }
 
 /**
  * One plain-language line about the clock, only on a page that is hunted (decision 2: other pages
  * are never probed and need no clock talk). Offsets and round trips are internal details.
  */
-export const ClockStatus: React.FC<ClockStatusProps> = ({ lang, activeUrl, activeDomain }) => {
+export const ClockStatus: React.FC<ClockStatusProps> = ({ lang, activeUrl, activeDomain, compact = false }) => {
   const t = getTranslation(lang);
   const [state, setState] = useState<"hidden" | "checking" | "ready" | "failed">("hidden");
   const domain = activeDomain.replace(/^www\./, "").toLowerCase();
@@ -69,6 +71,22 @@ export const ClockStatus: React.FC<ClockStatusProps> = ({ lang, activeUrl, activ
 
   // Same height whether shown or not (it appears a moment after the popup opens)
   if (state === "hidden") return <div className="h-4" aria-hidden="true" />;
+  if (compact) {
+    const full = state === "ready" ? t.clockReady(domain) : state === "checking" ? t.clockChecking : t.clockFailed;
+    return (
+      <button
+        type="button"
+        onClick={state === "failed" ? measure : undefined}
+        title={full}
+        className="flex h-4 min-w-0 items-center gap-1 text-[11px] text-slate-400"
+      >
+        {state === "checking" && <Loader2 className="h-3 w-3 shrink-0 animate-spin" />}
+        {state === "ready" && <CircleCheck className="h-3 w-3 shrink-0 text-emerald-400" />}
+        {state === "failed" && <Clock className="h-3 w-3 shrink-0 text-slate-500" />}
+        <span className="truncate">{state === "ready" ? t.clockShortReady : state === "checking" ? t.clockChecking : t.clockShortFailed}</span>
+      </button>
+    );
+  }
   return (
     <div className="flex h-4 items-center gap-1.5 px-1 text-[11px]">
       {state === "checking" && (

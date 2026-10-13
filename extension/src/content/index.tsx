@@ -320,6 +320,13 @@ async function checkAndResumeScheduledTasks() {
 // 4. Handle messages from background or popup
 if (isTopWindow() && typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    // The popup asks whether this page is hunting right now (a hunt started from the panel has no task)
+    if (message.action === MESSAGE_ACTIONS.GET_HUNT_STATE) {
+      const state = huntCoordinator.getState();
+      sendResponse({ isArmed: state.isArmed, targetTimestamp: state.targetTimestamp });
+      return false;
+    }
+
     if (message.action === MESSAGE_ACTIONS.ACTIVATE_HUD) {
       injectFloatingHUD(true, Boolean(message.pickTarget));
       sendResponse({ success: true });

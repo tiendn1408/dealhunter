@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Crosshair, PanelRightOpen, ExternalLink, CalendarClock, ChevronRight, Globe, Check, Lightbulb } from "lucide-react";
 import { ScheduledTask, SavedPageTarget } from "../../lib/types";
 import { storage } from "../../lib/storage";
-import { POPULAR_SHOPPING_HUBS } from "../../lib/constants";
+import { MESSAGE_ACTIONS, POPULAR_SHOPPING_HUBS } from "../../lib/constants";
 import { isSamePageUrl } from "../../lib/url";
 import { formatTimeLeft } from "../../lib/drop_time";
 import { Language, getTranslation } from "../../lib/i18n";
@@ -58,6 +58,8 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
   const [iconFailed, setIconFailed] = useState(false);
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
   const [now, setNow] = useState(Date.now());
+  /** A hunt running on the page itself (started from the panel, not scheduled). */
+  const [liveHunt, setLiveHunt] = useState<{ targetTimestamp: number | null } | null>(null);
   const onWeb = isWebUrl(activeUrl);
 
   useEffect(() => {
@@ -69,13 +71,20 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
     setSaved(null);
     setLoaded(false);
     setIconFailed(false);
+    setLiveHunt(null);
     if (!onWeb) return;
+    if (activeTabId) {
+      chrome.tabs
+        .sendMessage(activeTabId, { action: MESSAGE_ACTIONS.GET_HUNT_STATE })
+        .then((res) => setLiveHunt(res?.isArmed ? { targetTimestamp: res.targetTimestamp ?? null } : null))
+        .catch(() => setLiveHunt(null));
+    }
     storage
       .getSavedTargetForUrl(activeUrl)
       .then(setSaved)
       .catch(() => setSaved(null))
       .finally(() => setLoaded(true));
-  }, [activeUrl]);
+  }, [activeUrl, activeTabId]);
 
   const open = async (pick: boolean) => {
     if (!activeTabId) return;
@@ -91,7 +100,8 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
   const upcoming = tasks.filter(isUpcoming).sort((a, b) => (a.targetAt ?? Infinity) - (b.targetAt ?? Infinity));
   const pageTask = onWeb ? upcoming.find((task) => isSamePageUrl(task.targetUrl, activeUrl)) : undefined;
   const next = upcoming.find((task) => task !== pageTask);
-  const step = pageStep(Boolean(saved), Boolean(pageTask));
+  const hunting = Boolean(liveHunt);
+  const step = pageStep(Boolean(saved), Boolean(pageTask) || hunting);
   const steps = [t.onboardingStep1, t.onboardingStep2, t.onboardingStep3];
 
   const stepper = (current: number) => (
@@ -118,7 +128,15 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
     </ol>
   );
 
-  const tip = !onWeb ? t.tipOpenShop : !saved ? t.tipPickButton : pageTask ? t.tipKeepOpen : t.tipTestFirst;
+  const tip = !onWeb
+    ? t.tipOpenShop
+    : !saved
+    ? t.tipPickButton
+    : hunting
+    ? t.tipHuntingNow
+    : pageTask
+    ? t.tipKeepOpen
+    : t.tipTestFirst;
 
   return (
     <div className="flex min-h-full flex-col gap-3">
@@ -171,11 +189,33 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
 
           {/* Where this page stands */}
           <div className={`mt-3 rounded-xl bg-black/25 p-3 ring-1 ring-white/[0.06] ${loaded ? "" : "opacity-0"}`}>
-            {stepper(step)}
+            {step === 4 ? (
+              /* All done: one line instead of three ticked steps */
+              <p className="flex items-center gap-2 text-[12px] font-semibold text-emerald-300">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-slate-950">
+                  <Check className="h-3 w-3" />
+                </span>
+                {t.stepsAllDone}
+              </p>
+            ) : (
+              stepper(step)
+            )}
             {saved && (
               <p className="mt-2.5 truncate border-t border-white/[0.06] pt-2 text-[12px] text-slate-300" title={saved.name}>
                 {t.homeReadyButton(saved.name)}
-                {pageTask && <span className="text-slate-500"> · {t.homeScheduledAt(taskTime(pageTask).slice(0, 5), Boolean(pageTask.isDaily))}</span>}
+              </p>
+            )}
+            {saved && hunting && (
+              <p className="mt-1 flex items-center gap-1.5 text-[12px] font-semibold text-amber-300">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                {t.homeHuntingNow}
+                {liveHunt?.targetTimestamp ? ` · ${t.homeTimeLeft(formatTimeLeft(liveHunt.targetTimestamp - now, t))}` : ""}
+              </p>
+            )}
+            {saved && !hunting && pageTask && (
+              <p className="mt-1 text-[12px] text-slate-400">
+                {t.homeScheduledAt(taskTime(pageTask).slice(0, 5), Boolean(pageTask.isDaily))}
+                {pageTask.targetAt ? ` · ${t.homeTimeLeft(formatTimeLeft(pageTask.targetAt - now, t))}` : ""}
               </p>
             )}
           </div>
@@ -189,20 +229,18 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
             {saved ? <PanelRightOpen className="h-5 w-5" /> : <Crosshair className="h-5 w-5" />}
             {saved ? t.homeOpenPanelCta : t.homePickCta}
           </button>
-          <div className="mt-2 flex h-5 items-center justify-center">
+          <div className="mt-2 flex h-5 items-center justify-between gap-2">
             {saved ? (
-              <button type="button" onClick={() => open(true)} className="text-[12px] font-semibold text-slate-400 hover:text-emerald-300">
-                {t.homeRepick}
-              </button>
+              <>
+                <button type="button" onClick={() => open(true)} className="shrink-0 text-[12px] font-semibold text-slate-400 hover:text-emerald-300">
+                  {t.homeRepick}
+                </button>
+                <ClockStatus lang={lang} activeUrl={activeUrl} activeDomain={activeDomain} compact />
+              </>
             ) : (
-              <span className="text-[12px] text-slate-500">{t.homePickText(activeDomain)}</span>
+              <span className="w-full text-center text-[12px] text-slate-500">{t.homePickText(activeDomain)}</span>
             )}
           </div>
-          {(saved || pageTask) && (
-            <div className="mt-1 border-t border-white/[0.06] pt-2">
-              <ClockStatus lang={lang} activeUrl={activeUrl} activeDomain={activeDomain} />
-            </div>
-          )}
         </section>
       )}
 
