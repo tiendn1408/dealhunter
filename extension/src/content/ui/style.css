@@ -30,9 +30,72 @@
   pointer-events: auto !important;
 }
 
+/* Bottom-right corner. The panel keeps a constant height while it is used (messages have a
+   fixed-size line, "more options" floats over the card), so nothing moves under the mouse. */
 #dealhunter-hud-root {
   bottom: 24px;
   right: 24px;
+}
+
+/* Never taller than the window: the body scrolls instead */
+#dealhunter-hud-root .dh-floating-card {
+  max-height: calc(100vh - 88px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Step 1 has the same height whether empty, picking or showing the chosen button */
+#dealhunter-hud-root .dh-step1-body {
+  height: 78px !important;
+}
+
+#dealhunter-hud-root .dh-more-backdrop {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 9 !important;
+  background-color: rgba(2, 6, 23, 0.6) !important;
+}
+
+#dealhunter-hud-root .dh-more-popover {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: calc(100% + 6px) !important;
+  z-index: 10 !important;
+  background-color: #0c1220 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.6) !important;
+}
+
+#dealhunter-hud-root .dh-hud-body {
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+}
+
+/* Fixed-height message line under the main button: messages change its text, never its size */
+#dealhunter-hud-root .dh-message-slot {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  overflow: hidden !important;
+  text-align: center !important;
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+}
+
+#dealhunter-hud-root .dh-clock-line {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
 }
 
 #dealhunter-badge-root {

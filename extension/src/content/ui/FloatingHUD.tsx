@@ -98,6 +98,20 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   const [targetSlot, setTargetSlot] = useState<TargetSlot>("midnight");
   const [showMore, setShowMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  // "Pressed" feedback shown on the test button itself (the message line is under the open panel)
+  const [testPressedAt, setTestPressedAt] = useState(0);
+  // The floating "more options" panel closes when clicking anywhere else
+  useEffect(() => {
+    if (!showMore) return;
+    const onDown = (e: PointerEvent) => {
+      // Only a real click elsewhere: the test press sends synthetic events to the page's button
+      if (!e.isTrusted) return;
+      if (moreRef.current && !e.composedPath().includes(moreRef.current)) setShowMore(false);
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [showMore]);
   const [customTime, setCustomTime] = useState("00:00:00");
   const [clickProfile, setClickProfile] = useState<ClickProfileMode>("adaptive");
   // Pre-reload before the drop: a plain on/off switch; the lead is measured per page (reload_timing).
@@ -942,6 +956,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     }
     humanClicker.dispatchClick(targetElementRef.current, { profileMode: clickProfile, approach: true });
     setStatusMsg({ render: (trans) => trans.testClickSuccess, tone: "idle" });
+    const at = Date.now();
+    setTestPressedAt(at);
+    setTimeout(() => setTestPressedAt((cur) => (cur === at ? 0 : cur)), 1500);
   };
 
   const handleRecalibrate = async () => {
@@ -1056,6 +1073,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
   return (
     <div className="dh-floating-card w-[356px] select-none overflow-hidden rounded-3xl text-slate-100 ring-1 ring-white/10">
+      {showMore && <div className="dh-more-backdrop" aria-hidden="true" />}
       {/* Header: drag to move */}
       <div
         onMouseDown={handleHeaderMouseDown}
@@ -1093,7 +1111,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         </div>
       </div>
 
-      <div className="space-y-2.5 px-3.5 pb-3.5 pt-2.5">
+      <div className="dh-hud-body space-y-2.5 px-3.5 pb-3.5 pt-2.5">
         {isArmed ? (
           /* Hunting: one clear screen, the only action is to stop */
           <div className="dh-inner-card rounded-2xl p-4 text-center">
@@ -1107,7 +1125,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             <div className="mt-2 text-[12px] text-slate-300">
               {t.huntAt(targetWallClock)} · <span className="font-semibold text-emerald-300">«{buttonName}»</span>
             </div>
-            <p className="mt-1 text-[11px] text-slate-500">{t.armHint}</p>
           </div>
         ) : (
           <>
@@ -1118,18 +1135,20 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 <h3 className="text-[13px] font-semibold text-slate-100">{t.step1Title}</h3>
               </div>
 
+              <div className="dh-step1-body">
               {picking ? (
+                /* Same place and size as "Pick a button": pressing again where it was cancels */
                 <div className="flex flex-col gap-2">
-                  <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-[12px] leading-snug text-amber-200 ring-1 ring-amber-500/30">
-                    {t.pickInstruction}
-                  </p>
-                  <button type="button" onClick={handleSelectTarget} className="dh-action-btn dh-action-btn-cancelling">
-                    <X className="h-3.5 w-3.5" />
+                  <button type="button" onClick={handleSelectTarget} className="dh-arm-btn dh-arm-btn-rose">
+                    <X className="h-4 w-4" />
                     <span>{t.cancelPick}</span>
                   </button>
+                  <p className="dh-sub-btn" style={{ cursor: "default" }}>
+                    <span className="text-amber-200">{t.pickInstruction}</span>
+                  </p>
                 </div>
               ) : hasTarget ? (
-                <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 ring-1 ring-emerald-500/25">
+                <div className="flex h-full items-center justify-between gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 ring-1 ring-emerald-500/25">
                   <div className="min-w-0">
                     <div className="truncate text-[13px] font-semibold text-emerald-200" title={buttonName}>
                       «{buttonName}»
@@ -1164,6 +1183,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                   )}
                 </div>
               )}
+              </div>
 
               {suggestion && !picking && (
                 <div className="mt-2 grid grid-cols-3 gap-1.5">
@@ -1246,7 +1266,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                   </>
                 )}
               </div>
-              <div className="mt-1.5 flex items-center gap-1.5 px-0.5 text-[10px]">
+              <div className="dh-clock-line mt-1.5 px-0.5 text-[10px]">
                 {syncing ? (
                   <span className="text-slate-500">{t.clockChecking}</span>
                 ) : calibrated ? (
@@ -1278,9 +1298,23 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             {isArmed ? <Square className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
             <span>{isArmed ? t.disarm : t.armSniper}</span>
           </button>
+          {/* One fixed-size line for hints and messages: the panel never jumps */}
+          <div role="status" aria-live="polite" className="dh-message-slot px-1">
+            {showStatus ? (
+              <>
+                {StatusIcon ? (
+                  <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
+                ) : (
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
+                )}
+                <span className={`min-w-0 line-clamp-2 break-words ${tone.text}`}>{statusDisplayText}</span>
+              </>
+            ) : (
+              <span className="text-slate-500">{isArmed ? t.armHint : canStart ? t.armHint : t.noTargetSelected}</span>
+            )}
+          </div>
           {!isArmed && (
             <>
-              <p className="px-1 text-center text-[11px] leading-snug text-slate-500">{canStart ? t.armHint : t.noTargetSelected}</p>
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={handleScheduleFromHUD} disabled={!canStart} className="dh-sub-btn" style={{ flex: 1 }}>
                   <CalendarClock className="h-3 w-3 text-emerald-300" />
@@ -1303,20 +1337,12 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           )}
         </div>
 
-        {/* More options: everything most people never need */}
-        {!isArmed && hasTarget && (
-          <div className="dh-inner-card rounded-2xl">
-            <button
-              type="button"
-              onClick={() => setShowMore(!showMore)}
-              aria-expanded={showMore}
-              className="flex w-full items-center justify-between px-3 py-2 text-[12px] font-semibold text-slate-300"
-            >
-              <span>{t.moreOptions}</span>
-              <ChevronDown className={`h-3.5 w-3.5 transition ${showMore ? "rotate-180" : ""}`} />
-            </button>
+        {/* More options: everything most people never need. Opens as a floating panel over the card,
+            so the panel never changes height and nothing moves under the mouse. */}
+        {!isArmed && (
+          <div ref={moreRef} className="relative">
             {showMore && (
-              <div className="space-y-1.5 border-t border-white/5 px-3 pb-3 pt-2">
+              <div className="dh-more-popover space-y-1.5 p-3">
                 {!pageDisablesReload && (
                   <button
                     type="button"
@@ -1337,33 +1363,40 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                   </button>
                 )}
                 <div className="grid grid-cols-2 gap-1.5">
-                  <button type="button" onClick={handleManualTestClick} title={t.testClickTooltip} className="dh-sub-btn">
-                    <MousePointerClick className="h-3 w-3" />
-                    <span>{t.testClick}</span>
+                  <button
+                    type="button"
+                    onClick={handleManualTestClick}
+                    disabled={!hasTarget}
+                    title={t.testClickTooltip}
+                    className={`dh-sub-btn ${testPressedAt ? "dh-sub-btn-emerald" : ""}`}
+                  >
+                    {testPressedAt ? <Check className="h-3 w-3" /> : <MousePointerClick className="h-3 w-3" />}
+                    <span>{testPressedAt ? t.testClickDone : t.testClick}</span>
                   </button>
-                  <button type="button" onClick={handleForgetSavedTarget} className="dh-sub-btn dh-sub-btn-danger">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMore(false);
+                      handleForgetSavedTarget();
+                    }}
+                    disabled={!hasTarget}
+                    className="dh-sub-btn dh-sub-btn-danger"
+                  >
                     <Trash2 className="h-3 w-3" />
                     <span>{t.forgetTarget}</span>
                   </button>
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* What is happening, in plain words (not repeating what the cards already show) */}
-        {showStatus && (
-          <div
-            role="status"
-            aria-live="polite"
-            className={`dh-status-bar flex items-center gap-2 rounded-xl bg-black/40 px-3 py-1.5 ring-1 ${tone.ring}`}
-          >
-            {StatusIcon ? (
-              <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
-            ) : (
-              <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
-            )}
-            <span className={`min-w-0 flex-1 break-words text-[11px] leading-snug line-clamp-2 ${tone.text}`}>{statusDisplayText}</span>
+            <button
+              type="button"
+              onClick={() => setShowMore(!showMore)}
+              aria-expanded={showMore}
+              className="dh-inner-card flex w-full items-center justify-between rounded-2xl px-3 py-2 text-[12px] font-semibold text-slate-300"
+            >
+              <span>{t.moreOptions}</span>
+              <ChevronDown className={`h-3.5 w-3.5 transition ${showMore ? "" : "rotate-180"}`} />
+            </button>
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
 export type Language = "en" | "vi";
 
 const en = {
+  testClickDone: "Pressed",
   settingsShowGuide: "Show the 3-step guide again",
   hudExpand: "Open the hunt panel",
   leftHours: (h: number, m: number) => `${h}h ${m}m`,
@@ -268,6 +269,7 @@ type DeepStringify<T> = {
 type TranslationCatalog = DeepStringify<typeof en>;
 
 const vi: TranslationCatalog = {
+  testClickDone: "Đã bấm",
   settingsShowGuide: "Xem lại hướng dẫn 3 bước",
   hudExpand: "Mở bảng săn",
   leftHours: (h: number, m: number) => `${h} giờ ${m} phút`,
