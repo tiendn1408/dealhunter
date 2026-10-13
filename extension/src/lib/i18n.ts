@@ -1,6 +1,11 @@
 export type Language = "en" | "vi";
 
 const en = {
+  homeNextHuntLabel: "Next hunt",
+  tipOpenShop: "Open the page with the voucher or button you want, then click the DealHunter icon.",
+  tipPickButton: "On the page, the button turns green when chosen. You can pick it again any time.",
+  tipTestFirst: "Try \"Test in 10s\" in the hunt panel to check everything works before the real time.",
+  tipKeepOpen: "Even if this page is closed, DealHunter opens it a minute before the time.",
   homeNextHunt: (time: string, name: string) => `Next hunt ${time} · ${name}`,
   scheduleEditTitle: "Edit hunt",
   scheduleSaveChanges: "Save changes",
@@ -35,9 +40,9 @@ const en = {
   clockChecking: "Syncing the time...",
   clockReady: (domain: string) => `Time synced with ${domain}`,
   onboardingDismiss: "Got it",
-  onboardingStep3: "Pick a time, press \"Start hunting\"",
-  onboardingStep2: "Press \"Pick a button\", then click it",
-  onboardingStep1: "Open the page with the button you want",
+  onboardingStep3: "Choose the time and start",
+  onboardingStep2: "Pick the button to press",
+  onboardingStep1: "Open the page to hunt on",
   onboardingTitle: "Hunt in 3 steps",
   homePanelOpened: "Hunt panel opened on the page",
   homeCannotRun: "DealHunter cannot run here. Open a website.",
@@ -275,6 +280,11 @@ type DeepStringify<T> = {
 type TranslationCatalog = DeepStringify<typeof en>;
 
 const vi: TranslationCatalog = {
+  homeNextHuntLabel: "Lịch săn kế tiếp",
+  tipOpenShop: "Mở trang có voucher hoặc nút bạn muốn săn, rồi bấm biểu tượng DealHunter.",
+  tipPickButton: "Nút được chọn sẽ có viền xanh trên trang. Chọn lại lúc nào cũng được.",
+  tipTestFirst: "Bấm «Thử sau 10 giây» trên bảng săn để kiểm tra trước giờ săn thật.",
+  tipKeepOpen: "Lỡ đóng trang này cũng không sao: DealHunter tự mở lại trước giờ săn 1 phút.",
   homeNextHunt: (time: string, name: string) => `Lịch kế tiếp ${time} · ${name}`,
   scheduleEditTitle: "Sửa lịch săn",
   scheduleSaveChanges: "Lưu thay đổi",
@@ -309,9 +319,9 @@ const vi: TranslationCatalog = {
   clockChecking: "Đang canh giờ...",
   clockReady: (domain: string) => `Đã canh giờ theo ${domain}`,
   onboardingDismiss: "Đã hiểu",
-  onboardingStep3: "Chọn giờ, bấm «Bắt đầu săn»",
-  onboardingStep2: "Bấm «Chọn nút», rồi bấm vào nút đó",
-  onboardingStep1: "Mở trang có nút bạn muốn săn",
+  onboardingStep3: "Chọn giờ và bắt đầu săn",
+  onboardingStep2: "Chọn nút cần bấm",
+  onboardingStep1: "Mở trang muốn săn",
   onboardingTitle: "Săn trong 3 bước",
   homePanelOpened: "Đã mở bảng săn trên trang",
   homeCannotRun: "Không dùng được ở trang này. Hãy mở một trang web.",

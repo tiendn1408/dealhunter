@@ -36,12 +36,11 @@ describe("clock card", () => {
   });
 });
 
-describe("3-step guide", () => {
-  it("shows to a new user, goes away once a button is picked, and comes back only on request", async () => {
-    const { shouldShowGuide } = await import("./HomePanel");
-    expect(shouldShowGuide(undefined, false)).toBe(true); // brand new
-    expect(shouldShowGuide(undefined, true)).toBe(false); // already picked a button / scheduled
-    expect(shouldShowGuide(true, false)).toBe(false); // dismissed
-    expect(shouldShowGuide("again", true)).toBe(true); // "show the guide again" in settings
+describe("3-step progress on the home screen", () => {
+  it("follows the open page: pick a button, then set the time, then done", async () => {
+    const { pageStep } = await import("./HomePanel");
+    expect(pageStep(false, false)).toBe(2); // page open, no button yet
+    expect(pageStep(true, false)).toBe(3); // button chosen, no hunt yet
+    expect(pageStep(true, true)).toBe(4); // hunt scheduled: all done
   });
 });

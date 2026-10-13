@@ -23,6 +23,7 @@ export const App: React.FC = () => {
   const [activeTabId, setActiveTabId] = useState<number | null>(null);
   const [activeTabUrl, setActiveTabUrl] = useState("");
   const [activeTabDomain, setActiveTabDomain] = useState("");
+  const [activeFavIcon, setActiveFavIcon] = useState<string | undefined>(undefined);
   const [account, setAccount] = useState<{ signedIn: boolean; email?: string } | null>(null);
   const [showScheduleForm, setShowScheduleForm] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
@@ -42,6 +43,7 @@ export const App: React.FC = () => {
         setActiveTabId(active?.id ?? null);
         const url = active?.url || "";
         setActiveTabUrl(url);
+        setActiveFavIcon(active?.favIconUrl && /^https?:/i.test(active.favIconUrl) ? active.favIconUrl : undefined);
         try {
           setActiveTabDomain(/^https?:/i.test(url) ? new URL(url).hostname.replace(/^www\./, "") : "");
         } catch {
@@ -136,13 +138,14 @@ export const App: React.FC = () => {
         </nav>
       )}
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3.5 py-3 [&>*]:shrink-0">
         {view === "home" && (
           <HomePanel
             lang={lang}
             activeTabId={activeTabId}
             activeUrl={activeTabUrl}
             activeDomain={activeTabDomain}
+            favIconUrl={activeFavIcon}
             tasks={tasks}
             onSeeAllHunts={() => setView("hunts")}
           />
