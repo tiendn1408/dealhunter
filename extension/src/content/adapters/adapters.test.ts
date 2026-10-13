@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { getAdapterForUrl, ADAPTERS } from "./index";
+import { getAdapterForUrl, ADAPTERS, CaffiliateAdapter, summarizeCheckInTiming } from "./index";
 import { isECommerceVoucherOrDealPage, isECommerceProductPage, detectPlatformAuthOrCaptchaBlock } from "../index";
 
 describe("Marketplace Adapters & Multi-Platform Registry", () => {
@@ -45,12 +45,11 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     expect(adapter?.maxClicks).toBe(1);
     expect(adapter?.windowMs).toBe(8000);
 
-    const simAdapter = getAdapterForUrl("http://localhost:3100/");
-    expect(simAdapter).not.toBeNull();
-    expect(simAdapter?.platformName).toBe("caffiliate");
-    expect(simAdapter?.shouldDisableReload?.()).toBe(true);
-    expect(simAdapter?.maxClicks).toBe(1);
-    expect(simAdapter?.windowMs).toBe(8000);
+    // Only the real caffiliate.vn host: not a URL that merely mentions it, not localhost:3100
+    // (the DealHunter web dev server).
+    expect(getAdapterForUrl("https://www.google.com/search?q=caffiliate.vn")).toBeNull();
+    expect(getAdapterForUrl("http://localhost:3100/")).toBeNull();
+    expect(getAdapterForUrl("https://evil-caffiliate.vn/")).toBeNull();
   });
 
   it("detects Turnstile challenge pending and overrides status prompt", () => {
@@ -110,12 +109,14 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     realBtn.innerHTML = "<span>Đã điểm danh #1</span>";
     expect(adapter?.isButtonFinished(realBtn)).toBe(true);
 
-    // Also finishes arbitrary elements when data-dh-checked-in is marked by bridge
-    document.body.innerHTML = '<div id="other-node">Some text</div>';
-    const otherNode = document.getElementById("other-node") as HTMLElement;
-    expect(adapter?.isButtonFinished(otherNode)).toBe(false);
+    // A page-set flag or any popup (including an error popup) is not a confirmation
+    document.body.innerHTML = `
+      <button id="btnCheckIn"><span>Điểm danh</span></button>
+      <div class="swal2-container"><div class="swal2-popup">Chưa tới giờ điểm danh</div></div>
+      <div>Hạng hôm nay</div>
+    `;
     document.documentElement.setAttribute("data-dh-checked-in", "true");
-    expect(adapter?.isButtonFinished(otherNode)).toBe(true);
+    expect(adapter?.isButtonFinished(document.getElementById("btnCheckIn") as HTMLElement)).toBe(false);
     document.documentElement.removeAttribute("data-dh-checked-in");
   });
 
@@ -137,38 +138,45 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     expect(buttons).toContain(dynamicBtn);
   });
 
-  it("handles preWarmStrike and executeDirectStrike safely on Caffiliate", () => {
+  it("pre-drop hook only preconnects and never unblocks or alters the page", () => {
     const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards");
-    expect(adapter).not.toBeNull();
-
-    document.body.innerHTML = `
-      <div id="breadcrumb">
-        <span id="title-text">Điểm Danh</span>
-      </div>
-      <button id="btnCheckIn" class="pointer-events-none disabled" disabled>
-        <span>Điểm danh</span>
-      </button>
-    `;
-
-    const userSelectedTitle = document.getElementById("title-text") as HTMLElement;
+    document.body.innerHTML = `<button id="btnCheckIn" class="disabled" disabled><span>Điểm danh</span></button>`;
     const realBtn = document.getElementById("btnCheckIn") as HTMLButtonElement;
 
-    // Pre-warm strike should execute without throwing and should clean up stale flags
-    document.documentElement.setAttribute("data-dh-checked-in", "true");
-    document.documentElement.setAttribute("data-dh-turnstile-challenge", "active");
-    expect(() => adapter?.preWarmStrike?.()).not.toThrow();
-    expect(document.documentElement.getAttribute("data-dh-checked-in")).toBeNull();
-    expect(document.documentElement.getAttribute("data-dh-turnstile-challenge")).toBeNull();
+    adapter?.preWarmStrike?.();
+    adapter?.preWarmStrike?.();
 
-    // Direct strike execution should unblock both real button and user selected element
-    const strikeSuccess = adapter?.executeDirectStrike?.(userSelectedTitle);
-    expect(strikeSuccess).toBe(true);
-
-    expect(realBtn.disabled).toBe(false);
-    expect(realBtn.classList.contains("disabled")).toBe(false);
-    expect(userSelectedTitle.classList.contains("disabled")).toBe(false);
+    expect(realBtn.disabled).toBe(true);
+    expect(realBtn.classList.contains("disabled")).toBe(true);
+    expect(document.querySelectorAll('link[rel="preconnect"][href="https://challenges.cloudflare.com"]').length).toBe(1);
   });
 
+  it("collects check-in timings from the main-world helper and summarizes them", () => {
+    const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards") as CaffiliateAdapter;
+    adapter.listenForTimings();
+    adapter.preWarmStrike();
+    expect(adapter.getResultDetail()).toBeNull();
+
+    const timing = {
+      clickAt: 1_000,
+      tokenStartAt: 1_004,
+      tokenEndAt: 1_824,
+      requestStartAt: 1_830,
+      responseAt: 1_925,
+      status: 200,
+    };
+    window.dispatchEvent(new CustomEvent("dh-checkin-timing", { detail: JSON.stringify(timing) }));
+
+    const detail = adapter.getResultDetail() ?? "";
+    expect(detail).toContain("Turnstile 820ms");
+    expect(detail).toContain("(+830ms)");
+    expect(detail).toContain("server 95ms · HTTP 200");
+
+    // Malformed events are ignored
+    window.dispatchEvent(new CustomEvent("dh-checkin-timing", { detail: "{oops" }));
+    expect(adapter.getResultDetail()).toBe(detail);
+    expect(summarizeCheckInTiming({ clickAt: 1_000 })).toMatch(/^click \d\d:\d\d:\d\d\.\d{3}$/);
+  });
 
   it("returns null for non-marketplace domains", () => {
     expect(getAdapterForUrl("https://example.com/item/1")).toBeNull();

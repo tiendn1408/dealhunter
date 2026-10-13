@@ -11,6 +11,7 @@ import { ScheduledTask } from "../lib/types";
 import { MESSAGE_ACTIONS } from "../lib/constants";
 import { storage } from "../lib/storage";
 import { isSamePageUrl } from "../lib/url";
+import { caffiliateAdapter } from "./adapters/caffiliate_adapter";
 import "./ui/style.css";
 
 function isTopWindow(): boolean {
@@ -187,6 +188,8 @@ function initContentScript() {
 
   // 1. Initialize clock calibration
   timeSyncClient.init();
+  // Caffiliate: log where the time goes on every check-in attempt, manual or hunted.
+  if (caffiliateAdapter.isMatchUrl(window.location.href)) caffiliateAdapter.listenForTimings();
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {

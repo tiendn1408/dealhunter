@@ -7,11 +7,7 @@ export interface MarketplaceAdapter {
   isButtonFinished(button: HTMLElement): boolean;
   extractProductInfo?(): { title: string; price: number; itemId?: string; shopId?: string } | null;
   /**
-   * Optional platform-specific direct strike hook (e.g. In-Page state unlock + execution)
-   */
-  executeDirectStrike?(target?: HTMLElement | null): Promise<boolean> | boolean;
-  /**
-   * Optional platform pre-warm strike hook (e.g. Turnstile CAPTCHA & Crypto Key pre-warming)
+   * Optional hook a few seconds before the drop (e.g. start timing collection, warm connections).
    */
   preWarmStrike?(): Promise<void> | void;
   /**
@@ -30,6 +26,10 @@ export interface MarketplaceAdapter {
    * Optional platform directive: dynamic status text override for HUD (return null/undefined to use default)
    */
   getStatusOverride?(lang?: Language): string | null;
+  /**
+   * Optional platform detail appended to the hunt result (e.g. measured check-in timings)
+   */
+  getResultDetail?(): string | null;
 }
 
 

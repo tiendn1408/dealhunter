@@ -41,10 +41,8 @@
     },
     {
       "matches": [
-        "*://caffiliate.vn/*",
-        "*://*.caffiliate.vn/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*"
+        "https://caffiliate.vn/*",
+        "https://*.caffiliate.vn/*"
       ],
       "js": [
         "caffiliate_bridge.js"
@@ -76,16 +74,5 @@
       "https://dealhunter.vn/*",
       "https://www.dealhunter.vn/*"
     ]
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "icons/*.png",
-        "caffiliate_bridge.js"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
-  ]
+  }
 }

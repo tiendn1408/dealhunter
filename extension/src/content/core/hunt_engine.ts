@@ -148,13 +148,6 @@ export function startHunt(opts: HuntOptions): () => void {
   let done = false;
   let keepAliveSent = false;
   let adapterPreWarmed = false;
-  if (typeof document !== "undefined" && document.documentElement) {
-    document.documentElement.removeAttribute("data-dh-checked-in");
-    document.documentElement.removeAttribute("data-dh-turnstile-challenge");
-    document.documentElement.removeAttribute("data-dh-strike-tier");
-    document.documentElement.removeAttribute("data-dh-strike-method");
-    document.documentElement.removeAttribute("data-dh-strike-latency");
-  }
   let hadDisabledOnMount = Boolean(
     opts.locked && (
       opts.locked.hasAttribute("disabled") ||
@@ -238,16 +231,10 @@ export function startHunt(opts: HuntOptions): () => void {
     }
   };
 
-  const getAdapterSuccessDetail = (): string => {
-    if (typeof document !== "undefined" && document.documentElement) {
-      const tier = document.documentElement.getAttribute("data-dh-strike-tier");
-      const method = document.documentElement.getAttribute("data-dh-strike-method");
-      const lat = document.documentElement.getAttribute("data-dh-strike-latency");
-      if (tier && method) {
-        return `Tier ${tier}: ${method}` + (lat ? ` (${lat}ms)` : "");
-      }
-    }
-    return "Target confirmed completed by platform adapter";
+  // Appends what the platform measured (e.g. Caffiliate check-in timings) to a result detail.
+  const withAdapterDetail = (detail: string): string => {
+    const extra = adapter?.getResultDetail?.();
+    return extra ? `${detail} · ${extra}` : detail;
   };
 
   let spinArmed = false;
@@ -286,7 +273,7 @@ export function startHunt(opts: HuntOptions): () => void {
         }
       }
 
-      // Pre-warming hook for platform adapters (e.g. Turnstile CAPTCHA & Crypto Key pre-warming on Caffiliate)
+      // Pre-drop hook for platform adapters (e.g. Caffiliate: start timing collection, preconnect)
       if (
         !adapterPreWarmed &&
         untilDrop <= 3500 &&
@@ -402,7 +389,7 @@ export function startHunt(opts: HuntOptions): () => void {
             effectiveTier === "speed_priority"
               ? `Hyper burst dispatched (${clicks} clicks), but page never confirmed completion`
               : `Clicked ${clicks} times but target completion was not confirmed`;
-          finish("timeout", detail);
+          finish("timeout", withAdapterDetail(detail));
         }
         return;
       }
@@ -475,10 +462,9 @@ export function startHunt(opts: HuntOptions): () => void {
       // Prevents false-positives when target button still displays yesterday's completion label
       if (clicks > 0) {
         if (
-          (typeof document !== "undefined" && document.documentElement?.getAttribute("data-dh-checked-in") === "true") ||
-          (adapter?.isButtonFinished && el && adapter.isButtonFinished(el))
+          adapter?.isButtonFinished && el && adapter.isButtonFinished(el)
         ) {
-          return finish("saved", getAdapterSuccessDetail());
+          return finish("saved", withAdapterDetail("The site confirmed completion"));
         }
 
         const activeBaseline = baselineTextAtDrop ?? initialText;
@@ -577,29 +563,18 @@ export function startHunt(opts: HuntOptions): () => void {
           }
         }
         const isFirstClick = clicks === 0;
-        let directStrikeHandled = false;
         if (isFirstClick) {
           // C1-a: Capture the true baseline text right before click 1 at drop moment
           // (after countdown has transitioned to the actionable label)
           baselineTextAtDrop = elementResolver.text(el);
-          if (adapter?.executeDirectStrike) {
-            try {
-              const res = adapter.executeDirectStrike(el);
-              directStrikeHandled = Boolean(res);
-            } catch {
-              // ignore
-            }
-          }
         }
         const shouldSkipApproach = effectiveTier === "speed_priority" || profileMode === "hyper";
         const clickDispatched = isFirstClick
-          ? (directStrikeHandled
-              ? true
-              : humanClicker.dispatchPreWarmedStrike(el, {
-                  profileMode,
-                  approach: isFirstClick && !shouldSkipApproach,
-                  skipApproach: shouldSkipApproach,
-                }))
+          ? humanClicker.dispatchPreWarmedStrike(el, {
+              profileMode,
+              approach: isFirstClick && !shouldSkipApproach,
+              skipApproach: shouldSkipApproach,
+            })
           : humanClicker.dispatchClick(el, {
               profileMode,
               approach: false,
@@ -618,10 +593,9 @@ export function startHunt(opts: HuntOptions): () => void {
 
           // Check completion immediately after click was dispatched
           if (
-            (typeof document !== "undefined" && document.documentElement?.getAttribute("data-dh-checked-in") === "true") ||
-            (adapter?.isButtonFinished && el && adapter.isButtonFinished(el))
+            adapter?.isButtonFinished && el && adapter.isButtonFinished(el)
           ) {
-            return finish("saved", getAdapterSuccessDetail());
+            return finish("saved", withAdapterDetail("The site confirmed completion"));
           }
 
           const activeBaseline = baselineTextAtDrop ?? initialText;

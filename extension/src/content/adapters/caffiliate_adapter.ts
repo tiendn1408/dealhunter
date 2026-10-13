@@ -1,63 +1,81 @@
 import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
 import { Language, getTranslation } from "../../lib/i18n";
+import { timeSyncClient } from "../core/time_sync_client";
+
+/** Timings of one check-in attempt, reported by the main-world helper (epoch ms of this machine). */
+export interface CheckInTiming {
+  clickAt: number;
+  trusted?: boolean;
+  tokenStartAt?: number;
+  tokenEndAt?: number;
+  tokenError?: boolean;
+  requestStartAt?: number;
+  responseAt?: number;
+  status?: number;
+  /** Date header of the check-in response (1 s resolution). */
+  serverDate?: string;
+}
+
+const isCaffiliateHost = (host: string) => host === "caffiliate.vn" || host.endsWith(".caffiliate.vn");
+
+/** Server clock reading of a local epoch timestamp, as HH:mm:ss.SSS. */
+function serverClock(localMs: number): string {
+  const d = new Date(localMs + timeSyncClient.getOffset());
+  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+/** One-line summary: where the time went between the click and the server's answer. */
+export function summarizeCheckInTiming(t: CheckInTiming): string {
+  const parts = [`click ${serverClock(t.clickAt)}`];
+  if (t.tokenStartAt !== undefined && t.tokenEndAt !== undefined) {
+    parts.push(`Turnstile ${Math.round(t.tokenEndAt - t.tokenStartAt)}ms${t.tokenError ? " (error)" : ""}`);
+  }
+  if (t.requestStartAt !== undefined) {
+    parts.push(`sent ${serverClock(t.requestStartAt)} (+${Math.round(t.requestStartAt - t.clickAt)}ms)`);
+  }
+  if (t.requestStartAt !== undefined && t.responseAt !== undefined) {
+    parts.push(`server ${Math.round(t.responseAt - t.requestStartAt)}ms · HTTP ${t.status ?? "?"}`);
+  }
+  return parts.join(" · ");
+}
 
 /**
- * Dedicated high-speed accelerator for Caffiliate rewards / check-in platform.
- * Bypasses destructive full-page reload and unlocks in-page app state directly
- * with multi-tier dynamic resilience to guarantee 00:00:00.000 server arrival.
- * 
- * Strict CSP Compliance:
- * Uses external web_accessible_resources and CustomEvent bridge instead of inline
- * script tags to completely eliminate Content Security Policy (CSP) violations.
+ * Caffiliate daily check-in. Clicks only the button the user picked, like a person would: no page
+ * state is altered and the Turnstile check runs exactly as the site intends. The main-world helper
+ * (public/caffiliate_bridge.js) only measures the timings of each attempt.
  */
 export class CaffiliateAdapter implements MarketplaceAdapter {
   platformName = "caffiliate";
   maxClicks = 1;
   windowMs = 8000;
+  lastTiming: CheckInTiming | null = null;
+  private listening = false;
 
   isMatchUrl(url: string): boolean {
-    if (!url) return false;
-    const lower = url.toLowerCase();
-    if (
-      lower.includes("caffiliate.vn") ||
-      (typeof window !== "undefined" && window.location?.hostname && window.location.hostname.includes("caffiliate.vn"))
-    ) {
-      return true;
+    try {
+      return isCaffiliateHost(new URL(url).hostname.toLowerCase());
+    } catch {
+      return false;
     }
-    if (lower.includes(":3100") || lower.includes("localhost:3100")) {
-      return true;
-    }
-    if (
-      (lower.includes("localhost") || lower.includes("127.0.0.1")) &&
-      typeof document !== "undefined" &&
-      (document.getElementById("btnCheckIn") || document.getElementById("caffiliate-checkin-btn"))
-    ) {
-      return true;
-    }
-    return false;
   }
 
-  /**
-   * Ensures the CSP-compliant Main World bridge script is mounted into the page.
-   * Loads via external script src from extension URL (permitted by page CSP) or
-   * uses the pre-registered manifest content script.
-   */
-  ensureBridgeInjected(): void {
-    if (typeof document === "undefined") return;
-    if (document.getElementById("dh-caffiliate-bridge")) return;
-
-    if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
+  /** Starts receiving timings from the main-world helper; each attempt is logged to the console. */
+  listenForTimings(): void {
+    if (this.listening || typeof window === "undefined") return;
+    this.listening = true;
+    window.addEventListener("dh-checkin-timing", (ev) => {
       try {
-        const script = document.createElement("script");
-        script.id = "dh-caffiliate-bridge";
-        script.src = chrome.runtime.getURL("caffiliate_bridge.js");
-        script.async = false;
-        (document.head || document.documentElement).appendChild(script);
+        const detail = (ev as CustomEvent).detail;
+        const timing = JSON.parse(typeof detail === "string" ? detail : "") as CheckInTiming;
+        if (typeof timing?.clickAt !== "number") return;
+        this.lastTiming = timing;
+        console.info(`[DealHunter] Check-in timing: ${summarizeCheckInTiming(timing)}`, timing);
       } catch {
-        // ignore
+        // ignore malformed events
       }
-    }
+    });
   }
 
   /**
@@ -102,43 +120,15 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
 
   isButtonFinished(button: HTMLElement): boolean {
     if (!button || !button.isConnected) return false;
-
-    // 0. Direct confirmation flag set by Main-World bridge
-    if (typeof document !== "undefined" && document.documentElement.getAttribute("data-dh-checked-in") === "true") {
-      return true;
-    }
-
-    // 1. Direct button text check
-    const text = elementResolver.text(button);
-    if ((text.includes("Đã điểm danh") || text.includes("da diem danh")) && /#\d+/.test(text)) {
-      return true;
-    }
-
-    // 2. Page-level Caffiliate state check in case user pointed at heading or surrounding card
-    if (typeof document !== "undefined") {
-      const realBtn = this.findCheckInButton();
-      if (realBtn) {
-        const realText = elementResolver.text(realBtn);
-        if (
-          realText.includes("Đã điểm danh") ||
-          realText.includes("da diem danh") ||
-          realBtn.getAttribute("data-state") === "saved" ||
-          /#\d+/.test(realText)
-        ) {
-          return true;
-        }
-      }
-      if (
-        document.querySelector(".swal2-container") ||
-        document.querySelector(".swal2-popup") ||
-        document.querySelector(".bg-emerald-50.border-emerald-200") ||
-        document.body.innerText.includes("Hạng hôm nay")
-      ) {
-        return true;
-      }
-    }
-
-    return elementResolver.isButtonFinished(button);
+    // Only the site's own confirmation counts: the check-in button turns into "Đã điểm danh #N".
+    // Any popup (including errors such as "Chưa tới giờ") is not a success.
+    const done = (el: HTMLElement) => {
+      const text = elementResolver.text(el);
+      return /đã điểm danh|da diem danh/i.test(text) && /#\d+/.test(text);
+    };
+    if (done(button)) return true;
+    const realBtn = this.findCheckInButton();
+    return Boolean(realBtn && realBtn !== button && done(realBtn));
   }
 
   /**
@@ -171,78 +161,25 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
   }
 
   /**
-   * Pre-warms Cloudflare Turnstile token and socket keep-alive at T - 3.5s before drop.
-   * Eliminates the 200ms - 600ms Turnstile CAPTCHA generation lag at 00:00:00.000.
+   * Called a few seconds before the drop: start collecting timings and warm the connection to
+   * Cloudflare so the Turnstile iframe does not pay a fresh TLS handshake at 00:00.
    */
   preWarmStrike(): void {
-    this.ensureBridgeInjected();
+    this.listenForTimings();
+    this.lastTiming = null;
     if (typeof document === "undefined") return;
-
-    try {
-      if (document.documentElement) {
-        document.documentElement.removeAttribute("data-dh-checked-in");
-        document.documentElement.removeAttribute("data-dh-turnstile-challenge");
-        document.documentElement.removeAttribute("data-dh-strike-tier");
-        document.documentElement.removeAttribute("data-dh-strike-method");
-        document.documentElement.removeAttribute("data-dh-strike-latency");
-      }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("dh-caffiliate-prewarm"));
-      } else {
-        document.dispatchEvent(new CustomEvent("dh-caffiliate-prewarm"));
-      }
-    } catch {
-      // ignore
+    if (!document.querySelector('link[rel="preconnect"][href="https://challenges.cloudflare.com"]')) {
+      const link = document.createElement("link");
+      link.rel = "preconnect";
+      link.href = "https://challenges.cloudflare.com";
+      link.crossOrigin = "anonymous";
+      (document.head || document.documentElement).appendChild(link);
     }
   }
 
-  /**
-   * Multi-tier resilient strike execution:
-   * Tier 1: Dynamic In-Page App & Function Discovery (name patterns + regex + fn.toString() code inspection)
-   * Tier 2: Real DOM Button Unblocking & Native W3C Click Dispatch (triggers closure event listeners)
-   * Tier 3: Direct API Fallback (POST /api/v2/xeng/check-in-secure with CSRF, Turnstile & signature)
-   * Tier 4: Target Element Dispatch (respects user's manual selection without auto-snapping)
-   *
-   * Single Precision Shot:
-   * Sends a single strike event to the Main-World bridge. The bridge executes checkIn() directly
-   * on the page application without triggering concurrent duplicate clicks or Cloudflare Turnstile race conditions.
-   */
-  executeDirectStrike(target?: HTMLElement | null): boolean {
-    if (typeof document === "undefined") return false;
-
-    try {
-      // 1. Dispatch single CSP-compliant strike event to Main-World bridge
-      this.ensureBridgeInjected();
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("dh-caffiliate-strike"));
-      } else {
-        document.dispatchEvent(new CustomEvent("dh-caffiliate-strike"));
-      }
-
-      // 2. Extension DOM unblock on the real check-in button
-      const realBtn = this.findCheckInButton();
-      if (realBtn) {
-        realBtn.removeAttribute("disabled");
-        realBtn.setAttribute("aria-disabled", "false");
-        realBtn.classList.remove("disabled", "pointer-events-none");
-        realBtn.style.pointerEvents = "auto";
-        if ("disabled" in realBtn) {
-          (realBtn as HTMLButtonElement).disabled = false;
-        }
-      }
-
-      // 3. User manual selection DOM unblock (e.g. if user locked a heading/card)
-      if (target && target !== realBtn) {
-        target.removeAttribute("disabled");
-        target.setAttribute("aria-disabled", "false");
-        target.classList.remove("disabled", "pointer-events-none");
-        target.style.pointerEvents = "auto";
-      }
-
-      return true;
-    } catch {
-      return false;
-    }
+  /** Result detail for the HUD and task list: the measured timings of the attempt, if any. */
+  getResultDetail(): string | null {
+    return this.lastTiming ? summarizeCheckInTiming(this.lastTiming) : null;
   }
 }
 
