@@ -147,7 +147,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ lang, onLangChange
       <button
         type="button"
         onClick={() => {
-          chrome.storage.local.remove(STORAGE_KEYS.ONBOARDING_DONE).catch(() => {});
+          chrome.storage.local.set({ [STORAGE_KEYS.ONBOARDING_DONE]: "again" }).catch(() => {});
           onBack();
         }}
         className="flex w-full items-center justify-between rounded-2xl bg-white/[0.03] p-3 text-left ring-1 ring-white/10 transition hover:bg-white/[0.06]"

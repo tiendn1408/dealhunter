@@ -35,3 +35,13 @@ describe("clock card", () => {
     expect(await isHuntedPage("https://lazada.vn/voucher")).toBe(true);
   });
 });
+
+describe("3-step guide", () => {
+  it("shows to a new user, goes away once a button is picked, and comes back only on request", async () => {
+    const { shouldShowGuide } = await import("./HomePanel");
+    expect(shouldShowGuide(undefined, false)).toBe(true); // brand new
+    expect(shouldShowGuide(undefined, true)).toBe(false); // already picked a button / scheduled
+    expect(shouldShowGuide(true, false)).toBe(false); // dismissed
+    expect(shouldShowGuide("again", true)).toBe(true); // "show the guide again" in settings
+  });
+});

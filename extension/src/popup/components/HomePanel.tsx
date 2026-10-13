@@ -22,6 +22,16 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const taskTime = (task: ScheduledTask) => `${pad(task.targetHour)}:${pad(task.targetMinute)}:${pad(task.targetSecond ?? 0)}`;
 const isUpcoming = (task: ScheduledTask) => task.status === "pending" || task.status === "running";
 
+/**
+ * Whether to show the 3-step guide. flag: undefined (never decided), true (done / dismissed) or
+ * "again" (asked for from the settings).
+ */
+export function shouldShowGuide(flag: unknown, hasProgress: boolean): boolean {
+  if (flag === "again") return true;
+  if (flag === true) return false;
+  return !hasProgress;
+}
+
 /** Name of the button a task clicks, for display. */
 export function taskButtonName(task: ScheduledTask, fallback: string): string {
   if (task.descriptor?.initialText?.trim()) return task.descriptor.initialText.trim();
@@ -49,12 +59,19 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
     return () => clearInterval(timer);
   }, []);
 
+  // The guide is for someone who has not done the steps yet: once a button was picked (or a hunt
+  // scheduled) it goes away for good, unless asked for again from the settings.
   useEffect(() => {
-    chrome.storage.local
-      .get(STORAGE_KEYS.ONBOARDING_DONE)
-      .then((d) => setShowGuide(!d[STORAGE_KEYS.ONBOARDING_DONE]))
-      .catch(() => setShowGuide(false));
-  }, []);
+    (async () => {
+      const flag = (await chrome.storage.local.get(STORAGE_KEYS.ONBOARDING_DONE))[STORAGE_KEYS.ONBOARDING_DONE];
+      const hasProgress = (await storage.getSavedPageTargets()).length > 0 || tasks.length > 0;
+      const show = shouldShowGuide(flag, hasProgress);
+      setShowGuide(show);
+      if (!show && flag === undefined && hasProgress) {
+        await chrome.storage.local.set({ [STORAGE_KEYS.ONBOARDING_DONE]: true });
+      }
+    })().catch(() => setShowGuide(false));
+  }, [tasks.length]);
 
   useEffect(() => {
     setSaved(null);
