@@ -39,6 +39,31 @@ function isTopWindow(): boolean {
 }
 
 let hudRoot: ReactDOM.Root | null = null;
+
+/**
+ * This content script instance. After the extension is reloaded or updated, the previous instance's
+ * HUD / badge can still be on the page but is dead (it no longer receives anything); the new
+ * instance must replace it instead of taking it for its own.
+ */
+const INSTANCE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+/** Removes HUD / badge / picker elements left on the page by a previous (dead) instance. */
+export function removeStaleRoots(doc: Document = document, instanceId = INSTANCE_ID): void {
+  let staleHud = false;
+  for (const id of ["dealhunter-hud-root", "dealhunter-badge-root"]) {
+    const el = doc.getElementById(id);
+    if (el && el.dataset.dhInstance !== instanceId) {
+      if (id === "dealhunter-hud-root") staleHud = true;
+      el.remove();
+    }
+  }
+  // A picker left half-way by the dead HUD (never the current HUD's picker)
+  if (staleHud) {
+    doc.getElementById("dh-picker-overlay")?.remove();
+    doc.body?.classList.remove("dh-picking-active");
+  }
+}
+
 let badgeRoot: ReactDOM.Root | null = null;
 
 // 2. Inject Floating HUD on voucher/campaign/cart pages or pages with a saved target / scheduled task / armed session
@@ -103,6 +128,7 @@ async function injectFloatingHUD(force = false, autoPick = false) {
   }
 
   if (!force && !isVoucherPage && !hasSavedTarget && !hasScheduledTask && !hasArmedSession) return;
+  removeStaleRoots();
   if (document.getElementById("dealhunter-hud-root")) {
     if (autoPick) {
       hudBus.requestPick();
@@ -112,6 +138,7 @@ async function injectFloatingHUD(force = false, autoPick = false) {
 
   const container = document.createElement("div");
   container.id = "dealhunter-hud-root";
+  container.dataset.dhInstance = INSTANCE_ID;
   document.body.appendChild(container);
 
   hudRoot = ReactDOM.createRoot(container);
@@ -151,10 +178,12 @@ export function isECommerceProductPage(urlStr: string): boolean {
 
 function injectPriceHistoryBadge() {
   if (!isECommerceProductPage(window.location.href)) return;
+  removeStaleRoots();
   if (document.getElementById("dealhunter-badge-root")) return;
 
   const container = document.createElement("div");
   container.id = "dealhunter-badge-root";
+  container.dataset.dhInstance = INSTANCE_ID;
   document.body.appendChild(container);
 
   badgeRoot = ReactDOM.createRoot(container);

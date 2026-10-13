@@ -61,3 +61,19 @@ describe("clock sync on the page", () => {
     expect(sendMessage).toHaveBeenCalled();
   });
 });
+
+describe("after the extension is reloaded", () => {
+  it("a HUD left by the previous (dead) content script is replaced, the current one is kept", async () => {
+    const { removeStaleRoots } = await import("./index");
+    document.body.innerHTML = `<div id="dealhunter-hud-root" data-dh-instance="old"></div><div id="dh-picker-overlay"></div>`;
+    document.body.classList.add("dh-picking-active");
+    removeStaleRoots(document, "new");
+    expect(document.getElementById("dealhunter-hud-root")).toBeNull();
+    expect(document.getElementById("dh-picker-overlay")).toBeNull();
+    expect(document.body.classList.contains("dh-picking-active")).toBe(false);
+
+    document.body.innerHTML = `<div id="dealhunter-hud-root" data-dh-instance="new"></div>`;
+    removeStaleRoots(document, "new");
+    expect(document.getElementById("dealhunter-hud-root")).not.toBeNull();
+  });
+});
