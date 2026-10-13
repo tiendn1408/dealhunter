@@ -7,21 +7,39 @@ import { apiClient, SessionRejectedError } from "../lib/api_client";
 import { PriceContextResponse } from "../lib/types";
 import { isValidHttpUrl } from "../lib/url";
 
-// 1. Listen for extension install / update and browser startup (H1)
+/**
+ * Periodic task check: the service worker can be stopped mid-hunt, losing the result message, and
+ * the task alarms are one-shot. Every few minutes tasks are brought in line with the clock (a stuck
+ * daily task moves on to its next drop, a missing alarm is recreated).
+ */
+const WATCHDOG_ALARM = "dh_watchdog";
+const WATCHDOG_PERIOD_MIN = 5;
+
+function startWatchdog() {
+  chrome.alarms.create(WATCHDOG_ALARM, { periodInMinutes: WATCHDOG_PERIOD_MIN });
+}
+
+// 1. Listen for extension install / update and browser startup (H1). No clock calibration here:
+// the clock is measured only against a site being hunted (decision 2).
 chrome.runtime.onInstalled.addListener(async () => {
   console.log("[DealHunter ServiceWorker] Extension installed / updated");
+  startWatchdog();
   await taskScheduler.restorePendingAlarms();
-  await timeCalibrator.calibrate(3);
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   console.log("[DealHunter ServiceWorker] Browser startup");
+  startWatchdog();
   await taskScheduler.restorePendingAlarms();
 });
 
-// 2. Listen for alarm triggers (Full-Auto scheduled hunts)
+// 2. Listen for alarm triggers (Full-Auto scheduled hunts, watchdog)
 chrome.alarms.onAlarm.addListener((alarm) => {
-  taskScheduler.handleAlarm(alarm);
+  if (alarm.name === WATCHDOG_ALARM) {
+    taskScheduler.restorePendingAlarms().catch((err) => console.warn("[DealHunter] Watchdog failed:", err));
+    return;
+  }
+  taskScheduler.handleAlarm(alarm).catch((err) => console.warn("[DealHunter] Alarm handling failed:", err));
 });
 
 // 3. Message dispatcher across components
@@ -109,7 +127,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // 4. Sign-in session pushed by the DealHunter web app (see web_session.ts)
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  webSession.handleExternalMessage(message, sender.origin).then((accepted) => sendResponse({ accepted }));
+  webSession
+    .handleExternalMessage(message, sender.origin)
+    .then((accepted) => sendResponse({ accepted }))
+    .catch(() => sendResponse({ accepted: false }));
   return true;
 });
 

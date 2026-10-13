@@ -44,7 +44,7 @@ describe("TimeCalibrator.calibrate", () => {
     const frozen = new Date("2026-10-10T00:00:00.000Z").toUTCString();
     globalThis.fetch = vi.fn().mockResolvedValue({ headers: { get: (h: string) => (h === "Date" ? frozen : null) } });
 
-    const result = await new TimeCalibrator().calibrate(3, 200);
+    const result = await new TimeCalibrator().calibrate(3, 200, "https://shop.vn/favicon.ico");
     expect(result.calibrated).toBe(false);
     expect(result.offsetMs).toBe(0);
     expect(result.errorMs).toBe(1000);

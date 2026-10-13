@@ -262,15 +262,18 @@ export class HuntCoordinator {
       now
     );
 
-    // H2: If past drop deadline grace window (15s), mark missed and abort arm
+    // H2: If past drop deadline grace window (15s), report missed (the background moves a daily task
+    // on to its next drop) and abort arm. Tasks are written by the background only.
     if (now > targetTimestamp + 15_000) {
       console.warn(`[HuntCoordinator] Task ${task.id} target time expired. Aborting arm.`);
-      await storage.updateTaskStatus(task.id, "missed", {
-        result: "timeout",
-        clicks: 0,
-        detail: "Task deadline expired before arming",
-        finishedAt: now,
-      });
+      chrome.runtime
+        ?.sendMessage({
+          action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
+          taskId: task.id,
+          status: "missed",
+          result: { result: "timeout", clicks: 0, detail: "Task deadline expired before arming" },
+        })
+        .catch(() => {});
       return;
     }
 
@@ -349,6 +352,8 @@ export class HuntCoordinator {
    */
   disarm(updateStorage = true): void {
     const taskId = this.currentSession?.taskId;
+    // A running engine reports the cancel itself (handleDone -> TASK_STATUS_UPDATE "cancelled")
+    const reportedByEngine = Boolean(this.activeCancel);
     if (this.activeCancel) {
       this.activeCancel();
       this.activeCancel = null;
@@ -363,9 +368,17 @@ export class HuntCoordinator {
       }
     }
 
-    if (updateStorage && taskId && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime.sendMessage({ action: MESSAGE_ACTIONS.CANCEL_TASK, taskId }).catch(() => {});
-      storage.updateTaskStatus(taskId, "cancelled").catch(() => {});
+    // Disarming a scheduled run cancels this run only (a daily task continues tomorrow); deleting the
+    // task is done from the task list. The background owns the task list.
+    if (updateStorage && taskId && !reportedByEngine && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+      chrome.runtime
+        .sendMessage({
+          action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
+          taskId,
+          status: "cancelled",
+          result: { result: "cancelled", clicks: 0, detail: "Cancelled" },
+        })
+        .catch(() => {});
     }
 
     this.setState({

@@ -67,7 +67,7 @@ describe("HuntCoordinator", () => {
     expect(sessionStorage.getItem(ARMED_SESSION_KEY)).toBeNull();
   });
 
-  it("H4: disarm sends TASK_STATUS_UPDATE cancelled when taskId exists", () => {
+  it("H4: disarming a scheduled run reports it cancelled once, never deletes the task or writes storage", () => {
     const updateSpy = vi.spyOn(storage, "updateTaskStatus").mockResolvedValue();
 
     coordinator.arm({
@@ -79,11 +79,12 @@ describe("HuntCoordinator", () => {
 
     coordinator.disarm();
 
-    expect(updateSpy).toHaveBeenCalledWith("task-123", "cancelled");
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-      action: "CANCEL_TASK",
-      taskId: "task-123",
-    }));
+    const sent = (chrome.runtime.sendMessage as any).mock.calls.map((c: any[]) => c[0]);
+    expect(sent.filter((m: any) => m.action === "CANCEL_TASK")).toHaveLength(0);
+    const statuses = sent.filter((m: any) => m.action === "TASK_STATUS_UPDATE");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toMatchObject({ taskId: "task-123", status: "cancelled" });
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 
   it("M3: adopts taskId into existing manual session with same timestamp without restarting", () => {
@@ -107,7 +108,7 @@ describe("HuntCoordinator", () => {
     expect(coordinator.isArmed()).toBe(true);
   });
 
-  it("H2: armFromTask marks task missed and aborts if now is past targetDeadline + 15s", async () => {
+  it("H2: armFromTask reports the task missed and aborts if now is past targetDeadline + 15s", async () => {
     vi.spyOn(timeSyncClient, "getServerTime").mockReturnValue(1_020_000);
     const updateSpy = vi.spyOn(storage, "updateTaskStatus").mockResolvedValue();
 
@@ -126,9 +127,13 @@ describe("HuntCoordinator", () => {
     await coordinator.armFromTask(expiredTask);
 
     expect(coordinator.isArmed()).toBe(false);
-    expect(updateSpy).toHaveBeenCalledWith("expired-task", "missed", expect.objectContaining({
-      result: "timeout",
-      clicks: 0,
+    // Reported to the background (which rolls a daily task over), not written from the page
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      action: "TASK_STATUS_UPDATE",
+      taskId: "expired-task",
+      status: "missed",
+      result: expect.objectContaining({ result: "timeout", clicks: 0 }),
     }));
   });
 

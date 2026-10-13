@@ -5,6 +5,25 @@ import { MESSAGE_ACTIONS } from "../lib/constants";
 import { nextExactDropAt } from "../lib/drop_time";
 import { isSamePageUrl } from "../lib/url";
 
+/** Outcomes after which a daily task moves on to its next drop. */
+const ROLL_OVER_STATUSES = new Set<ScheduledTask["status"]>(["completed", "failed", "missed", "cancelled"]);
+
+/**
+ * The drop a task was created for: the first HH:mm:ss after it was created. For tasks saved before
+ * targetAt existed; without createdAt the next one from now.
+ */
+function firstDropAt(task: ScheduledTask, now = Date.now()): number {
+  return nextExactDropAt(task.targetHour, task.targetMinute, task.targetSecond ?? 0, task.createdAt ?? now);
+}
+
+/** Moves a daily task to its next drop, strictly after the current one (and at least a minute ahead). */
+function rollDailyTask(task: ScheduledTask, now: number, lastResult?: ScheduledTask["lastResult"]): void {
+  const after = Math.max(now, task.targetAt ?? now) + 60_000;
+  task.targetAt = nextExactDropAt(task.targetHour, task.targetMinute, task.targetSecond ?? 0, after);
+  task.status = "pending";
+  if (lastResult) task.lastResult = lastResult;
+}
+
 export class TaskScheduler {
   private runningTabTasks: Map<number, string> = new Map();
 
@@ -40,44 +59,42 @@ export class TaskScheduler {
   }
 
   /**
-   * Handles task status update and automatically rolls over daily tasks to tomorrow.
+   * Records a task result. A daily task moves on to its next drop instead (any outcome, including a
+   * disarm: that skips today only). Unknown tasks (deleted meanwhile) are ignored.
    */
   async handleTaskStatusUpdate(
     taskId: string,
     status: ScheduledTask["status"],
     lastResult?: ScheduledTask["lastResult"]
   ): Promise<void> {
-    const tasks = await storage.getTasks();
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) return;
-
     if (status !== "running") {
       this.clearRunningTab(taskId);
     }
 
-    if (task.isDaily && (status === "completed" || status === "failed" || status === "missed")) {
-      const now = Date.now();
-      const second = task.targetSecond ?? 0;
-      // Calculate next day drop timestamp (offset by 60s to guarantee rolling over to next day)
-      const nextTarget = nextExactDropAt(task.targetHour, task.targetMinute, second, now + 60_000);
-      task.targetAt = nextTarget;
-      task.status = "pending";
+    const rolled = await storage.mutateTasks((tasks) => {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return null;
+      if (task.isDaily && ROLL_OVER_STATUSES.has(status)) {
+        rollDailyTask(task, Date.now(), lastResult);
+        return task;
+      }
+      task.status = status;
       if (lastResult) task.lastResult = lastResult;
-      await storage.saveTasks(tasks);
+      return null;
+    });
 
-      // Re-register alarm for the next drop
-      const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
-      const preWarmTime = nextTarget - preWarmMs;
-      const alarmTime = Math.max(preWarmTime, now + 500);
-      const alarmName = `dh_task_${task.id}`;
-      chrome.alarms.create(alarmName, { when: alarmTime });
+    if (rolled) {
+      this.createAlarm(rolled, Date.now());
       console.log(
-        `[TaskScheduler] Daily task ${task.id} rolled over to next drop at ${new Date(nextTarget).toLocaleString()}`
+        `[TaskScheduler] Daily task ${rolled.id} rolled over to next drop at ${new Date(rolled.targetAt!).toLocaleString()}`
       );
-      return;
     }
+  }
 
-    await storage.updateTaskStatus(taskId, status, lastResult);
+  /** Alarm for a task: its pre-warm time before the drop (at least slightly in the future). */
+  private createAlarm(task: ScheduledTask, now: number): void {
+    const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
+    chrome.alarms.create(`dh_task_${task.id}`, { when: Math.max(task.targetAt! - preWarmMs, now + 500) });
   }
 
   clearRunningTab(taskId: string): void {
@@ -121,56 +138,49 @@ export class TaskScheduler {
   }
 
   /**
-   * Restores alarms for all pending tasks on browser startup / extension reload (H1).
-   * Expired tasks beyond grace deadline are marked missed (H2/H3).
+   * Brings every task in line with the clock, on browser startup / extension reload (H1) and
+   * periodically (watchdog: a result can be lost when the service worker is stopped mid-hunt):
+   * - pending past its drop (+15 s grace) or running past it (+60 s: the hunt is surely over):
+   *   a daily task moves on to its next drop, a one-off task is marked missed (H2/H3);
+   * - a pending task without an alarm gets one back. An existing alarm is left alone, so a task
+   *   about to fire is not triggered twice.
+   * One write for the whole pass, so no task's update overwrites another's.
    */
   async restorePendingAlarms(): Promise<void> {
-    const tasks = await storage.getTasks();
     const now = Date.now();
-    for (const task of tasks) {
-      if (task.status === "pending" || task.status === "running") {
-        const second = task.targetSecond ?? 0;
-        const target = task.targetAt ?? nextExactDropAt(task.targetHour, task.targetMinute, second, now);
-        task.targetAt = target;
+    const toAlarm = await storage.mutateTasks((tasks) => {
+      const out: ScheduledTask[] = [];
+      for (const task of tasks) {
+        if (task.status !== "pending" && task.status !== "running") continue;
+        task.targetAt = task.targetAt ?? firstDropAt(task);
+        const grace = task.status === "running" ? 60_000 : 15_000;
 
-        if (now > target + 15_000) {
+        if (now > task.targetAt + grace) {
+          const detail =
+            task.status === "running"
+              ? "The hunt's result never came back (tab closed or browser stopped)"
+              : "Drop deadline expired during browser/extension downtime";
+          const lastResult = { result: "timeout" as const, clicks: 0, detail, finishedAt: now };
           if (task.isDaily) {
-            // Daily task expired while browser/extension was down: roll over to the upcoming drop
-            const nextTarget = nextExactDropAt(task.targetHour, task.targetMinute, second, now);
-            task.targetAt = nextTarget;
-            task.status = "pending";
-            task.lastResult = {
-              result: "timeout",
-              clicks: 0,
-              detail: "Drop deadline expired during downtime (rescheduled for next drop)",
-              finishedAt: now,
-            };
-            await storage.saveTasks(tasks);
-            const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
-            const preWarmTime = nextTarget - preWarmMs;
-            const alarmTime = Math.max(preWarmTime, now + 500);
-            chrome.alarms.create(`dh_task_${task.id}`, { when: alarmTime });
-            console.log(
-              `[TaskScheduler] Daily task ${task.id} recovered and rescheduled for next drop at ${new Date(nextTarget).toLocaleString()}`
-            );
+            rollDailyTask(task, now, lastResult);
+            out.push(task);
           } else {
-            console.warn(`[TaskScheduler] Task ${task.id} expired during downtime. Marking missed!`);
-            await storage.updateTaskStatus(task.id, "missed", {
-              result: "timeout",
-              clicks: 0,
-              detail: "Drop deadline expired during browser/extension downtime",
-              finishedAt: now,
-            });
+            task.status = "missed";
+            task.lastResult = lastResult;
           }
-        } else {
-          const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
-          const preWarmTime = target - preWarmMs;
-          const alarmTime = Math.max(preWarmTime, now + 500);
-          const alarmName = `dh_task_${task.id}`;
-          chrome.alarms.create(alarmName, { when: alarmTime });
-          console.log(`[TaskScheduler] Restored alarm for task ${task.id} at ${new Date(alarmTime).toLocaleTimeString()}`);
+        } else if (task.status === "pending") {
+          out.push(task);
         }
       }
+      return out;
+    });
+
+    for (const task of toAlarm) {
+      const name = `dh_task_${task.id}`;
+      const existing = typeof chrome.alarms.get === "function" ? await chrome.alarms.get(name) : undefined;
+      if (existing) continue;
+      this.createAlarm(task, now);
+      console.log(`[TaskScheduler] Restored alarm for task ${task.id} (drop ${new Date(task.targetAt!).toLocaleString()})`);
     }
   }
 
@@ -182,23 +192,11 @@ export class TaskScheduler {
     const now = Date.now();
     const second = task.targetSecond ?? 0;
     // Calculate and lock absolute target drop timestamp (H2)
-    const target = task.targetAt ?? nextExactDropAt(task.targetHour, task.targetMinute, second, now);
-    task.targetAt = target;
+    task.targetAt = task.targetAt ?? nextExactDropAt(task.targetHour, task.targetMinute, second, now);
 
     await storage.addTask(task);
-
-    const preWarmMs = (task.preWarmSeconds ?? 60) * 1000;
-    const preWarmTime = target - preWarmMs;
-    const alarmTime = Math.max(preWarmTime, now + 500);
-    const alarmName = `dh_task_${task.id}`;
-
-    chrome.alarms.create(alarmName, {
-      when: alarmTime,
-    });
-
-    console.log(
-      `[TaskScheduler] Task ${task.id} scheduled for pre-warm at ${new Date(alarmTime).toLocaleTimeString()}`
-    );
+    this.createAlarm(task, now);
+    console.log(`[TaskScheduler] Task ${task.id} scheduled for drop ${new Date(task.targetAt).toLocaleString()}`);
   }
 
   /**
@@ -211,27 +209,18 @@ export class TaskScheduler {
     const tasks = await storage.getTasks();
     const task = tasks.find((t) => t.id === taskId);
 
-    if (!task || task.status === "cancelled" || task.status === "completed" || task.status === "missed") return;
+    // Only a task still waiting for its drop is started (a stale alarm of a finished one is ignored)
+    if (!task || (task.status !== "pending" && task.status !== "running")) return;
 
     const now = Date.now();
-    const second = task.targetSecond ?? 0;
-    const targetTimestamp = task.targetAt ?? nextExactDropAt(task.targetHour, task.targetMinute, second, now);
+    const targetTimestamp = task.targetAt ?? firstDropAt(task);
     task.targetAt = targetTimestamp;
 
-    // H2 / H3: If the alarm triggered past drop deadline grace window (15s), mark missed and abort!
+    // H2 / H3: If the alarm triggered past drop deadline grace window (15s), mark missed (a daily
+    // task moves on to its next drop) and abort.
     if (now > targetTimestamp + 15_000) {
-      if (task.isDaily) {
-        console.warn(`[TaskScheduler] Daily task ${task.id} alarm fired past drop deadline. Rolling over.`);
-        await this.handleTaskStatusUpdate(task.id, "missed", {
-          result: "timeout",
-          clicks: 0,
-          detail: "Drop deadline expired before alarm triggered (device asleep or off)",
-          finishedAt: now,
-        });
-        return;
-      }
-      console.warn(`[TaskScheduler] Task ${task.id} alarm fired past drop deadline. Marking missed.`);
-      await storage.updateTaskStatus(taskId, "missed", {
+      console.warn(`[TaskScheduler] Task ${task.id} alarm fired past drop deadline.`);
+      await this.handleTaskStatusUpdate(task.id, "missed", {
         result: "timeout",
         clicks: 0,
         detail: "Drop deadline expired before alarm triggered (device asleep or off)",
@@ -261,7 +250,7 @@ export class TaskScheduler {
       const targetOrigin = new URL(task.targetUrl).origin;
       await timeCalibrator.calibrate(3, 4000, `${targetOrigin}/favicon.ico`);
     } catch {
-      await timeCalibrator.calibrate(3);
+      // No calibration for this site: the hunt uses the last known offset (never another site's).
     }
 
     // 3. Check if target tab is already open — reuse and focus rather than spamming duplicate tabs (H7)

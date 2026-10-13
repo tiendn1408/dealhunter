@@ -25,6 +25,21 @@ export const storage = {
     await chrome.storage.local.set({ [STORAGE_KEYS.SCHEDULED_TASKS]: tasks });
   },
 
+  /**
+   * Read-modify-write of the task list in this context's write queue: `mutate` gets the current list
+   * and changes it in place; it is saved afterwards. Every task write goes through here (or the
+   * helpers below), so concurrent updates never overwrite each other with a stale copy. Tasks are
+   * written only by the background service worker; other contexts send it messages.
+   */
+  async mutateTasks<T>(mutate: (tasks: ScheduledTask[]) => T | Promise<T>): Promise<T> {
+    return enqueueTaskMutation(async () => {
+      const tasks = await this.getTasks();
+      const result = await mutate(tasks);
+      await this.saveTasks(tasks);
+      return result;
+    });
+  },
+
   async addTask(task: ScheduledTask): Promise<void> {
     return enqueueTaskMutation(async () => {
       const tasks = await this.getTasks();

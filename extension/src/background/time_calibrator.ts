@@ -1,4 +1,3 @@
-import { SHOPEE_URLS } from "../lib/constants";
 import { ClockCalibration } from "../lib/types";
 import { storage } from "../lib/storage";
 
@@ -40,7 +39,8 @@ export function estimateOffsetFromProbes(probes: ClockProbe[]): { offsetMs: numb
 }
 
 export class TimeCalibrator {
-  private defaultTargetUrl: string = SHOPEE_URLS.PING_TARGET;
+  /** One calibration per site at a time: concurrent callers (tab focus, popup, alarm) share it. */
+  private inFlight = new Map<string, Promise<ClockCalibration>>();
 
   private async probe(url: string): Promise<ClockProbe | null> {
     const sentAt = Date.now();
@@ -54,16 +54,26 @@ export class TimeCalibrator {
 
   /**
    * Probes targetUrl back-to-back until `boundaries` second roll-overs were observed (or the time budget
-   * runs out) and stores the median offset. Falls back gracefully to default ping target if targetUrl fails.
+   * runs out) and stores the median offset.
    */
   async calibrate(boundaries = 3, budgetMs = 6000, targetUrl?: string): Promise<ClockCalibration> {
-    let activeUrl = targetUrl || this.defaultTargetUrl;
-    let urlHost = "";
+    // Only the site being hunted is probed: there is no default site to fall back to.
+    let urlHost: string;
     try {
-      urlHost = new URL(activeUrl).hostname.replace(/^www\./, "");
+      const u = new URL(targetUrl || "");
+      if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("not http");
+      urlHost = u.hostname.replace(/^www\./, "");
     } catch {
-      urlHost = "server";
+      throw new Error("A http(s) target URL is required to calibrate the clock");
     }
+    const running = this.inFlight.get(urlHost);
+    if (running) return running;
+    const run = this.run(boundaries, budgetMs, targetUrl!, urlHost).finally(() => this.inFlight.delete(urlHost));
+    this.inFlight.set(urlHost, run);
+    return run;
+  }
+
+  private async run(boundaries: number, budgetMs: number, activeUrl: string, urlHost: string): Promise<ClockCalibration> {
 
     const probes: ClockProbe[] = [];
     const deadline = Date.now() + budgetMs;
@@ -114,7 +124,8 @@ export class TimeCalibrator {
         }
       : { offsetMs: 0, rttMs: medianRtt, errorMs: 1000, calibrated: false, lastCalibratedAt: Date.now(), serverHost: urlHost };
 
-    await storage.saveCalibration(calibration);
+    // A failed run (site unreachable, no Date header) must not replace a good calibration
+    if (calibration.calibrated) await storage.saveCalibration(calibration);
     return calibration;
   }
 }

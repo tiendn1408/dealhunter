@@ -364,14 +364,11 @@ if (isTopWindow() && typeof chrome !== "undefined" && chrome.runtime?.onMessage)
     }
 
     if (message.action === MESSAGE_ACTIONS.CANCEL_TASK) {
-      // H4: Disarm active hunt on this tab and clean session
-      huntCoordinator.disarm(false);
-      try {
-        sessionStorage.removeItem(ARMED_SESSION_KEY);
-      } catch {
-        // ignore
-      }
-      sendResponse({ success: true, cancelled: true });
+      // H4: the task was deleted: stop its hunt on this tab (not a manual hunt or another task's)
+      const armedTaskId = huntCoordinator.getCurrentSession()?.taskId;
+      const cancelled = Boolean(message.taskId) && armedTaskId === message.taskId;
+      if (cancelled) huntCoordinator.disarm(false);
+      sendResponse({ success: true, cancelled });
       return false;
     }
 
