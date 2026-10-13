@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { TimeOffsetCard } from "./components/TimeOffsetCard";
 import { ScheduleForm } from "./components/ScheduleForm";
 import { TaskList } from "./components/TaskList";
-import { CheckInLog } from "./components/CheckInLog";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { storage } from "../lib/storage";
 import {
   DEFAULT_SETTINGS,
@@ -23,13 +23,14 @@ import {
   ShieldCheck,
   Languages,
   Timer,
-  ScrollText,
+  Settings,
 } from "lucide-react";
 
-type TabMode = "live" | "schedule" | "tasks" | "log";
+type TabMode = "live" | "schedule" | "tasks";
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabMode>("live");
+  const [showSettings, setShowSettings] = useState(false);
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [webUrl, setWebUrl] = useState(DEFAULT_SETTINGS.dealHunterWebUrl);
   const [lang, setLang] = useState<Language>("en");
@@ -126,11 +127,11 @@ export const App: React.FC = () => {
     return () => chrome.storage.onChanged.removeListener(onChange);
   }, []);
 
-  const handleToggleLang = async () => {
-    const nextLang: Language = lang === "en" ? "vi" : "en";
+  const changeLang = async (nextLang: Language) => {
     setLang(nextLang);
     await storage.setLanguage(nextLang);
   };
+  const handleToggleLang = () => changeLang(lang === "en" ? "vi" : "en");
 
   // Launch Sniper CTA: If on an active web page, activate in-page HUD directly! Otherwise open Shopee.
   const handleStartSniper = async () => {
@@ -212,72 +213,82 @@ export const App: React.FC = () => {
             <span>{t.webApp}</span>
             <ExternalLink className="h-2.5 w-2.5" />
           </a>
+          <button
+            type="button"
+            onClick={() => setShowSettings(!showSettings)}
+            aria-label={t.settingsTitle}
+            aria-pressed={showSettings}
+            title={t.settingsTitle}
+            className={`flex h-[22px] w-[22px] items-center justify-center rounded-lg ring-1 transition ${
+              showSettings
+                ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/40"
+                : "bg-white/5 text-slate-300 ring-white/10 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
         </div>
       </header>
 
-      {/* 2. Navigation Tabs */}
-      <nav className="shrink-0 grid grid-cols-4 border-b border-white/[0.06] bg-black/20 p-1.5 gap-1 text-[11px] font-semibold">
-        <button
-          type="button"
-          onClick={() => setActiveTab("live")}
-          className={`flex items-center justify-center gap-1.5 rounded-xl py-2 transition ${
-            activeTab === "live"
-              ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
-          }`}
-        >
-          <Crosshair className="h-3.5 w-3.5" />
-          <span>{t.tabLiveSniper}</span>
-        </button>
+      {/* 2. Navigation Tabs (hidden on the settings page) */}
+      {!showSettings && (
+        <nav className="shrink-0 grid grid-cols-3 border-b border-white/[0.06] bg-black/20 p-1.5 gap-1 text-[11px] font-semibold">
+          <button
+            type="button"
+            onClick={() => setActiveTab("live")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 transition ${
+              activeTab === "live"
+                ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
+            }`}
+          >
+            <Crosshair className="h-3.5 w-3.5" />
+            <span>{t.tabLiveSniper}</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("schedule")}
-          className={`flex items-center justify-center gap-1.5 rounded-xl py-2 transition ${
-            activeTab === "schedule"
-              ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
-          }`}
-        >
-          <CalendarClock className="h-3.5 w-3.5" />
-          <span>{t.tabSchedule}</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("schedule")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 transition ${
+              activeTab === "schedule"
+                ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
+            }`}
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            <span>{t.tabSchedule}</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("tasks")}
-          className={`flex items-center justify-center gap-1.5 rounded-xl py-2 transition ${
-            activeTab === "tasks"
-              ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
-          }`}
-        >
-          <ListTodo className="h-3.5 w-3.5" />
-          <span>{t.tabTasks(tasks.length)}</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("tasks")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 transition ${
+              activeTab === "tasks"
+                ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
+            }`}
+          >
+            <ListTodo className="h-3.5 w-3.5" />
+            <span>{t.tabTasks(tasks.length)}</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("log")}
-          className={`flex items-center justify-center gap-1.5 rounded-xl py-2 transition ${
-            activeTab === "log"
-              ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm"
-              : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
-          }`}
-        >
-          <ScrollText className="h-3.5 w-3.5" />
-          <span>{t.tabLog}</span>
-        </button>
-      </nav>
+        </nav>
+      )}
 
       {/* 3. Tab Body Content */}
-      {activeTab === "tasks" ? (
+      {showSettings ? (
+        <main className="flex-1 min-h-0 flex flex-col overflow-y-auto px-3.5 py-3">
+          <SettingsPanel
+            lang={lang}
+            onLangChange={changeLang}
+            account={account}
+            webUrl={webUrl}
+            onBack={() => setShowSettings(false)}
+          />
+        </main>
+      ) : activeTab === "tasks" ? (
         <main className="flex-1 min-h-0 flex flex-col px-3.5 pt-3 pb-2">
           <TaskList tasks={tasks} onTasksChanged={loadTasks} lang={lang} />
-        </main>
-      ) : activeTab === "log" ? (
-        <main className="flex-1 min-h-0 flex flex-col px-3.5 pt-3 pb-2">
-          <CheckInLog lang={lang} />
         </main>
       ) : (
         <main className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-3">

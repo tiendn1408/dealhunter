@@ -3,7 +3,22 @@ import { Clock, RefreshCw } from "lucide-react";
 import { ClockCalibration } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
+import { isSamePageUrl } from "../../lib/url";
 import { Language, getTranslation } from "../../lib/i18n";
+
+/** Re-measure a hunted page whose clock was never measured, failed, or is older than this. */
+const MAX_CALIBRATION_AGE_MS = 5 * 60 * 1000;
+
+export function shouldAutoSync(cal: ClockCalibration | null, now: number): boolean {
+  return !cal || !cal.calibrated || now - cal.lastCalibratedAt > MAX_CALIBRATION_AGE_MS;
+}
+
+/** The page has a saved button or a scheduled task that is not finished. */
+export async function isHuntedPage(url: string): Promise<boolean> {
+  if (await storage.getSavedTargetForUrl(url)) return true;
+  const tasks = await storage.getTasks();
+  return tasks.some((t) => (t.status === "pending" || t.status === "running") && isSamePageUrl(t.targetUrl, url));
+}
 
 interface TimeOffsetCardProps {
   lang?: Language;
@@ -44,24 +59,40 @@ export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({
     }
   };
 
-  // Shows what was measured for this site. Opening the popup never probes the site: measuring
-  // happens with the refresh button or when a hunt needs it (decision 2).
+  // Decision 2: the clock is measured only for a page that is hunted. Opening the popup on such a
+  // page (saved button or scheduled task) measures it when needed; on any other page nothing is
+  // probed and the card just says it will be measured when hunting there.
+  const [pageIsHunted, setPageIsHunted] = useState(false);
   useEffect(() => {
+    let cancelled = false;
+    setPageIsHunted(false);
     if (!cleanDomain) {
       setCalibration(null);
       return;
     }
-    storage
-      .getCalibration(cleanDomain)
-      .then((cal) => setCalibration(cal))
-      .catch(() => setCalibration(null));
-  }, [cleanDomain]);
+    (async () => {
+      const [cal, hunted] = await Promise.all([
+        storage.getCalibration(cleanDomain).catch(() => null),
+        activeUrl ? isHuntedPage(activeUrl).catch(() => false) : Promise.resolve(false),
+      ]);
+      if (cancelled) return;
+      setCalibration(cal);
+      setPageIsHunted(hunted);
+      if (hunted && shouldAutoSync(cal, Date.now())) handleRefresh();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cleanDomain, activeUrl]);
 
   const synced = !!calibration?.calibrated;
   const offset = calibration?.offsetMs ?? 0;
   const ageMin = calibration ? Math.round((Date.now() - calibration.lastCalibratedAt) / 60000) : null;
-  const syncAgeText =
-    ageMin === null
+  // Never measured and not hunted here: nothing is wrong, it is simply not needed yet
+  const idle = !calibration && !pageIsHunted && !loading;
+  const syncAgeText = idle
+    ? t.syncWhenHunting
+    : ageMin === null
       ? t.neverSynced
       : ageMin === 0
       ? t.syncedJustNow
@@ -104,6 +135,8 @@ export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({
               {offset} ms
               <span className="ml-1 text-[10px] font-semibold text-slate-400">±{calibration!.errorMs}</span>
             </span>
+          ) : idle ? (
+            <span className="text-[12px] font-semibold text-slate-400">{t.notNeededYet}</span>
           ) : (
             <span className="text-[12px] font-semibold text-rose-400">{t.notSynced}</span>
           )}
