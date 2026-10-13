@@ -219,10 +219,16 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
         </section>
       )}
 
+      {/* Floating at the bottom of the popup: showing it moves nothing */}
       {notice && (
-        <p className={`px-1 text-center text-[12px] font-semibold ${notice.tone === "ok" ? "text-emerald-300" : "text-amber-300"}`}>
+        <div
+          role="status"
+          className={`absolute inset-x-3 bottom-3 z-40 rounded-xl px-3 py-2.5 text-center text-[12px] font-semibold shadow-2xl ring-1 ${
+            notice.tone === "ok" ? "bg-emerald-950 text-emerald-200 ring-emerald-500/40" : "bg-amber-950 text-amber-200 ring-amber-500/40"
+          }`}
+        >
           {notice.text}
-        </p>
+        </div>
       )}
 
       {onWeb && <ClockStatus lang={lang} activeUrl={activeUrl} activeDomain={activeDomain} />}

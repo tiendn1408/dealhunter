@@ -94,6 +94,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 
+  if (message.action === MESSAGE_ACTIONS.UPDATE_TASK) {
+    if (message.task?.id && isValidHttpUrl(message.task.targetUrl)) {
+      taskScheduler
+        .updateTask(message.task)
+        .then(() => sendResponse({ success: true }))
+        .catch((err) => sendResponse({ success: false, error: (err as Error).message }));
+      return true;
+    }
+    sendResponse({ success: false, error: "Invalid task" });
+    return true;
+  }
+
+  if (message.action === MESSAGE_ACTIONS.OPEN_AND_PICK) {
+    if (!isValidHttpUrl(message.url)) {
+      sendResponse({ success: false, error: "Invalid URL" });
+      return true;
+    }
+    taskScheduler
+      .openAndPick(message.url)
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: (err as Error).message }));
+    return true;
+  }
+
   if (message.action === MESSAGE_ACTIONS.CANCEL_TASK) {
     if (message.taskId) {
       taskScheduler

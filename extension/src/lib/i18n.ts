@@ -1,6 +1,11 @@
 export type Language = "en" | "vi";
 
 const en = {
+  scheduleEditTitle: "Edit hunt",
+  scheduleSaveChanges: "Save changes",
+  scheduleRepick: "Pick the button again on its page",
+  scheduleReloadHint: "Auto-timed to the page's load speed",
+  taskEditHint: "Tap to edit",
   testClickDone: "Pressed",
   settingsShowGuide: "Show the 3-step guide again",
   hudExpand: "Open the hunt panel",
@@ -269,6 +274,11 @@ type DeepStringify<T> = {
 type TranslationCatalog = DeepStringify<typeof en>;
 
 const vi: TranslationCatalog = {
+  scheduleEditTitle: "Sửa lịch săn",
+  scheduleSaveChanges: "Lưu thay đổi",
+  scheduleRepick: "Chọn lại nút trên trang",
+  scheduleReloadHint: "Tự canh theo tốc độ tải trang",
+  taskEditHint: "Bấm để sửa",
   testClickDone: "Đã bấm",
   settingsShowGuide: "Xem lại hướng dẫn 3 bước",
   hudExpand: "Mở bảng săn",

@@ -67,9 +67,10 @@ export const ClockStatus: React.FC<ClockStatusProps> = ({ lang, activeUrl, activ
     };
   }, [domain, activeUrl]);
 
-  if (state === "hidden") return null;
+  // Same height whether shown or not (it appears a moment after the popup opens)
+  if (state === "hidden") return <div className="h-4" aria-hidden="true" />;
   return (
-    <div className="flex items-center gap-1.5 px-1 text-[11px]">
+    <div className="flex h-4 items-center gap-1.5 px-1 text-[11px]">
       {state === "checking" && (
         <>
           <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />

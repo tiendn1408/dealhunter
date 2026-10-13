@@ -10,6 +10,8 @@ interface TaskListProps {
   tasks: ScheduledTask[];
   onTasksChanged: () => void;
   lang?: Language;
+  /** Opens a hunt for editing (time, button, every day, refresh). */
+  onEdit?: (task: ScheduledTask) => void;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -40,7 +42,7 @@ function ordered(tasks: ScheduledTask[]): ScheduledTask[] {
   return [...upcoming, ...past];
 }
 
-export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang = "en" }) => {
+export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang = "en", onEdit }) => {
   const t = getTranslation(lang);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -71,7 +73,15 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
         const time = `${pad(task.targetHour)}:${pad(task.targetMinute)}:${pad(task.targetSecond ?? 0)}`;
         const upcoming = task.status === "pending" || task.status === "running";
         return (
-          <li key={task.id} className="rounded-xl bg-white/[0.03] p-3 ring-1 ring-white/[0.08]">
+          <li
+            key={task.id}
+            role="button"
+            tabIndex={0}
+            title={t.taskEditHint}
+            onClick={() => onEdit?.(task)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onEdit?.(task)}
+            className="cursor-pointer rounded-xl bg-white/[0.03] p-3 ring-1 ring-white/[0.08] transition hover:bg-white/[0.06] hover:ring-emerald-500/30"
+          >
             <div className="flex items-start gap-3">
               <div className="w-[62px] shrink-0">
                 <div className={`font-mono text-[15px] font-bold ${upcoming ? "text-emerald-300" : "text-slate-400"}`}>{time.slice(0, 5)}</div>
@@ -81,7 +91,10 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
                 <div className="truncate text-[13px] font-semibold text-slate-100">{taskButtonName(task, t.targetButtonDefault)}</div>
                 <button
                   type="button"
-                  onClick={() => chrome.tabs.create({ url: task.targetUrl })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    chrome.tabs.create({ url: task.targetUrl });
+                  }}
                   title={t.openTargetUrlTooltip(task.targetUrl)}
                   className="mt-0.5 flex max-w-full items-center gap-1 text-[11px] text-slate-400 hover:text-emerald-300"
                 >
@@ -111,7 +124,10 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
               </div>
               <button
                 type="button"
-                onClick={() => remove(task.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  remove(task.id);
+                }}
                 title={t.deleteTaskTooltip}
                 aria-label={t.deleteTaskTooltip}
                 className="shrink-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-rose-400"

@@ -25,6 +25,11 @@ export const App: React.FC = () => {
   const [activeTabDomain, setActiveTabDomain] = useState("");
   const [account, setAccount] = useState<{ signedIn: boolean; email?: string } | null>(null);
   const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
+  const openForm = (task: ScheduledTask | null) => {
+    setEditingTask(task);
+    setShowScheduleForm(true);
+  };
 
   const t = getTranslation(lang);
   const loadTasks = async () => setTasks(await storage.getTasks());
@@ -85,7 +90,10 @@ export const App: React.FC = () => {
       type="button"
       role="tab"
       aria-selected={view === id}
-      onClick={() => setView(id)}
+      onClick={() => {
+        setView(id);
+        setShowScheduleForm(false);
+      }}
       className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-[12px] font-semibold transition ${
         view === id ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40" : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
       }`}
@@ -96,7 +104,7 @@ export const App: React.FC = () => {
   );
 
   return (
-    <div className="flex h-[580px] w-[390px] max-h-[580px] min-h-[580px] flex-col overflow-hidden bg-[#090d16] text-slate-100 select-none">
+    <div className="relative flex h-[580px] w-[390px] max-h-[580px] min-h-[580px] flex-col overflow-hidden bg-[#090d16] text-slate-100 select-none">
       <header className="flex shrink-0 items-center justify-between border-b border-white/[0.08] bg-black/40 px-4 py-3">
         <div className="flex items-center gap-2.5">
           <img src="/icons/icon48.png" alt="" className="h-8 w-8 rounded-xl object-cover shadow-md shadow-emerald-500/20" />
@@ -142,36 +150,18 @@ export const App: React.FC = () => {
 
         {view === "hunts" && (
           <div className="space-y-3">
-            {showScheduleForm ? (
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowScheduleForm(false)}
-                  aria-label={t.settingsCancel}
-                  className="absolute right-2.5 top-2.5 z-10 rounded-md p-1 text-slate-400 hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-                <ScheduleForm
-                  lang={lang}
-                  activeUrl={activeTabUrl}
-                  onTaskCreated={() => {
-                    loadTasks();
-                    setShowScheduleForm(false);
-                  }}
-                />
-              </div>
-            ) : (
+            {/* Stays at the top while the list scrolls */}
+            <div className="sticky -top-3 z-10 -mx-3.5 -mt-3 bg-[#090d16] px-3.5 pb-2 pt-3">
               <button
                 type="button"
-                onClick={() => setShowScheduleForm(true)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 py-2.5 text-[12px] font-semibold text-emerald-300 transition hover:bg-emerald-500/10"
+                onClick={() => openForm(null)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-emerald-500/40 bg-[#0b1a17] py-2.5 text-[12px] font-semibold text-emerald-300 transition hover:bg-emerald-500/10"
               >
                 <Plus className="h-3.5 w-3.5" />
                 {t.newScheduleCta}
               </button>
-            )}
-            <TaskList tasks={tasks} onTasksChanged={loadTasks} lang={lang} />
+            </div>
+            <TaskList tasks={tasks} onTasksChanged={loadTasks} lang={lang} onEdit={openForm} />
           </div>
         )}
 
@@ -179,6 +169,35 @@ export const App: React.FC = () => {
           <SettingsPanel lang={lang} onLangChange={changeLang} account={account} webUrl={webUrl} onBack={() => setView("home")} />
         )}
       </main>
+
+      {/* Schedule form as a sheet over the list (opening / closing it moves nothing underneath) */}
+      {view === "hunts" && showScheduleForm && (
+        <>
+          <div className="absolute inset-0 z-20 bg-black/60" aria-hidden="true" onClick={() => setShowScheduleForm(false)} />
+          <div role="dialog" aria-modal="true" aria-label={t.scheduleTitle} className="absolute inset-x-0 bottom-0 z-30 max-h-[88%] overflow-y-auto rounded-t-2xl bg-[#0d1220] px-1 pb-1 pt-1.5 shadow-2xl ring-1 ring-white/10">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowScheduleForm(false)}
+                aria-label={t.settingsCancel}
+                className="absolute right-2.5 top-2.5 z-10 rounded-md p-1 text-slate-400 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+              <ScheduleForm
+                key={editingTask?.id ?? "new"}
+                lang={lang}
+                activeUrl={activeTabUrl}
+                editing={editingTask}
+                onTaskCreated={() => {
+                  loadTasks();
+                  setShowScheduleForm(false);
+                }}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

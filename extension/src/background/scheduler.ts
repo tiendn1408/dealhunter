@@ -188,15 +188,85 @@ export class TaskScheduler {
    * Registers a chrome alarm for a scheduled task.
    * Alarm fires before target drop time to allow pre-warming and domain calibration.
    */
-  async scheduleTask(task: ScheduledTask): Promise<void> {
+  /**
+   * Schedules a hunt. The same page at the same time already waiting is updated instead of being
+   * added twice. Returns the task as stored (its id is the existing one when updated).
+   */
+  async scheduleTask(task: ScheduledTask): Promise<ScheduledTask> {
     const now = Date.now();
     const second = task.targetSecond ?? 0;
     // Calculate and lock absolute target drop timestamp (H2)
     task.targetAt = task.targetAt ?? nextExactDropAt(task.targetHour, task.targetMinute, second, now);
 
-    await storage.addTask(task);
-    this.createAlarm(task, now);
-    console.log(`[TaskScheduler] Task ${task.id} scheduled for drop ${new Date(task.targetAt).toLocaleString()}`);
+    const stored = await storage.mutateTasks((tasks) => {
+      const same = tasks.find(
+        (x) =>
+          x.status === "pending" &&
+          isSamePageUrl(x.targetUrl, task.targetUrl) &&
+          x.targetHour === task.targetHour &&
+          x.targetMinute === task.targetMinute &&
+          (x.targetSecond ?? 0) === second
+      );
+      if (same) {
+        Object.assign(same, { ...task, id: same.id, createdAt: same.createdAt });
+        return same;
+      }
+      tasks.push(task);
+      return task;
+    });
+    await chrome.alarms.clear(`dh_task_${stored.id}`);
+    this.createAlarm(stored, now);
+    console.log(`[TaskScheduler] Task ${stored.id} scheduled for drop ${new Date(stored.targetAt!).toLocaleString()}`);
+    return stored;
+  }
+
+  /** Changes a scheduled hunt (time, button / page, every day, refresh) and resets its alarm. */
+  async updateTask(changes: ScheduledTask): Promise<void> {
+    const now = Date.now();
+    const updated = await storage.mutateTasks((tasks) => {
+      const task = tasks.find((x) => x.id === changes.id);
+      if (!task) return null;
+      Object.assign(task, changes, {
+        id: task.id,
+        createdAt: task.createdAt,
+        status: "pending",
+        targetAt: nextExactDropAt(changes.targetHour, changes.targetMinute, changes.targetSecond ?? 0, now),
+      });
+      return task;
+    });
+    if (!updated) return;
+    await chrome.alarms.clear(`dh_task_${updated.id}`);
+    this.createAlarm(updated, now);
+  }
+
+  /** Opens (or focuses) the page and starts picking a button there. */
+  async openAndPick(url: string): Promise<void> {
+    const tabs = await chrome.tabs.query({});
+    let tab = tabs.find((x) => x.url && isSamePageUrl(x.url, url));
+    if (tab?.id) {
+      await chrome.tabs.update(tab.id, { active: true });
+      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+    } else {
+      tab = await chrome.tabs.create({ url, active: true });
+    }
+    const tabId = tab.id;
+    if (!tabId) return;
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const current = await chrome.tabs.get(tabId).catch(() => null);
+      if (!current) return;
+      if (current.status === "complete") break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    const message = { action: MESSAGE_ACTIONS.ACTIVATE_HUD, pickTarget: true };
+    try {
+      await chrome.tabs.sendMessage(tabId, message);
+    } catch {
+      // Tab opened before the extension was installed / updated: inject the content script first
+      await chrome.scripting.insertCSS({ target: { tabId }, files: ["content.css"] }).catch(() => {});
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] }).catch(() => {});
+      await chrome.tabs.sendMessage(tabId, message).catch(() => {});
+    }
   }
 
   /**
@@ -229,10 +299,13 @@ export class TaskScheduler {
       return;
     }
 
-    // 1. Resolve descriptor from saved page targets if not directly set
-    if (!task.descriptor) {
+    // 1. The button currently remembered for the page wins over the copy stored with the task:
+    // picking the button again on the page changes every hunt of that page.
+    {
       try {
-        const saved = await storage.getSavedTargetForUrl(task.targetUrl);
+        const saved =
+          (task.savedTargetId && (await storage.getSavedPageTargets()).find((x) => x.id === task.savedTargetId)) ||
+          (await storage.getSavedTargetForUrl(task.targetUrl));
         if (saved) {
           task.descriptor = saved.descriptor;
           task.savedTargetId = saved.id;

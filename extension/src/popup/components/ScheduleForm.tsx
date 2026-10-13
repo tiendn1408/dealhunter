@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Repeat, CheckCircle2 } from "lucide-react";
+import { CalendarClock, Repeat, CheckCircle2, Crosshair, RefreshCw } from "lucide-react";
 import { ScheduledTask, SavedPageTarget } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { nextExactDropAt, parseTimeString, formatTimeLeft } from "../../lib/drop_time";
-import { scheduleTaskViaBackground } from "../../lib/scheduler_client";
+import { scheduleTaskViaBackground, updateTaskViaBackground, openAndPickViaBackground } from "../../lib/scheduler_client";
 import { isSamePageUrl } from "../../lib/url";
 import { Language, getTranslation } from "../../lib/i18n";
 
@@ -12,7 +12,11 @@ interface ScheduleFormProps {
   lang?: Language;
   /** Preselects the saved button of this page. */
   activeUrl?: string;
+  /** Editing an existing hunt instead of creating one. */
+  editing?: ScheduledTask | null;
 }
+
+const pad = (n: number) => String(n).padStart(2, "0");
 
 const hostOf = (url: string) => {
   try {
@@ -29,18 +33,26 @@ const QUICK_TIMES = ["00:00:00", "12:00:00", "20:00:00"];
  * Schedules a hunt for a button the user already picked on its page (decision 1: only picked
  * buttons are clicked). Three choices only: which button, what time, every day or not.
  */
-export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang = "en", activeUrl }) => {
+export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang = "en", activeUrl, editing }) => {
   const t = getTranslation(lang);
   const [targets, setTargets] = useState<SavedPageTarget[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [timeInput, setTimeInput] = useState("00:00:00");
-  const [isDaily, setIsDaily] = useState(false);
+  const [isDaily, setIsDaily] = useState(Boolean(editing?.isDaily));
+  const [reload, setReload] = useState<boolean | null>(editing ? editing.dualDefenseReload !== false : null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
   useEffect(() => {
     storage.getSavedPageTargets().then((list) => {
       setTargets(list);
+      if (editing) {
+        const own =
+          list.find((x) => x.id === editing.savedTargetId) ?? list.find((x) => isSamePageUrl(x.url, editing.targetUrl));
+        if (own) setSelectedId(own.id);
+        setTimeInput(`${pad(editing.targetHour)}:${pad(editing.targetMinute)}:${pad(editing.targetSecond ?? 0)}`);
+        return;
+      }
       const here = activeUrl ? list.find((x) => isSamePageUrl(x.url, activeUrl)) : undefined;
       const first = here ?? list[0];
       if (first) {
@@ -50,10 +62,11 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         }
       }
     });
-  }, [activeUrl]);
+  }, [activeUrl, editing]);
 
   const parsed = useMemo(() => parseTimeString(timeInput), [timeInput]);
   const selected = targets.find((x) => x.id === selectedId);
+  const reloadOn = reload ?? selected?.dualDefenseReload !== false;
   const leftText = parsed.valid
     ? t.homeTimeLeft(formatTimeLeft(nextExactDropAt(parsed.h, parsed.m, parsed.s, Date.now()) - Date.now(), t))
     : "";
@@ -64,7 +77,8 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
     setSubmitting(true);
     try {
       const task: ScheduledTask = {
-        id: Math.random().toString(36).substring(2, 9),
+        ...(editing ?? {}),
+        id: editing?.id ?? Math.random().toString(36).substring(2, 9),
         targetHour: parsed.h,
         targetMinute: parsed.m,
         targetSecond: parsed.s,
@@ -74,14 +88,17 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         isDaily,
         savedTargetId: selected.id,
         descriptor: selected.descriptor,
-        dualDefenseReload: selected.dualDefenseReload ?? true,
+        dualDefenseReload: reloadOn,
         diagnostics: selected.diagnostics,
         clickProfileMode: "adaptive",
         preWarmSeconds: 60,
         status: "pending",
-        createdAt: Date.now(),
+        createdAt: editing?.createdAt ?? Date.now(),
+        targetAt: undefined,
+        lastResult: editing?.lastResult,
       };
-      await scheduleTaskViaBackground(task);
+      if (editing) await updateTaskViaBackground(task);
+      else await scheduleTaskViaBackground(task);
       setDone(true);
       setTimeout(() => setDone(false), 2500);
       onTaskCreated();
@@ -99,11 +116,11 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-2xl bg-white/[0.03] p-3.5 ring-1 ring-white/10">
+    <form onSubmit={submit} className="space-y-3 rounded-2xl p-3.5">
       <div>
         <h2 className="flex items-center gap-1.5 text-[13px] font-bold text-white">
           <CalendarClock className="h-4 w-4 text-emerald-400" />
-          {t.scheduleTitle}
+          {editing ? t.scheduleEditTitle : t.scheduleTitle}
         </h2>
         <p className="mt-1 text-[11px] leading-snug text-slate-400">{t.scheduleSubtitle}</p>
       </div>
@@ -135,6 +152,19 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
             );
           })}
         </div>
+        {selected && (
+          <button
+            type="button"
+            onClick={async () => {
+              await openAndPickViaBackground(selected.url).catch(() => {});
+              window.close();
+            }}
+            className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:underline"
+          >
+            <Crosshair className="h-3 w-3" />
+            {t.scheduleRepick}
+          </button>
+        )}
       </div>
 
       <div>
@@ -194,12 +224,31 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
       </button>
 
       <button
+        type="button"
+        role="switch"
+        aria-checked={reloadOn}
+        onClick={() => setReload(!reloadOn)}
+        className="flex w-full items-center justify-between rounded-xl bg-black/30 px-3 py-2 text-left ring-1 ring-white/10 transition hover:bg-white/[0.04]"
+      >
+        <span className="flex items-center gap-2">
+          <RefreshCw className={`h-3.5 w-3.5 ${reloadOn ? "text-emerald-300" : "text-slate-400"}`} />
+          <span>
+            <span className="block text-[12px] font-semibold text-slate-200">{t.preReloadToggle}</span>
+            <span className="block text-[10px] text-slate-500">{reloadOn ? t.scheduleReloadHint : t.preReloadOffHint}</span>
+          </span>
+        </span>
+        <span className={`relative h-4 w-7 shrink-0 rounded-full transition ${reloadOn ? "bg-emerald-500" : "bg-white/15"}`}>
+          <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${reloadOn ? "left-3.5" : "left-0.5"}`} />
+        </span>
+      </button>
+
+      <button
         type="submit"
         disabled={submitting || !parsed.valid || !selected}
         className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-2.5 text-[13px] font-bold text-slate-950 shadow-lg shadow-emerald-950/50 transition hover:brightness-110 disabled:opacity-50"
       >
         {done ? <CheckCircle2 className="h-4 w-4" /> : <CalendarClock className="h-4 w-4" />}
-        {done ? t.quickScheduleSuccess : t.scheduleSubmitBtn(parsed.formatted)}
+        {done ? t.quickScheduleSuccess : editing ? t.scheduleSaveChanges : t.scheduleSubmitBtn(parsed.formatted)}
       </button>
     </form>
   );

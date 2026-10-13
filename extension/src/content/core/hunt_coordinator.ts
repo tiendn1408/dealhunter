@@ -270,8 +270,9 @@ export class HuntCoordinator {
       return;
     }
 
+    // The button currently remembered for this page wins (it may have been picked again since)
     let desc = task.descriptor;
-    if (!desc && typeof window !== "undefined") {
+    if (typeof window !== "undefined") {
       try {
         const saved = await storage.getSavedTargetForUrl(window.location.href);
         if (saved) desc = saved.descriptor;

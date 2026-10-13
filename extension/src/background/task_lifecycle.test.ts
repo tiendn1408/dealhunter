@@ -187,3 +187,29 @@ describe("background clock calibration", () => {
     expect(localStore[STORAGE_KEYS.CLOCK_CALIBRATION]).toEqual(good);
   });
 });
+
+describe("scheduling the same hunt again / editing a hunt", () => {
+  it("the same page at the same time updates the waiting hunt instead of adding a copy", async () => {
+    const a = task("A", { targetHour: 0, targetMinute: 0, targetSecond: 0, targetAt: undefined, createdAt: Date.now() });
+    await taskScheduler.scheduleTask(a);
+    await taskScheduler.scheduleTask({ ...a, id: "B", isDaily: true, targetUrl: a.targetUrl + "?utm_source=x" });
+    expect(tasks()).toHaveLength(1);
+    expect(byId("A").isDaily).toBe(true);
+    expect(alarms["dh_task_A"]).toBeDefined();
+    expect(alarms["dh_task_B"]).toBeUndefined();
+
+    await taskScheduler.scheduleTask({ ...a, id: "C", targetHour: 12 });
+    expect(tasks()).toHaveLength(2);
+  });
+
+  it("editing a hunt changes its time, keeps its id and resets its alarm", async () => {
+    localStore[STORAGE_KEYS.SCHEDULED_TASKS] = [task("E", { targetAt: Date.now() + HOUR, status: "missed" })];
+    const before = byId("E");
+    await taskScheduler.updateTask({ ...before, targetHour: (before.targetHour + 2) % 24, dualDefenseReload: false });
+    const after = byId("E");
+    expect(after.status).toBe("pending");
+    expect(after.dualDefenseReload).toBe(false);
+    expect(after.targetAt).not.toBe(before.targetAt);
+    expect(alarms["dh_task_E"]?.when).toBeLessThanOrEqual(after.targetAt!);
+  });
+});
