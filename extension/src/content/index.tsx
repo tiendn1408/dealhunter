@@ -12,6 +12,8 @@ import { MESSAGE_ACTIONS } from "../lib/constants";
 import { storage } from "../lib/storage";
 import { isSamePageUrl } from "../lib/url";
 import { caffiliateAdapter } from "./adapters/caffiliate_adapter";
+import { reloadTiming } from "../lib/reload_timing";
+import type { UniversalTargetDescriptor } from "./core/element_resolver";
 import "./ui/style.css";
 
 function isTopWindow(): boolean {
@@ -183,6 +185,47 @@ function injectPriceHistoryBadge() {
   badgeRoot.render(<PriceHistoryBadge />);
 }
 
+/**
+ * Learns how fast this page loads, for the pre-reload lead (lib/reload_timing): on a page with an
+ * armed hunt or a saved target, the time from navigation start until the target button is found.
+ * Skipped when the page loaded in the background (throttled) or came from the back/forward cache.
+ */
+async function measurePageReadyTime() {
+  if (document.visibilityState !== "visible") return;
+  const nav = performance.getEntriesByType?.("navigation")[0] as PerformanceNavigationTiming | undefined;
+  if (nav && nav.type === "back_forward") return;
+
+  let desc: UniversalTargetDescriptor | undefined;
+  try {
+    const raw = sessionStorage.getItem(ARMED_SESSION_KEY);
+    const sess = raw ? JSON.parse(raw) : null;
+    if (sess?.descriptor && sess.url && isSamePageUrl(sess.url, window.location.href)) desc = sess.descriptor;
+  } catch {
+    // ignore
+  }
+  if (!desc) {
+    try {
+      desc = (await storage.getSavedTargetForUrl(window.location.href))?.descriptor;
+    } catch {
+      // ignore
+    }
+  }
+  if (!desc) return;
+
+  const url = window.location.href;
+  reloadTiming.load(url).catch(() => {});
+  const deadline = performance.now() + 15000;
+  const poll = () => {
+    if (document.visibilityState !== "visible") return; // went to background: the sample would be skewed
+    if (elementResolver.relocateUniversal(desc!)) {
+      reloadTiming.record(url, performance.now()).catch(() => {});
+      return;
+    }
+    if (performance.now() < deadline) setTimeout(poll, 50);
+  };
+  poll();
+}
+
 function initContentScript() {
   console.log("[DealHunter Assistant] Content script injected on", window.location.href);
 
@@ -196,11 +239,13 @@ function initContentScript() {
       injectFloatingHUD();
       injectPriceHistoryBadge();
       checkAndResumeScheduledTasks();
+      measurePageReadyTime();
     });
   } else {
     injectFloatingHUD();
     injectPriceHistoryBadge();
     checkAndResumeScheduledTasks();
+    measurePageReadyTime();
   }
 }
 

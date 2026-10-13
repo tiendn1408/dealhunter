@@ -6,6 +6,7 @@ export const STORAGE_KEYS = {
   WEB_SESSION: "dh_web_session", // chrome.storage.session: cleared when the browser closes
   LAST_WEB_URL: "dh_last_web_url", // last DealHunter web URL a page sent: links keep working after sign-out
   SAVED_PAGE_TARGETS: "dh_saved_page_targets",
+  PAGE_LOAD_SAMPLES: "dh_page_load_samples", // per page: measured load times for the pre-reload lead
   CHECKIN_LOGS: "dh_checkin_logs", // Caffiliate check-in timings, newest first (popup Log tab)
 } as const;
 

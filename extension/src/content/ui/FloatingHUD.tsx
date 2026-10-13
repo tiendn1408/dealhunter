@@ -12,6 +12,7 @@ import { Language, getTranslation } from "../../lib/i18n";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TargetDiagnosticsSummary } from "../../lib/types";
 import { isSamePageUrl } from "../../lib/url";
+import { reloadTiming } from "../../lib/reload_timing";
 import { getAdapterForUrl } from "../adapters";
 import { DEALHUNTER_LOGO_DATA_URI } from "./logo_data";
 import {
@@ -107,8 +108,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const [targetSlot, setTargetSlot] = useState<TargetSlot>("quick_10s");
   const [customTime, setCustomTime] = useState("00:00:00");
   const [clickProfile, setClickProfile] = useState<ClickProfileMode>("adaptive");
+  // Pre-reload before the drop: a plain on/off switch; the lead is measured per page (reload_timing).
   const [preReloadEnabled, setPreReloadEnabled] = useState(true);
-  const [preReloadLeadMs, setPreReloadLeadMs] = useState(750);
+  const [autoReloadLeadMs, setAutoReloadLeadMs] = useState(() =>
+    typeof window !== "undefined" ? reloadTiming.leadFor(window.location.href) : 750
+  );
+  const pageDisablesReload =
+    typeof window !== "undefined" && Boolean(getAdapterForUrl(window.location.href)?.shouldDisableReload?.());
   const armedTargetTimestampRef = useRef<number | null>(null);
   const [countdownStr, setCountdownStr] = useState("--:--:--.-");
   const [targetLabel, setTargetLabel] = useState("--:--:--");
@@ -150,6 +156,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     return unsubscribe;
   }, [currentHost]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    reloadTiming.load(window.location.href).then(setAutoReloadLeadMs).catch(() => {});
+  }, []);
+
   // Helper to restore saved target for a specific URL
   const restoreTargetForUrl = (url: string) => {
     storage.getSavedTargetForUrl(url).then((saved) => {
@@ -159,6 +170,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         setIsTargetSaved(true);
         setTargetSlot(saved.targetSlot);
         if (saved.customTime) setCustomTime(saved.customTime);
+        if (typeof saved.dualDefenseReload === "boolean") setPreReloadEnabled(saved.dualDefenseReload);
 
         const el = elementResolver.relocateUniversal(saved.descriptor);
         if (el) {
@@ -186,7 +198,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     // Check if there is an active session from HuntCoordinator or sessionStorage across reload
     const currentSession = huntCoordinator.getCurrentSession() || (() => {
       try {
-        const raw = sessionStorage.getItem("dealhunter_armed_session");
+        const raw = sessionStorage.getItem(ARMED_SESSION_KEY);
         if (raw) return JSON.parse(raw);
       } catch {}
       return null;
@@ -196,8 +208,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       if (currentSession.targetSlot) setTargetSlot(currentSession.targetSlot as TargetSlot);
       if (currentSession.customTime) setCustomTime(currentSession.customTime);
       if (currentSession.clickProfileMode) setClickProfile(currentSession.clickProfileMode);
-      if (currentSession.dualDefenseReload !== undefined) setPreReloadEnabled(currentSession.dualDefenseReload);
-      if (currentSession.preReloadLeadMs) setPreReloadLeadMs(currentSession.preReloadLeadMs);
+      const reloadSwitch = currentSession.reloadSwitch ?? currentSession.dualDefenseReload;
+      if (typeof reloadSwitch === "boolean") setPreReloadEnabled(reloadSwitch);
       if (currentSession.targetTimestamp) {
         armedTargetTimestampRef.current = currentSession.targetTimestamp;
       }
@@ -587,7 +599,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       targetSlot,
       customTime: targetSlot === "custom" ? customTime : undefined,
       descriptor: desc,
-      dualDefenseReload: true,
+      dualDefenseReload: preReloadEnabled,
       diagnostics: diagnostics || undefined,
       updatedAt: Date.now(),
     });
@@ -662,7 +674,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       savedTargetId: saved?.id,
       descriptor: universalDescRef.current,
       preWarmSeconds: 60,
-      dualDefenseReload: true,
+      dualDefenseReload: preReloadEnabled,
       diagnostics: diagnostics || undefined,
       status: "pending",
       createdAt: Date.now(),
@@ -978,7 +990,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       label: targetSummary || undefined,
       clickProfileMode: clickProfile,
       dualDefenseReload: preReloadEnabled,
-      preReloadLeadMs,
       diagnostics: diagnostics || undefined,
     });
   };
@@ -1268,6 +1279,37 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             </div>
           </div>
         </div>
+
+        {/* Pre-reload switch: the timing is measured from this page's load speed */}
+        {!pageDisablesReload && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={preReloadEnabled}
+            disabled={isArmed}
+            onClick={() => setPreReloadEnabled(!preReloadEnabled)}
+            className="dh-sub-btn flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-[10px] transition disabled:opacity-50"
+            title={t.preReloadHint(autoReloadLeadMs)}
+          >
+            <span className="min-w-0">
+              <span className="block font-semibold text-slate-300">{t.preReloadToggle}</span>
+              <span className="block truncate text-[9px] text-slate-500">
+                {preReloadEnabled ? t.preReloadHint(autoReloadLeadMs) : t.preReloadOffHint}
+              </span>
+            </span>
+            <span
+              className={`relative h-4 w-7 shrink-0 rounded-full transition ${
+                preReloadEnabled ? "bg-emerald-500/70" : "bg-white/15"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${
+                  preReloadEnabled ? "left-3.5" : "left-0.5"
+                }`}
+              />
+            </span>
+          </button>
+        )}
 
         {/* Card 3: Universal Target locking */}
         <div className="dh-inner-card rounded-2xl p-3">

@@ -8,6 +8,7 @@ import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TaskStatus, TargetDiagnosticsSummary } from "../../lib/types";
 import { nextExactDropAt } from "../../lib/drop_time";
 import { isSamePageUrl } from "../../lib/url";
+import { reloadTiming } from "../../lib/reload_timing";
 import { getAdapterForUrl } from "../adapters";
 
 export const ARMED_SESSION_KEY = "dh_armed_session";
@@ -22,6 +23,7 @@ export interface ArmedSession {
   keyword?: string;
   clickProfileMode?: ClickProfileMode;
   dualDefenseReload?: boolean;
+  reloadSwitch?: boolean;
   preReloadLeadMs?: number;
   diagnostics?: TargetDiagnosticsSummary;
   url: string;
@@ -164,6 +166,10 @@ export class HuntCoordinator {
         ? false
         : params.dualDefenseReload ?? (diag?.strategy === "static_dual_defense");
 
+    // Pre-reload lead measured from this page's load times (lib/reload_timing), unless given.
+    const preReloadLeadMs =
+      params.preReloadLeadMs ?? reloadTiming.leadFor(typeof window !== "undefined" ? window.location.href : "");
+
     const session: ArmedSession = {
       targetTimestamp: params.targetTimestamp,
       taskId: params.taskId,
@@ -174,7 +180,10 @@ export class HuntCoordinator {
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
-      preReloadLeadMs: params.preReloadLeadMs,
+      // The user's switch as set in the HUD (shown again after a reload); the effective value above
+      // can be off because the page does not need reloads.
+      reloadSwitch: params.dualDefenseReload,
+      preReloadLeadMs,
       diagnostics: diag || params.diagnostics,
       url: typeof window !== "undefined" ? window.location.href : "",
       armedAt: Date.now(),
@@ -212,7 +221,7 @@ export class HuntCoordinator {
       keyword: params.keyword,
       clickProfileMode: params.clickProfileMode,
       dualDefenseReload: effectiveReload,
-      preReloadLeadMs: params.preReloadLeadMs,
+      preReloadLeadMs,
       preFireLeadMs:
         (params as any).preFireLeadMs ??
         timeSyncClient.getRecommendedPreFireLeadMs(diag?.platformTier),

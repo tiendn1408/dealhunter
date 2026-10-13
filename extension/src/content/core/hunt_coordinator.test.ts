@@ -149,6 +149,18 @@ describe("HuntCoordinator", () => {
 
     const saved = JSON.parse(sessionStorage.getItem(ARMED_SESSION_KEY) || "{}");
     expect(saved.dualDefenseReload).toBe(false);
+    expect(saved.reloadSwitch).toBe(true); // the user's switch is kept for the HUD
+  });
+
+  it("uses the pre-reload lead measured for this page unless one is given", async () => {
+    const { reloadTiming } = await import("../../lib/reload_timing");
+    vi.spyOn(reloadTiming, "leadFor").mockReturnValue(1830);
+    coordinator.arm({ targetTimestamp: 1_010_000, targetElement: testBtn });
+    expect(JSON.parse(sessionStorage.getItem(ARMED_SESSION_KEY) || "{}").preReloadLeadMs).toBe(1830);
+
+    coordinator.arm({ targetTimestamp: 1_020_000, targetElement: testBtn, preReloadLeadMs: 900 });
+    expect(JSON.parse(sessionStorage.getItem(ARMED_SESSION_KEY) || "{}").preReloadLeadMs).toBe(900);
+    vi.restoreAllMocks();
   });
 
   it("checkAndResumeArmedSession restores session from sessionStorage and re-arms coordinator", () => {
