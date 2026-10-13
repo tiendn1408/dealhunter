@@ -8,14 +8,15 @@ const fetchMock = vi.fn();
 const getTokenMock = vi.fn(async () => "fresh-token");
 
 /** Fires one strike and resolves with the run the helper reports when it finishes. */
-function strike(): Promise<any> {
+function strike(offsetsMs?: number[]): Promise<any> {
   return new Promise((resolve) => {
     const onRun = (ev: Event) => {
       window.removeEventListener("dh-checkin-timing", onRun);
       resolve(JSON.parse((ev as CustomEvent).detail));
     };
     window.addEventListener("dh-checkin-timing", onRun);
-    window.dispatchEvent(new CustomEvent("dh-caffiliate-strike"));
+    const detail = offsetsMs ? JSON.stringify({ offsetsMs, plan: { attempts: offsetsMs.length } }) : undefined;
+    window.dispatchEvent(new CustomEvent("dh-caffiliate-strike", { detail }));
   });
 }
 
@@ -52,22 +53,54 @@ describe("caffiliate_bridge strike", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("keeps sending attempts 35ms apart (max 4) until the server confirms", async () => {
+  it("starts the attempts on the planned schedule until the server confirms", async () => {
     const state = { todayCheckedIn: false, isCheckingIn: false };
     const checkIn = vi.fn(async () => {
       state.isCheckingIn = true; // in-flight lock the next attempt has to clear
     });
     w.app = { state, checkIn };
 
-    const pending = strike();
-    await sleep(250);
-    expect(checkIn).toHaveBeenCalledTimes(4);
+    const pending = strike([0, 20, 45, 70, 100, 130]);
+    await sleep(220);
+    expect(checkIn).toHaveBeenCalledTimes(6);
     state.todayCheckedIn = true;
     const run = await pending;
 
     expect(run.ok).toBe(true);
-    expect(run.attempts.map((a: any) => a.n)).toEqual([1, 2, 3, 4]);
-    expect(run.attempts[1].startAt - run.attempts[0].startAt).toBeGreaterThanOrEqual(30);
+    expect(run.plan).toEqual({ attempts: 6 });
+    const starts = run.attempts.map((a: any) => a.startAt - run.startAt);
+    expect(starts[0]).toBeLessThan(5);
+    expect(starts[2]).toBeGreaterThanOrEqual(44);
+    expect(starts[5]).toBeGreaterThanOrEqual(129);
+  });
+
+  it("cancels the remaining attempts as soon as one is confirmed", async () => {
+    const state = { todayCheckedIn: false };
+    const checkIn = vi.fn(async () => {
+      await sleep(15);
+      state.todayCheckedIn = true;
+    });
+    w.app = { state, checkIn };
+
+    const run = await strike([0, 40, 80, 120, 160]);
+    await sleep(200); // past every planned start
+
+    expect(run.ok).toBe(true);
+    expect(checkIn).toHaveBeenCalledTimes(1);
+    expect(run.attempts).toHaveLength(1);
+  });
+
+  it("without a schedule it still sends 5 attempts", async () => {
+    const state = { todayCheckedIn: false };
+    const checkIn = vi.fn(async () => {});
+    w.app = { state, checkIn };
+
+    const pending = strike();
+    await sleep(200);
+    state.todayCheckedIn = true;
+    const run = await pending;
+
+    expect(run.attempts).toHaveLength(5);
   });
 
   it("tier 2: falls back to the API with a fresh token and the page's own signature", async () => {

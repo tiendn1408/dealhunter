@@ -1,13 +1,13 @@
 // DealHunter main-world helper for Caffiliate check-in.
 //
-// Strike ("dh-caffiliate-strike" from the content script at T - RTT/2): up to MAX_ATTEMPTS attempts
-// ATTEMPT_GAP_MS apart, so one or two land just before 00:00 (lucky hit right at the server's
-// boundary) and the next ones make up for them. Each attempt walks three tiers, moving down only
-// when the tier above fails:
+// Strike ("dh-caffiliate-strike" from the content script): attempts start on the schedule the content
+// script computed (src/lib/strike_plan.ts: at least 5, timed from the measured Turnstile time,
+// latency and clock error so the requests reach the server spread around 00:00). Each attempt walks
+// three tiers, moving down only when the tier above fails:
 //   1. the page's own function: app.checkIn() (or a check-in/claim/reward-named method if it has none)
 //   2. the check-in API, with a fresh token from the page's own getToken and the page's own signature
 //   3. a click on the check-in button
-// The first confirmed attempt stops the rest.
+// As soon as one attempt is confirmed, the attempts not started yet are cancelled.
 //
 // Timing: every attempt's tier, Turnstile token time, request and response are reported to the
 // content script ("dh-checkin-timing", JSON string), shown in the popup's Log tab.
@@ -16,8 +16,9 @@
   // Non-enumerable marker so double injection is a no-op without adding a visible global.
   Object.defineProperty(window, "__dhCheckinTiming", { value: true });
 
-  var MAX_ATTEMPTS = 4;
-  var ATTEMPT_GAP_MS = 35;
+  // Used only if the strike event carries no schedule.
+  var FALLBACK_OFFSETS_MS = [0, 35, 70, 105, 140];
+  var CONFIRM_POLL_MS = 10;
   var CONFIRM_TIMEOUT_MS = 8000;
   var CHECKIN_API = "/api/v2/xeng/check-in-secure";
   var CHECKIN_URL = /check-?in/i;
@@ -84,6 +85,8 @@
   function finishRun(ok, method, error) {
     if (!run || run.done) return;
     run.done = true;
+    (run.timers || []).forEach(clearTimeout); // attempts not started yet are not needed any more
+    delete run.timers;
     run.ok = ok;
     run.method = method;
     if (error) run.error = error;
@@ -193,11 +196,21 @@
     }
   }
 
-  function handleStrike() {
+  function readSchedule(ev) {
+    try {
+      var d = ev && typeof ev.detail === "string" ? JSON.parse(ev.detail) : null;
+      var offsets = d && Array.isArray(d.offsetsMs) ? d.offsetsMs.filter(function (v) { return typeof v === "number" && v >= 0 && v < 5000; }) : [];
+      if (offsets.length > 0) return { offsets: offsets.sort(function (a, b) { return a - b; }), plan: d.plan || null };
+    } catch (e) {}
+    return { offsets: FALLBACK_OFFSETS_MS, plan: null };
+  }
+
+  function handleStrike(ev) {
     if (run && !run.done) return; // one strike sequence at a time
     wrapTurnstile(); // in case the timing wrapper has not caught up with a late-loaded Turnstile helper
+    var schedule = readSchedule(ev);
     var app = getApp();
-    var r = (run = { startAt: now(), attempts: [], source: "strike" });
+    var r = (run = { startAt: now(), attempts: [], source: "strike", plan: schedule.plan, timers: [] });
     var btn = findCheckInButton();
     var textBefore = btn ? btn.textContent || "" : "";
 
@@ -209,19 +222,24 @@
       });
     }
 
+    // Each attempt is timed from the strike start, so a late timer does not push the next ones.
     var n = 0;
-    (function next() {
+    schedule.offsets.forEach(function (offset, i) {
       if (r.done) return;
-      if (n > 0 && isCheckedIn(app, textBefore)) return;
-      runAttempt(r, app, ++n);
-      if (n < MAX_ATTEMPTS) setTimeout(next, ATTEMPT_GAP_MS);
-    })();
+      var start = function () {
+        if (r.done) return;
+        if (isCheckedIn(app, textBefore)) return finishRun(true, "page confirmed", null);
+        runAttempt(r, app, ++n);
+      };
+      if (i === 0) start();
+      else r.timers.push(setTimeout(start, Math.max(0, r.startAt + offset - now())));
+    });
 
     (function poll() {
       if (r.done) return;
       if (isCheckedIn(app, textBefore)) return finishRun(true, "page confirmed", null);
       if (now() - r.startAt > CONFIRM_TIMEOUT_MS) return finishRun(false, null, "not confirmed by the page");
-      setTimeout(poll, 50);
+      setTimeout(poll, CONFIRM_POLL_MS);
     })();
   }
 

@@ -23,9 +23,20 @@ export interface CheckInAttempt {
   serverDate?: string;
 }
 
+/** Summary of the strike plan a run followed (see strike_plan.ts). */
+export interface CheckInPlanSummary {
+  attempts: number;
+  leadMs: number;
+  prepMs: number;
+  oneWayMs: number;
+  sigmaMs: number;
+  arrivalsMs: number[];
+}
+
 /** One strike sequence (or manual click) as reported by public/caffiliate_bridge.js. */
 export interface CheckInRun {
   startAt: number;
+  plan?: CheckInPlanSummary;
   source: "strike" | "manual";
   attempts: CheckInAttempt[];
   ok?: boolean;
@@ -42,6 +53,7 @@ export interface CheckInLogEntry {
   ok: boolean;
   method: string | null;
   error: string | null;
+  plan: CheckInPlanSummary | null;
   attempts: Array<{
     n: number;
     /** Server clock HH:mm:ss.SSS */
@@ -73,6 +85,7 @@ export function toCheckInLogEntry(run: CheckInRun, offsetMs: number, host: strin
     ok: run.ok === true,
     method: run.method ?? null,
     error: run.error ?? null,
+    plan: run.plan ?? null,
     attempts: run.attempts.map((a) => ({
       n: a.n,
       start: serverClock(a.startAt + offsetMs),
@@ -95,6 +108,23 @@ export function describeAttempt(a: CheckInLogEntry["attempts"][number]): string 
   if (a.sent) parts.push(`sent ${a.sent} (+${a.sentAfterMs}ms)`);
   if (a.serverMs !== null) parts.push(`server ${a.serverMs}ms · HTTP ${a.status ?? "?"}`);
   return parts.join(" · ");
+}
+
+/**
+ * Measured "attempt start -> request sent" times of recent runs, the input for the strike plan's
+ * prep estimate. Only attempts whose first tier was the page function (or a manual click) count:
+ * after a failed tier the time includes that failure.
+ */
+export function prepSamplesFromLogs(logs: CheckInLogEntry[], maxRuns = 10): number[] {
+  const samples: number[] = [];
+  for (const log of logs.slice(0, maxRuns)) {
+    for (const a of log.attempts) {
+      const first = a.tiers[0];
+      if (a.sentAfterMs === null || !first || !first.ok) continue;
+      if (first.tier === 1 || log.source === "manual") samples.push(a.sentAfterMs);
+    }
+  }
+  return samples;
 }
 
 export async function getCheckInLogs(): Promise<CheckInLogEntry[]> {

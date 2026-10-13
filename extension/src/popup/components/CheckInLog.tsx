@@ -73,6 +73,17 @@ export const CheckInLog: React.FC<CheckInLogProps> = ({ lang = "en" }) => {
                 </div>
               )}
 
+              {log.plan && (
+                <div className="mt-1 text-[10px] text-slate-400">
+                  <div>
+                    {t.checkInLogPlan(log.plan.attempts, log.plan.leadMs, log.plan.prepMs, log.plan.oneWayMs, log.plan.sigmaMs)}
+                  </div>
+                  <div className="font-mono tabular-nums text-slate-500" title={t.checkInLogArrivals}>
+                    {log.plan.arrivalsMs.map((a) => (a >= 0 ? `+${a}` : `${a}`)).join(" ")} ms
+                  </div>
+                </div>
+              )}
+
               <table className="mt-1.5 w-full table-fixed text-[10px] text-slate-300">
                 <tbody>
                   {log.attempts.map((a) => (

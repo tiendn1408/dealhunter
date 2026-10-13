@@ -2,13 +2,22 @@ import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
 import { Language, getTranslation } from "../../lib/i18n";
 import { timeSyncClient } from "../core/time_sync_client";
-import { CheckInRun, appendCheckInLog, describeAttempt, toCheckInLogEntry } from "../../lib/checkin_log";
+import {
+  CheckInRun,
+  appendCheckInLog,
+  describeAttempt,
+  getCheckInLogs,
+  prepSamplesFromLogs,
+  toCheckInLogEntry,
+} from "../../lib/checkin_log";
+import { StrikePlan, planStrike } from "../../lib/strike_plan";
 
 const isCaffiliateHost = (host: string) => host === "caffiliate.vn" || host.endsWith(".caffiliate.vn");
 
 /**
- * Caffiliate daily check-in. At the drop the main-world helper (public/caffiliate_bridge.js) runs up
- * to 4 attempts, each walking page function -> API -> button click. Every run's timings are logged to
+ * Caffiliate daily check-in. Around the drop the main-world helper (public/caffiliate_bridge.js) runs
+ * at least 5 attempts on the schedule from strike_plan.ts, each walking page function -> API ->
+ * button click, and stops as soon as one is confirmed. Every run's timings are logged to
  * the console and stored for the popup's Log tab.
  */
 export class CaffiliateAdapter implements MarketplaceAdapter {
@@ -16,6 +25,9 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
   maxClicks = 1;
   windowMs = 8000;
   lastRun: CheckInRun | null = null;
+  /** Attempt start -> request sent measurements from the Log history (newest runs). */
+  prepSamplesMs: number[] = [];
+  plan: StrikePlan | null = null;
   /** Set when the main-world helper saw the site confirm today's check-in. */
   confirmed = false;
   private listening = false;
@@ -32,6 +44,13 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
   listenForTimings(): void {
     if (this.listening || typeof window === "undefined") return;
     this.listening = true;
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      getCheckInLogs()
+        .then((logs) => {
+          this.prepSamplesMs = prepSamplesFromLogs(logs);
+        })
+        .catch(() => {});
+    }
     window.addEventListener("dh-checkin-timing", (ev) => {
       try {
         const detail = (ev as CustomEvent).detail;
@@ -45,7 +64,12 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
           run
         );
         if (typeof chrome !== "undefined" && chrome.storage?.local) {
-          appendCheckInLog(entry).catch(() => {});
+          appendCheckInLog(entry)
+            .then(getCheckInLogs)
+            .then((logs) => {
+              this.prepSamplesMs = prepSamplesFromLogs(logs);
+            })
+            .catch(() => {});
         }
       } catch {
         // ignore malformed events
@@ -153,6 +177,7 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     this.listenForTimings();
     this.lastRun = null;
     this.confirmed = false;
+    this.planStrike();
     if (typeof document === "undefined") return;
     if (!document.querySelector('link[rel="preconnect"][href="https://challenges.cloudflare.com"]')) {
       const link = document.createElement("link");
@@ -170,8 +195,36 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
   executeDirectStrike(): boolean {
     if (typeof window === "undefined") return false;
     this.listenForTimings();
-    window.dispatchEvent(new CustomEvent("dh-caffiliate-strike"));
+    const plan = this.plan ?? this.planStrike();
+    window.dispatchEvent(
+      new CustomEvent("dh-caffiliate-strike", {
+        detail: JSON.stringify({
+          offsetsMs: plan.offsetsMs,
+          plan: {
+            attempts: plan.offsetsMs.length,
+            leadMs: plan.leadMs,
+            prepMs: plan.prepMs,
+            oneWayMs: plan.oneWayMs,
+            sigmaMs: plan.sigmaMs,
+            arrivalsMs: plan.arrivalsMs,
+          },
+        }),
+      })
+    );
     return true;
+  }
+
+  /**
+   * Recomputes the attempt schedule from the current clock calibration and the Log history.
+   * The engine starts the strike leadMs before the drop.
+   */
+  planStrike(): StrikePlan {
+    this.plan = planStrike({
+      rttMs: timeSyncClient.getRttMs(),
+      clockErrorMs: timeSyncClient.getErrorMs(),
+      prepSamplesMs: this.prepSamplesMs,
+    });
+    return this.plan;
   }
 
 }

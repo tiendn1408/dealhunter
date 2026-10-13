@@ -24,6 +24,9 @@ const en = {
   checkInLogManual: "Manual click",
   checkInLogAttempt: (n: number) => `Attempt ${n}`,
   checkInLogTier: (tier: number) => (tier === 1 ? "Function" : tier === 2 ? "API" : "Click"),
+  checkInLogPlan: (attempts: number, leadMs: number, prepMs: number, oneWayMs: number, sigmaMs: number) =>
+    `Plan: ${attempts} attempts from T−${leadMs}ms · prep ~${prepMs}ms · network ~${oneWayMs}ms · ±${sigmaMs}ms`,
+  checkInLogArrivals: "Planned arrivals vs 00:00",
 
   // Live Sniper Tab
   startOnActiveTab: "START SNIPER ON THIS PAGE",
@@ -205,6 +208,9 @@ const vi: TranslationCatalog = {
   checkInLogManual: "Bấm tay",
   checkInLogAttempt: (n: number) => `Lần ${n}`,
   checkInLogTier: (tier: number) => (tier === 1 ? "Hàm" : tier === 2 ? "API" : "Bấm nút"),
+  checkInLogPlan: (attempts: number, leadMs: number, prepMs: number, oneWayMs: number, sigmaMs: number) =>
+    `Kế hoạch: ${attempts} lần từ T−${leadMs}ms · chuẩn bị ~${prepMs}ms · mạng ~${oneWayMs}ms · ±${sigmaMs}ms`,
+  checkInLogArrivals: "Dự kiến tới server so với 00:00",
 
   // Live Sniper Tab
   startOnActiveTab: "BẮT ĐẦU SĂN TRÊN TRANG NÀY",

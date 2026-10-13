@@ -89,7 +89,7 @@ export function startHunt(opts: HuntOptions): () => void {
     (typeof window !== "undefined" && window.location?.hostname && window.location.hostname !== "localhost" && !isMajorMarketplace()
       ? "speed_priority"
       : "major_marketplace");
-  const preFireLeadMs =
+  let preFireLeadMs =
     opts.preFireLeadMs ?? (effectiveTier === "speed_priority" ? HUNT_DEFAULTS.speedPriorityPreFireLeadMs : 0);
   const leadMs = opts.leadMs ?? HUNT_DEFAULTS.leadMs;
   const nowAtStart = opts.now();
@@ -100,6 +100,16 @@ export function startHunt(opts: HuntOptions): () => void {
       Boolean(sessionStorage.getItem(`dh_reload_count_${opts.targetTimestamp}`)));
   const initialPageUrl = typeof window !== "undefined" ? window.location?.href || "" : "";
   let adapter = getAdapterForUrl(initialPageUrl);
+  // A platform with its own strike schedule (Caffiliate) decides when the strike starts.
+  const applyAdapterPlan = () => {
+    try {
+      const plan = adapter?.planStrike?.();
+      if (plan && Number.isFinite(plan.leadMs)) preFireLeadMs = plan.leadMs;
+    } catch {
+      // keep the current lead
+    }
+  };
+  applyAdapterPlan();
   const defaultWindowMs =
     adapter?.windowMs !== undefined
       ? adapter.windowMs
@@ -281,6 +291,7 @@ export function startHunt(opts: HuntOptions): () => void {
             // ignore
           }
         }
+        applyAdapterPlan();
       }
 
       // Precision Pre-Reload at T - preReloadLeadMs: active unless dualDefenseReload is explicitly false
@@ -322,7 +333,9 @@ export function startHunt(opts: HuntOptions): () => void {
         }
       }
 
-      if (untilDrop > leadMs) {
+      // Keep waiting until shortly before the fire moment, which can be earlier than leadMs
+      // (e.g. a Caffiliate strike planned ~1 s ahead to absorb the Turnstile time).
+      if (untilDrop > Math.max(leadMs, preFireLeadMs + 40)) {
         // Waiting: keep the target located and visible so the burst starts without searching
         if (untilDrop < 60_000) {
           const el = resolve(false);

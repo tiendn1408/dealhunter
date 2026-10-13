@@ -12,6 +12,11 @@ export interface MarketplaceAdapter {
    */
   executeDirectStrike?(target?: HTMLElement | null): Promise<boolean> | boolean;
   /**
+   * Optional platform schedule: how long before the drop the direct strike starts (ms).
+   * Recomputed by the engine right after preWarmStrike().
+   */
+  planStrike?(): { leadMs: number };
+  /**
    * Optional hook a few seconds before the drop (e.g. start timing collection, warm connections).
    */
   preWarmStrike?(): Promise<void> | void;
