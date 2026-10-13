@@ -233,6 +233,7 @@ Bạn không cần hiểu hết các con số này. Nhật ký giúp người h�
 | **Trang hiện ô xác minh (Cloudflare, «Verify you are human»)** | Tick vào ô xác minh và đăng nhập trước giờ săn. DealHunter không tự vượt qua bước xác minh. |
 | **Lịch ghi «Đã lỡ (máy tắt)»** | Đến giờ mà máy tắt, ngủ hoặc Chrome đóng. Lần sau giữ máy bật và Chrome mở. Lịch «Mỗi ngày» tự chuyển sang ngày mai. |
 | **«Tới giờ không thấy nút»** | Trang đã đổi giao diện. Mở trang, bấm «Đổi nút» (hoặc «Chọn lại trên trang» trong khung Hẹn giờ) và chọn lại. |
+| **Bảng săn biến mất sau khi cập nhật / tải lại DealHunter** | Bình thường: bảng cũ trên các tab đang mở tự đóng. Bấm biểu tượng DealHunter để mở lại, hoặc tải lại trang (F5). Lượt săn đang chờ vẫn tiếp tục sau khi tải lại trang. |
 | **«Đã bấm, trang chưa xác nhận»** | Tự xem trên trang đã được chưa (ví dụ trong ví voucher). |
 | **«Gợi ý giúp tôi» không gợi ý được** | Hãy tự bấm «Chọn nút» và chọn. |
 | **Vừa cập nhật hoặc tải lại DealHunter** | Tải lại (F5) các trang đang mở mà bạn muốn săn. Bảng săn cũ trên trang sẽ được thay bằng bảng mới. Lịch đã hẹn vẫn còn, không cần hẹn lại. |

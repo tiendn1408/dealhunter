@@ -2,7 +2,7 @@
 
 Tài liệu kỹ thuật mô tả kiến trúc, luồng xử lý và các thông số thời gian của Chrome Extension DealHunter (Manifest V3), khớp với mã nguồn trong [`extension/src`](../../extension/src) và [`extension/public`](../../extension/public).
 
-Cập nhật: 2026-10-13 · 30 file test / 299 test (`npx vitest run`).
+Cập nhật: 2026-10-13 · 30 file test / 301 test (`npx vitest run`).
 
 Tài liệu liên quan: [Hướng dẫn sử dụng](huong-dan-su-dung.md) · [Kết nối web và extension](ket-noi-web-extension.md) · [Rà soát lỗi và kế hoạch sửa](ra-soat-loi-va-ke-hoach-sua.md).
 
@@ -133,6 +133,7 @@ flowchart TB
 
 - Chạy ở `document_end`, chỉ ở khung trên cùng và không chạy trên SVG/XML/PDF (`exclude_matches` trong manifest + `isTopWindow()`).
 - Mỗi lần nạp tạo `INSTANCE_ID`; `removeStaleRoots()` gỡ bảng săn/huy hiệu do bản content script cũ để lại (đánh dấu `data-dh-instance`) sau khi extension được tải lại.
+- Ngược lại, chính bản cũ (tab mở sẵn khi extension được tải lại, mọi lệnh `chrome.*` ném "Extension context invalidated") tự phát hiện qua `isExtensionAlive()` (`lib/extension_context.ts`, kiểm mỗi 2 s và khi focus/đổi tab) rồi `retireOrphanedInstance()`: gỡ bảng săn, huy hiệu, picker, viền nút và `huntCoordinator.retire()` dừng lượt săn **không** xoá phiên trong vault và không báo kết quả, để bản mới (tải lại trang hoặc popup mở lại bảng) tiếp tục đúng lượt săn đó. Tin nhắn gửi background từ content đi qua `notifyBackground()` (không bao giờ ném lỗi đồng bộ).
 - Tự mở bảng săn khi: trang voucher/deal của sàn (`isECommerceVoucherOrDealPage`), trang có nút đã lưu, có task chưa xong, hoặc có phiên săn đang chạy. Huy hiệu giá (`PriceHistoryBadge`) chỉ trên trang sản phẩm của sàn (`isECommerceProductPage`).
 - Khi nạp trang: tìm task chưa xong của trang có giờ săn trong khoảng `[T − 60 s, T + 15 s]` để chạy (`executeFullAutoTask`); nếu không có thì khôi phục phiên săn thủ công (`checkAndResumeArmedSession`). Đồng thời đo thời gian trang sẵn sàng cho `reloadTiming` (mục 8.1).
 - Đồng hồ không được đo khi nạp trang; chỉ bảng săn, lượt săn hoặc lịch săn mới gọi `timeSyncClient.init()`.
@@ -542,7 +543,7 @@ Popup dùng [`tailwind.config.js`](../../extension/tailwind.config.js) riêng.
 
 ## 16. Kiểm thử
 
-- `npx vitest run` (môi trường happy-dom): **30 file, 299 test**.
+- `npx vitest run` (môi trường happy-dom): **30 file, 301 test**.
 - `npx tsc --noEmit -p .`: kiểm tra kiểu.
 
 | Nhóm | File (số test) |

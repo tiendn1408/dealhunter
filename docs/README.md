@@ -46,7 +46,7 @@ Chua danh muc day du tat ca cac endpoint HTTP API, tham so va vi du curl:
 
 ### 6. Tien Ich Chrome DealHunter Assistant (`docs/extension/` & `extension/`)
 Chua toan bo tai lieu ky thuat, huong dan va dac ta kien truc cua tien ich trinh duyet:
-- [**extension/README.md**](../extension/README.md): Huong dan cai dat, ban phat hanh / ban dev (`npm run build` / `npm run build:dev`), kiem thu (30 file, 299 unit test) va cau truc ma nguon extension.
+- [**extension/README.md**](../extension/README.md): Huong dan cai dat, ban phat hanh / ban dev (`npm run build` / `npm run build:dev`), kiem thu (30 file, 301 unit test) va cau truc ma nguon extension.
 - [**huong-dan-su-dung.md**](extension/huong-dan-su-dung.md): Huong dan su dung cho nguoi khong chuyen: 3 buoc (mo trang, chon nut, chon gio), bang san tren trang, Lich san (hen gio, sua, them nut moi), Cai dat va xu ly su co.
 - [**kien-truc-universal-sniper-va-state-machine.md**](extension/kien-truc-universal-sniper-va-state-machine.md): Kien truc hien tai: popup / bang san / background, tim lai nut sau tai trang, xac nhan hoan tat, tai trang truoc gio tu do, hang doi lich san, canh gio may chu va Caffiliate 3 tang.
 - [**ket-noi-web-extension.md**](extension/ket-noi-web-extension.md): Giao thuc `DH_WEB_SESSION` giua web va extension, origin theo ban build, bien `NEXT_PUBLIC_EXTENSION_ID`, huy hieu gia va quy tac an toan.

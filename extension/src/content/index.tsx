@@ -14,6 +14,7 @@ import { hudBus } from "./ui/hud_bus";
 import { detectPlatformBlock } from "./platform_block";
 import { platformBlockMessage } from "./ui/status_text";
 import { getTranslation } from "../lib/i18n";
+import { isExtensionAlive, notifyBackground } from "../lib/extension_context";
 import type { UniversalTargetDescriptor } from "./core/element_resolver";
 import "./ui/style.css";
 
@@ -232,6 +233,7 @@ async function measurePageReadyTime() {
 }
 
 function initContentScript() {
+  watchExtensionContext();
   console.log("[DealHunter Assistant] Content script injected on", window.location.href);
 
   // 1. Clock calibration starts only where it is needed: the HUD, an armed hunt or a scheduled
@@ -254,6 +256,43 @@ function initContentScript() {
   }
 }
 
+/**
+ * The extension was reloaded / updated while this tab stayed open: this script is cut off (every
+ * chrome.* call throws). Take its panel, badge and picker off the page and stop its hunt quietly;
+ * the popup injects a fresh script when the user opens the panel again.
+ */
+export function retireOrphanedInstance(doc: Document = document): void {
+  huntCoordinator.retire();
+  for (const root of [hudRoot, badgeRoot]) {
+    try {
+      root?.unmount();
+    } catch {
+      // already gone
+    }
+  }
+  hudRoot = null;
+  badgeRoot = null;
+  for (const id of ["dealhunter-hud-root", "dealhunter-badge-root", "dh-picker-overlay"]) {
+    doc.getElementById(id)?.remove();
+  }
+  doc.body?.classList.remove("dh-picking-active");
+  doc.querySelectorAll(".dh-target-highlight").forEach((el) => el.classList.remove("dh-target-highlight"));
+}
+
+function watchExtensionContext(): void {
+  let timer: ReturnType<typeof setInterval> | null = null;
+  const check = () => {
+    if (isExtensionAlive()) return;
+    if (timer) clearInterval(timer);
+    window.removeEventListener("focus", check);
+    document.removeEventListener("visibilitychange", check);
+    retireOrphanedInstance();
+  };
+  timer = setInterval(check, 2000);
+  window.addEventListener("focus", check);
+  document.addEventListener("visibilitychange", check);
+}
+
 const isTestEnv = typeof process !== "undefined" && process.env.NODE_ENV === "test";
 if (isTopWindow() && !isTestEnv) {
   initContentScript();
@@ -271,7 +310,7 @@ async function executeFullAutoTask(task: ScheduledTask) {
   if (block) {
     // Shown later in the task list: in the user's language
     const t = getTranslation(await storage.getLanguage().catch(() => "en" as const));
-    chrome.runtime.sendMessage({
+    notifyBackground({
       action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
       taskId: task.id,
       status: "failed",

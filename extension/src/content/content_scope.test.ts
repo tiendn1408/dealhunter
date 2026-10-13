@@ -77,3 +77,36 @@ describe("after the extension is reloaded", () => {
     expect(document.getElementById("dealhunter-hud-root")).not.toBeNull();
   });
 });
+
+describe("tabs left open while the extension is reloaded (orphaned script)", () => {
+  it("messages to the background never throw, even when chrome.* throws synchronously", async () => {
+    const { notifyBackground, isExtensionAlive } = await import("../lib/extension_context");
+    vi.stubGlobal("chrome", {
+      runtime: {
+        id: "abc",
+        sendMessage: () => {
+          throw new Error("Extension context invalidated.");
+        },
+      },
+    });
+    expect(() => notifyBackground({ action: "X" })).not.toThrow();
+    vi.stubGlobal("chrome", { runtime: {} });
+    expect(isExtensionAlive()).toBe(false);
+    expect(() => notifyBackground({ action: "X" })).not.toThrow();
+  });
+
+  it("the orphaned script takes its panel, badge and picker off the page and stops its hunt", async () => {
+    const { retireOrphanedInstance } = await import("./index");
+    const { huntCoordinator } = await import("./core/hunt_coordinator");
+    const retire = vi.spyOn(huntCoordinator, "retire");
+    document.body.innerHTML = `<div id="dealhunter-hud-root"></div><div id="dealhunter-badge-root"></div><div id="dh-picker-overlay"></div><button class="dh-target-highlight">Lưu</button>`;
+    document.body.classList.add("dh-picking-active");
+    retireOrphanedInstance(document);
+    expect(retire).toHaveBeenCalled();
+    expect(document.getElementById("dealhunter-hud-root")).toBeNull();
+    expect(document.getElementById("dealhunter-badge-root")).toBeNull();
+    expect(document.getElementById("dh-picker-overlay")).toBeNull();
+    expect(document.querySelector(".dh-target-highlight")).toBeNull();
+    expect(document.body.classList.contains("dh-picking-active")).toBe(false);
+  });
+});

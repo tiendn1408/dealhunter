@@ -32,6 +32,7 @@ describe("HuntCoordinator", () => {
     vaultStore = {};
     vi.stubGlobal("chrome", {
       runtime: {
+        id: "test-extension",
         sendMessage: vi.fn().mockResolvedValue({ success: true }),
       },
       storage: {

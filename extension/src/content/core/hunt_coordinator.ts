@@ -9,6 +9,7 @@ import { ScheduledTask, TaskStatus, TargetDiagnosticsSummary } from "../../lib/t
 import { nextExactDropAt } from "../../lib/drop_time";
 import { isSamePageUrl } from "../../lib/url";
 import { reloadTiming } from "../../lib/reload_timing";
+import { notifyBackground } from "../../lib/extension_context";
 import { newSessionToken, sessionVault } from "./session_vault";
 import { getAdapterForUrl } from "../adapters";
 
@@ -49,6 +50,7 @@ export interface CoordinatorState {
 export class HuntCoordinator {
   private activeCancel: (() => void) | null = null;
   private currentSession: ArmedSession | null = null;
+  private retired = false;
   private listeners: Set<(state: CoordinatorState) => void> = new Set();
 
   private state: CoordinatorState = {
@@ -258,15 +260,15 @@ export class HuntCoordinator {
     // H2: If past drop deadline grace window (15s), report missed (the background moves a daily task
     // on to its next drop) and abort arm. Tasks are written by the background only.
     if (now > targetTimestamp + 15_000) {
-      console.warn(`[HuntCoordinator] Task ${task.id} target time expired. Aborting arm.`);
-      chrome.runtime
-        ?.sendMessage({
-          action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
-          taskId: task.id,
-          status: "missed",
-          result: { result: "timeout", clicks: 0, detail: "Task deadline expired before arming" },
-        })
-        .catch(() => {});
+      // Expected (computer asleep / tab opened late), not an error: info, so it is not listed under
+      // the extension's errors.
+      console.info(`[HuntCoordinator] Task ${task.id} target time expired. Aborting arm.`);
+      notifyBackground({
+        action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
+        taskId: task.id,
+        status: "missed",
+        result: { result: "timeout", clicks: 0, detail: "Task deadline expired before arming" },
+      });
       return;
     }
 
@@ -382,15 +384,13 @@ export class HuntCoordinator {
 
     // Disarming a scheduled run cancels this run only (a daily task continues tomorrow); deleting the
     // task is done from the task list. The background owns the task list.
-    if (updateStorage && taskId && !reportedByEngine && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      chrome.runtime
-        .sendMessage({
-          action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
-          taskId,
-          status: "cancelled",
-          result: { result: "cancelled", clicks: 0, detail: "Cancelled" },
-        })
-        .catch(() => {});
+    if (updateStorage && taskId && !reportedByEngine) {
+      notifyBackground({
+        action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
+        taskId,
+        status: "cancelled",
+        result: { result: "cancelled", clicks: 0, detail: "Cancelled" },
+      });
     }
 
     this.setState({
@@ -407,6 +407,23 @@ export class HuntCoordinator {
    * Resets coordinator target, outcome and status completely when user forgets/clears target.
    * Cancels active hunt, removes sessionStorage and notifies listeners.
    */
+  /**
+   * The extension was reloaded and this script is orphaned: stop its hunt without touching the saved
+   * session or reporting anything, so the new script (after a page reload or the popup reopening the
+   * panel) resumes the same hunt from the vault instead of two scripts clicking.
+   */
+  retire(): void {
+    this.retired = true;
+    const cancel = this.activeCancel;
+    this.activeCancel = null;
+    this.currentSession = null;
+    try {
+      cancel?.();
+    } catch {
+      // the engine's own cleanup may touch the dead context
+    }
+  }
+
   clearTargetAndOutcome(): void {
     const token = this.currentSession?.token;
     if (this.activeCancel) {
@@ -451,6 +468,7 @@ export class HuntCoordinator {
   }
 
   private handleDone(outcome: HuntOutcome): void {
+    if (this.retired) return;
     this.activeCancel = null;
     const taskId = this.currentSession?.taskId;
     const token = this.currentSession?.token;
@@ -475,7 +493,7 @@ export class HuntCoordinator {
       outcome,
     });
 
-    if (taskId && typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+    if (taskId) {
       const status: TaskStatus =
         outcome.result === "saved"
           ? "completed"
@@ -483,12 +501,12 @@ export class HuntCoordinator {
           ? "cancelled"
           : "failed";
 
-      chrome.runtime.sendMessage({
+      notifyBackground({
         action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
         taskId,
         status,
         result: outcome,
-      }).catch(() => {});
+      });
     }
   }
 }
