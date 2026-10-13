@@ -13,6 +13,7 @@ import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TargetDiagnosticsSummary } from "../../lib/types";
 import { isSamePageUrl } from "../../lib/url";
 import { reloadTiming } from "../../lib/reload_timing";
+import { HudAnchor, DEFAULT_ANCHOR, anchorFromRect, applyAnchor, clampAnchor, loadHudAnchor, saveHudAnchor } from "./hud_position";
 import { IS_DEV_BUILD } from "../../lib/build_env";
 import { hudBus } from "./hud_bus";
 import { translateEngineStatus, platformBlockMessage } from "./status_text";
@@ -981,22 +982,50 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     });
   };
 
-  // Draggable header handler
-  const handleHeaderMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("input")) return;
+  // Position: anchored to the nearest screen corner (hud_position), so minimizing / expanding keeps
+  // the panel in the corner the user put it in. Remembered across pages.
+  const anchorRef = useRef<HudAnchor>(DEFAULT_ANCHOR);
+  const suppressClickRef = useRef(false);
+  const hudRootEl = () =>
+    hostElement || (typeof document !== "undefined" ? document.getElementById("dealhunter-hud-root") : null);
 
-    const rootEl =
-      hostElement ||
-      (typeof document !== "undefined" ? document.getElementById("dealhunter-hud-root") : null) ||
-      ((e.currentTarget as HTMLElement).closest(".dh-floating-card") as HTMLElement | null);
+  /** Applies the anchor, pulled back on screen if the panel would overflow at its current size. */
+  const placeHud = () => {
+    const el = hudRootEl();
+    if (!el || typeof window === "undefined") return;
+    applyAnchor(el, clampAnchor(anchorRef.current, el.offsetWidth, el.offsetHeight, window.innerWidth, window.innerHeight));
+  };
+
+  useEffect(() => {
+    let alive = true;
+    loadHudAnchor().then((a) => {
+      if (alive && a) {
+        anchorRef.current = a;
+        placeHud();
+      }
+    });
+    const el = hudRootEl();
+    const ro = typeof ResizeObserver !== "undefined" && el ? new ResizeObserver(() => placeHud()) : null;
+    if (ro && el) ro.observe(el);
+    window.addEventListener("resize", placeHud);
+    return () => {
+      alive = false;
+      ro?.disconnect();
+      window.removeEventListener("resize", placeHud);
+    };
+  }, []);
+
+  // Drag by the header, or the minimized pill (a click on the pill without moving still expands it)
+  const startDrag = (e: React.MouseEvent, fromPill = false) => {
+    if (e.button !== 0) return;
+    if (!fromPill && ((e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("input"))) return;
+
+    const rootEl = hudRootEl() || ((e.currentTarget as HTMLElement).closest(".dh-floating-card") as HTMLElement | null);
     if (!rootEl) return;
 
     const rect = rootEl.getBoundingClientRect();
     const startMouseX = e.clientX;
     const startMouseY = e.clientY;
-    const startX = rect.left;
-    const startY = rect.top;
-
     let hasDragged = false;
 
     const onMouseMove = (ev: MouseEvent) => {
@@ -1011,25 +1040,25 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
       ev.preventDefault();
 
-      const elWidth = rootEl.offsetWidth || 356;
-      const elHeight = rootEl.offsetHeight || 480;
-      const newX = Math.max(8, Math.min(window.innerWidth - elWidth - 8, startX + dx));
-      const newY = Math.max(8, Math.min(window.innerHeight - elHeight - 8, startY + dy));
-
-      rootEl.style.setProperty("left", `${newX}px`, "important");
-      rootEl.style.setProperty("top", `${newY}px`, "important");
-      rootEl.style.setProperty("right", "auto", "important");
-      rootEl.style.setProperty("bottom", "auto", "important");
+      const newX = Math.max(8, Math.min(window.innerWidth - rect.width - 8, rect.left + dx));
+      const newY = Math.max(8, Math.min(window.innerHeight - rect.height - 8, rect.top + dy));
+      applyAnchor(rootEl, { side: "left", x: newX, edge: "top", y: newY });
     };
 
     const onMouseUp = () => {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      if (!hasDragged) return;
+      if (fromPill) suppressClickRef.current = true;
+      anchorRef.current = anchorFromRect(rootEl.getBoundingClientRect(), window.innerWidth, window.innerHeight);
+      placeHud();
+      saveHudAnchor(anchorRef.current);
     };
 
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
   };
+  const handleHeaderMouseDown = (e: React.MouseEvent) => startDrag(e);
 
   const tone = TONE_STYLES[status.tone];
   const statusDisplayText = status.render ? status.render(t, lang) : (status.text || "");
@@ -1050,10 +1079,17 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     return (
       <button
         type="button"
-        onClick={() => setMinimized(false)}
+        onMouseDown={(e) => startDrag(e, true)}
+        onClick={() => {
+          if (suppressClickRef.current) {
+            suppressClickRef.current = false;
+            return;
+          }
+          setMinimized(false);
+        }}
         aria-label={t.hudExpand}
         title={t.hudExpand}
-        className="dh-minimized-pill flex items-center gap-2.5 rounded-full px-4 py-2 text-white shadow-2xl ring-1 ring-white/10 transition hover:ring-emerald-400/50"
+        className="dh-minimized-pill flex cursor-grab active:cursor-grabbing items-center gap-2.5 rounded-full px-4 py-2 text-white shadow-2xl ring-1 ring-white/10 transition hover:ring-emerald-400/50"
       >
         <img src={DEALHUNTER_LOGO_DATA_URI} alt="" className="h-5 w-5 rounded-md" />
         {isArmed ? (

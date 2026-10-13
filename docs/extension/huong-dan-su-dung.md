@@ -73,7 +73,7 @@ Bảng săn là khung nhỏ nổi ở góc dưới bên phải trang web.
 
 - Bảng **tự hiện** trên trang voucher/deal của các sàn lớn (Shopee, Lazada, Tiki, TikTok, Sendo, AliExpress, Taobao) và trên trang bạn đã chọn nút hoặc đã hẹn giờ.
 - Ở trang khác, bảng chỉ hiện khi bạn bấm biểu tượng DealHunter rồi bấm «Chọn nút» hoặc «Mở bảng săn».
-- Kéo phần đầu bảng để di chuyển. Bấm nút thu nhỏ để bảng gọn thành một viên nhỏ (khi đang săn, viên này ghi «còn ...»). Bấm nút đóng để tắt bảng.
+- Kéo phần đầu bảng để di chuyển. Bấm nút thu nhỏ để bảng gọn thành một viên nhỏ (khi đang săn, viên này ghi «còn ...»); viên nhỏ cũng kéo đi được, bấm vào để mở lại. Bảng (và viên nhỏ) luôn bám vào góc màn hình gần chỗ bạn thả nhất, và nhớ vị trí đó cho các trang sau. Bấm nút đóng để tắt bảng.
 - Bảng giữ nguyên kích thước khi bạn dùng, nên các nút không bị nhảy chỗ dưới chuột.
 
 ### Bước 1: «Nút muốn săn»

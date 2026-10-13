@@ -11,6 +11,7 @@ export const STORAGE_KEYS = {
   ARMED_SESSIONS: "dh_armed_sessions", // extension-side copy of armed hunts (resumed after a reload)
   PAGE_LOAD_SAMPLES: "dh_page_load_samples", // per page: measured load times for the pre-reload lead
   CHECKIN_LOGS: "dh_checkin_logs", // Caffiliate check-in timings, newest first (popup Log tab)
+  HUD_ANCHOR: "dh_hud_anchor", // Hunt panel position: nearest screen corner + distance (content/ui/hud_position)
 } as const;
 
 /** DealHunter web origins allowed to hand their sign-in session to the extension (externally_connectable). */

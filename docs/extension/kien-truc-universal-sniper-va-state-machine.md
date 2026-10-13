@@ -2,7 +2,7 @@
 
 Tài liệu kỹ thuật mô tả kiến trúc, luồng xử lý và các thông số thời gian của Chrome Extension DealHunter (Manifest V3), khớp với mã nguồn trong [`extension/src`](../../extension/src) và [`extension/public`](../../extension/public).
 
-Cập nhật: 2026-10-13 · 30 file test / 301 test (`npx vitest run`).
+Cập nhật: 2026-10-13 · 31 file test / 304 test (`npx vitest run`).
 
 Tài liệu liên quan: [Hướng dẫn sử dụng](huong-dan-su-dung.md) · [Kết nối web và extension](ket-noi-web-extension.md) · [Rà soát lỗi và kế hoạch sửa](ra-soat-loi-va-ke-hoach-sua.md).
 
@@ -122,7 +122,7 @@ flowchart TB
 
 ### 3.2. Bảng săn trên trang ([`content/ui/FloatingHUD.tsx`](../../extension/src/content/ui/FloatingHUD.tsx))
 
-- Gắn vào `#dealhunter-hud-root` ở góc dưới phải, kéo được, thu nhỏ thành viên thuốc. Chiều cao không đổi khi dùng: thông báo nằm trong ô cố định 2 dòng; "Tuỳ chọn thêm" là panel nổi (bấm ra ngoài thì đóng; sự kiện giả `isTrusted === false` bị bỏ qua để "Bấm thử" không đóng panel).
+- Gắn vào `#dealhunter-hud-root`, mặc định góc dưới phải. Kéo bằng header hoặc bằng viên thuốc (dạng thu nhỏ; nhả mà không kéo thì mở lại). Khi thả, vị trí được neo vào **góc màn hình gần nhất** + khoảng cách (`ui/hud_position.ts`, lưu `dh_hud_anchor`), nên thu nhỏ / mở ra / đổi cỡ cửa sổ đều giữ đúng góc; nếu tràn màn hình thì được kéo vào (`clampAnchor`, theo `ResizeObserver`). Chiều cao không đổi khi dùng: thông báo nằm trong ô cố định 2 dòng; "Tuỳ chọn thêm" là panel nổi (bấm ra ngoài thì đóng; sự kiện giả `isTrusted === false` bị bỏ qua để "Bấm thử" không đóng panel).
 - Bước 1, chọn nút: chế độ chọn (viền khi rê chuột, bấm để chọn, Esc hoặc chuột phải để thôi) hoặc "Gợi ý giúp tôi" (lấy từ `adapter.findVoucherButtons()` hoặc `elementResolver.findCollectButtons()`). Nút đã chọn được lưu tự động cho trang (`savePageTarget`) kèm descriptor và kết quả `targetDiagnostics.analyze()`.
 - Bước 2, giờ săn: 0:00 (mặc định), giờ khác HH:mm:ss, "Thử sau 10 giây" (`now + 10 000 ms`). Giờ hiểu theo giờ Việt Nam (GMT+7, [`lib/drop_time.ts`](../../extension/src/lib/drop_time.ts)) bất kể múi giờ máy tính.
 - Bước 3: "Bắt đầu săn" gọi `huntCoordinator.arm()`; "Hẹn giờ" gửi `SCHEDULE_TASK` (task `full_auto`, `preWarmSeconds: 60`, `dualDefenseReload` theo công tắc). Trước khi săn, `detectPlatformBlock()` ([`content/platform_block.ts`](../../extension/src/content/platform_block.ts)) chặn nếu tab đang ở trang đăng nhập/xác minh của sàn.
@@ -470,6 +470,7 @@ Mỗi lần chạy (theo kế hoạch hoặc bấm tay) được ghi vào `dh_ch
 | `dh_page_load_samples` | Thời gian sẵn sàng theo trang (10 mẫu, 30 ngày) | Content script |
 | `dh_armed_sessions` | Vault phiên săn theo token (24 giờ) | Content script |
 | `dh_checkin_logs` | Nhật ký điểm danh Caffiliate (30 mục) | Content script |
+| `dh_hud_anchor` | Vị trí bảng săn: góc màn hình gần nhất + khoảng cách | Content script (bảng săn) |
 | `dh_settings` | Ngôn ngữ và cài đặt khác | Popup |
 | `dh_last_web_url` | URL web DealHunter gần nhất | Background |
 
@@ -543,7 +544,7 @@ Popup dùng [`tailwind.config.js`](../../extension/tailwind.config.js) riêng.
 
 ## 16. Kiểm thử
 
-- `npx vitest run` (môi trường happy-dom): **30 file, 301 test**.
+- `npx vitest run` (môi trường happy-dom): **31 file, 304 test**.
 - `npx tsc --noEmit -p .`: kiểm tra kiểu.
 
 | Nhóm | File (số test) |
