@@ -13,6 +13,9 @@ import {
 import { StrikePlan, planStrike } from "../../lib/strike_plan";
 
 const isCaffiliateHost = (host: string) => host === "caffiliate.vn" || host.endsWith(".caffiliate.vn");
+/** Local Caffiliate Bench simulator (deal-hunter/simulator, `npm run dev`). */
+const isSimulatorOrigin = (u: URL) =>
+  u.protocol === "http:" && u.port === "3100" && (u.hostname === "localhost" || u.hostname === "127.0.0.1");
 
 /**
  * Caffiliate daily check-in. Around the drop the main-world helper (public/caffiliate_bridge.js) runs
@@ -34,7 +37,8 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
 
   isMatchUrl(url: string): boolean {
     try {
-      return isCaffiliateHost(new URL(url).hostname.toLowerCase());
+      const u = new URL(url);
+      return isCaffiliateHost(u.hostname.toLowerCase()) || isSimulatorOrigin(u);
     } catch {
       return false;
     }

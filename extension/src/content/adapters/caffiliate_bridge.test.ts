@@ -70,8 +70,8 @@ describe("caffiliate_bridge strike", () => {
     expect(run.plan).toEqual({ attempts: 6 });
     const starts = run.attempts.map((a: any) => a.startAt - run.startAt);
     expect(starts[0]).toBeLessThan(5);
-    expect(starts[2]).toBeGreaterThanOrEqual(44);
-    expect(starts[5]).toBeGreaterThanOrEqual(129);
+    expect(starts[2]).toBeGreaterThanOrEqual(44.7);
+    expect(starts[5]).toBeGreaterThanOrEqual(129.7);
   });
 
   it("cancels the remaining attempts as soon as one is confirmed", async () => {
@@ -145,6 +145,24 @@ describe("caffiliate_bridge strike", () => {
       [3, true],
     ]);
     expect(run.attempts[0].tiers[1].error).toContain("signature");
+  });
+
+  it("finds a check-in method declared on the page's class (prototype)", async () => {
+    class RewardApp {
+      state = { todayCheckedIn: false };
+      diemDanh() {
+        this.state.todayCheckedIn = true;
+      }
+    }
+    const inst = new RewardApp();
+    const spy = vi.spyOn(RewardApp.prototype, "diemDanh");
+    w.app = inst;
+
+    const run = await strike();
+
+    expect(run.ok).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(run.attempts[0].tiers[0].name).toBe("diemDanh()");
   });
 
   it("uses a reward-named method when the page has no checkIn()", async () => {

@@ -45,10 +45,13 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     expect(adapter?.maxClicks).toBe(1);
     expect(adapter?.windowMs).toBe(8000);
 
-    // Only the real caffiliate.vn host: not a URL that merely mentions it, not localhost:3100
-    // (the DealHunter web dev server).
+    // Only the real caffiliate.vn host: not a URL that merely mentions it, not other local apps...
     expect(getAdapterForUrl("https://www.google.com/search?q=caffiliate.vn")).toBeNull();
-    expect(getAdapterForUrl("http://localhost:3100/")).toBeNull();
+    expect(getAdapterForUrl("http://localhost:3000/")).toBeNull();
+    expect(getAdapterForUrl("https://example.com/?next=localhost:3100")).toBeNull();
+    // ...but the local Caffiliate Bench simulator is
+    expect(getAdapterForUrl("http://localhost:3100/")?.platformName).toBe("caffiliate");
+    expect(getAdapterForUrl("http://127.0.0.1:3100/bench")?.platformName).toBe("caffiliate");
     expect(getAdapterForUrl("https://evil-caffiliate.vn/")).toBeNull();
   });
 

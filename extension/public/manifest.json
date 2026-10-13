@@ -42,7 +42,9 @@
     {
       "matches": [
         "https://caffiliate.vn/*",
-        "https://*.caffiliate.vn/*"
+        "https://*.caffiliate.vn/*",
+        "http://localhost:3100/*",
+        "http://127.0.0.1:3100/*"
       ],
       "js": [
         "caffiliate_bridge.js"

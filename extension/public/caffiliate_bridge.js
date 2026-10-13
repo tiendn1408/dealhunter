@@ -98,9 +98,14 @@
   function findCheckInFunction(app) {
     if (!app) return null;
     if (typeof app.checkIn === "function") return { fn: app.checkIn, name: "checkIn" };
-    for (var k of Object.keys(app)) {
-      if (typeof app[k] === "function" && /^(check_?in|claim|diem_?danh|attendance|reward)/i.test(k)) {
-        return { fn: app[k], name: k };
+    // Own properties and class methods (prototype chain, up to Object.prototype)
+    for (var o = app; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+      var keys = Object.getOwnPropertyNames(o);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (k === "constructor" || !/^(check_?in|claim|diem_?danh|attendance|reward)/i.test(k)) continue;
+        var desc = Object.getOwnPropertyDescriptor(o, k);
+        if (desc && typeof desc.value === "function") return { fn: desc.value, name: k };
       }
     }
     return null;
@@ -226,13 +231,21 @@
     var n = 0;
     schedule.offsets.forEach(function (offset, i) {
       if (r.done) return;
+      var due = r.startAt + offset;
       var start = function () {
         if (r.done) return;
+        // Timers can fire a little early (coarse clock): wait out the remainder, then go.
+        var early = due - now();
+        if (early > 0.25) {
+          if (early > 2) r.timers.push(setTimeout(start, early));
+          else Promise.resolve().then(start);
+          return;
+        }
         if (isCheckedIn(app, textBefore)) return finishRun(true, "page confirmed", null);
         runAttempt(r, app, ++n);
       };
       if (i === 0) start();
-      else r.timers.push(setTimeout(start, Math.max(0, r.startAt + offset - now())));
+      else r.timers.push(setTimeout(start, Math.max(0, due - now())));
     });
 
     (function poll() {

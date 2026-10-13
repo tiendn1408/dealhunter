@@ -32,7 +32,8 @@
   - **Pha 2 — Gian nhip thich ung (Clicks 4-8)**: Chu ky 95ms ± 16ms, bo sung vi nghi phuc hoi co hoc 65ms ± 15ms ngay truoc cu click thu 4 de pha vo hoan toan pho tu tuong quan (Autocorrelation) cua bo loc bot.
   - **Pha 3 — On dinh dai han (Clicks 9+)**: Chu ky 140ms ± 22ms kem vi nghi dinh ky sau moi 5 clicks nham bao ve tai khoan an toan khi cho may chu xu ly.
 - **Che do Hyper Strike & Phan tang nen tang tu dong (Tiered Platform Sniper)**:
-  - Tu dong nhan dien trang toc do cao (`caffiliate.vn`, diem danh doi thuong, dat ve): Kich hoat ho so `hyper` 25ms (~40 CPS), bo qua quy dao chuot, go bo thuoc tinh `disabled` tren DOM va ban don truoc 28ms de goi tin cham server dung 00:00:00.000.
+  - Tu dong nhan dien trang toc do cao (diem danh doi thuong, dat ve): Kich hoat ho so `hyper` 25ms (~40 CPS), bo qua quy dao chuot, go bo thuoc tinh `disabled` tren DOM va ban don truoc RTT/2 de goi tin cham server dung 00:00:00.000.
+  - Rieng `caffiliate.vn`: khong reload, khong bam nut la chinh; goi `app.checkIn()` cua trang (loi thi API, roi bam nut), toi thieu 5 lan thu theo lich tinh tu so do thuc (xem tab **Log** trong popup). Chi tiet: muc 8.3 tai lieu kien truc.
   - Tu dong bao ve san lon (Shopee, Lazada, TikTok Shop): Giu nguyen mo hinh sinh trac hoc tiep can Fitts's Law de tranh bi DataDome / Cloudflare quet bot.
 - **Reload don dau thong minh (Guarded Precision Pre-Reload Loop)**: Tu dong reload don dau truoc 750ms tren cac trang can phien moi va reload co kiem soat trong cua so 3 giay quanh gio G.
 - **Kich hoat som 150ms truoc gio G (Lead Time)**: Bat dau quy trinh click truoc gio G 150ms de hap thu do tre mang Internet, dam bao cu click dau tien cham vao may chu dung miligiay mo deal.
@@ -208,27 +209,17 @@ De kiem thu extension mot cach chinh xac ma khong can cho den gio G thuc te (00:
    ```
 2. Truy cap trinh duyet tai: `http://localhost:3100/`.
 
-### 8.2. Kich ban kiem thu Caffiliate (Diem danh doi thuong & Pre-reload)
-Tab **Caffiliate Bench** mo phong chinh xac 100% co che cua trang `app.caffiliate.vn`:
-1. **Thiet lap trang thai hom qua**:
-   - Chon `Initial state: Yesterday Claimed`. Nut tren man hinh se o trang thai bi vo hieu hoa (`disabled`) tu ngay hom truoc.
-2. **Dat moc gio G (Drop Time)**:
-   - Nhap gio hoac bam `+10s` / `+30s` tren bang dieu khien Simulator.
-   - Thoi gian gio G va trang thai duoc luu truc tiep vao `localStorage`, khong bi mat khi trang reload.
-3. **Khoa nut va Kich hoat tren Extension**:
-   - Mo Popup DealHunter tren tab do, bam `START SNIPER ON THIS PAGE`.
-   - Tren bang Floating HUD:
-     - Chon moc gio khop voi gio G tren Simulator (hoac bam nut `Sync Time` neu co).
-     - Chon che do `Reload: 750ms` (hoac `1.5s`).
-     - Bam `Pick button` va click vao nut Diem danh tren man hinh Simulator.
-     - Bam `Arm sniper`.
+### 8.2. Kich ban kiem thu Caffiliate (Diem danh doi thuong)
+Tab **Caffiliate Bench** mo phong trang `app.caffiliate.vn` (extension nhan `http://localhost:3100` va `http://127.0.0.1:3100` la Caffiliate):
+1. **Thiet lap trang thai hom qua**: chon `Initial state: Yesterday Claimed` (nut bi `disabled` tu hom truoc).
+2. **Dat moc gio G**: nhap gio hoac bam `+10s` / `+30s` tren Simulator.
+3. **Khoa nut va kich hoat tren Extension**:
+   - Mo Popup tren tab do, bam `START SNIPER ON THIS PAGE`.
+   - Tren Floating HUD: chon moc gio khop voi Simulator, bam `Pick button` va click vao nut Diem danh, roi bam `Arm sniper`.
 4. **Quan sat ket qua**:
-   - Tai $T - 750ms$, trang Simulator se tu dong reload.
-   - Khi reload xong, Floating HUD van giu nguyen trang thai `Armed`, dem nguoc chinh xac khong bi reset.
-   - Dung gio G, extension tu dong ban cuoc click toc do cao (Hyper Strike) vao nut.
-   - Simulator ghi nhan cu click bang Native Event Listener, tinh toan do lech mili-giay giua gio G va thoi diem nhan, va luu vao bang Nhat ky hoat dong (Activity Logs).
-
----
+   - Khong co reload. Truoc gio G vai tram ms (theo ke hoach tinh tu Log), extension bat dau toi thieu 5 lan thu: goi ham diem danh cua trang -> API -> bam nut; co ket qua la dung.
+   - Mo Popup > tab **Log** de xem ke hoach va tung lan thu (gio bat dau, tang da dung, thoi gian Turnstile, luc gui, thoi gian server tra loi).
+   - Simulator neu khong co `app.checkIn()` thi extension xuong tang bam nut; Activity Logs cua Simulator ghi do lech mili-giay so voi gio G.
 
 ## 9. Xu Ly Su Co Thuong Gap (Troubleshooting)
 

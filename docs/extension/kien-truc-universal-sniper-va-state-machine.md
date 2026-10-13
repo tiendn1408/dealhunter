@@ -259,33 +259,32 @@ Tren cac trang ban hang / san voucher khong co API hay state noi bo ma phu thuoc
    - **Phong ngua False Positive**: Ham danh gia `isTargetCompleted` khong duoc ngoc nhan thuoc tinh `disabled` ban dau cua ngay hom truoc la da thanh cong. He thong chi cong nhan thanh cong khi da co it nhat 1 cu click duoc phat di hoac DOM co su bien doi trang thai sau gio G.
    - Khi co click thanh cong hoac deal hoan tat, tu dong don dep toan bo bien dem trong `sessionStorage`.
 
-### 8.3. Adapter Chuyen Biet Cho Caffiliate (`caffiliate_adapter.ts`)
-Doi voi nen tang doi thuong khoc liet mili-giay nhu `caffiliate.vn`:
-- **Phat hien goc re (Root Cause Top 12 luc 00:00:02)**:
-  - Cac doi thu Top 1 - 4 (`00:00:00`) khong he reload trang o 59.25s vi reload tren mang that mat 1.8s - 2.2s (tai lai Tailwind CDN, Cloudflare Turnstile, anh).
-  - Nut tren man hinh truoc 0h bi chan boi bien noi bo `app.state.todayCheckedIn = true` trong script cua trang.
-- **Kien Truc Phong Thu Da Tang (4-Tier Adaptive Defense)**:
-  De phong ngua tinh huong he thong Caffiliate doi ten ham, doi ID nut, hoac minify code, adapter trien khai 4 lop phong thu tu dong thich ung:
-  1. **Pre-warming Turnstile Token & HTTP Keep-Alive (T - 3.5s)**:
-     - Cloudflare Turnstile token can 200ms - 600ms de sinh token.
-     - Tai moc $T - 3.5s$ truoc gio G, method `preWarmStrike()` tu dong chay ngam goi `window.CheckInTurnstile.getToken()` luu vao bo nho RAM va mo ket noi Keep-Alive toi endpoint `/api/v2/xeng/check-in-secure`.
-     - Den dung $00:00:00.000$, token da co san, giam do tre phat request xuong < 20ms.
-  2. **Tier 1: Dynamic App & Function Discovery (Tu Dong Do Ham)**:
-     - Khong phu thuoc co dinh vao ten `app.checkIn`.
-     - Quet doi tuong app: `window.app`, `window.caffiliate`, `window.CaffiliateApp`, `window.rewardApp`, `window.xengApp`, hoac quet cac global property co `state` chua `todayCheckedIn` hoac `csrfToken`.
-     - Reset toan bo co khoa: `todayCheckedIn = false` va tat ca cac boolean flags chua tu khoa `check`, `claim`, `lock`, `redeem`.
-     - Do tim ham diem danh:
-       + Uu tien 1: `app.checkIn()`.
-       + Uu tien 2: Regex ten ham: `/^(check_?in|claim|diem_?danh|attendance|reward)/i`.
-       + Uu tien 3: Quet ma nguon ham (`fn.toString()`) de phat hien ham co chua `CheckInTurnstile`, `check-in-secure`, `generateSignature` (hoat dong ngay ca khi code bi obfuscate/minify).
-  3. **Tier 2: DOM Button Unblock & Native Event Dispatch**:
-     - Do tim nut diem danh qua ID `#btnCheckIn`, `#caffiliate-checkin-btn`, qua pattern attribute `button[id*="CheckIn" i]`, hoac qua text chua `Điểm danh`, `Nhận Xèng`.
-     - Go bo thuoc tinh `disabled`, `aria-disabled="false"`, `pointer-events: auto`.
-     - Dispatch su kien click W3C de kich hoat Event Listener goc gan qua closure `() => this.checkIn()`.
-  4. **Tier 3: Direct API Request Fallback**:
-     - Neu ca ham lan nut DOM bi loi, he thong tu dong trich xuat `csrfToken`, `googleId`, Turnstile token da pre-warm, tao chu ky qua `app.generateSignature` va `fetch('/api/v2/xeng/check-in-secure', { method: 'POST', ... })`.
-  5. **Tier 4: Manual Target Respect**:
-     - Ton trong 100% phan tu nguoi dung pick thu cong (vi du the tieu de breadcrumb `Điểm Danh`), khong tu y auto-snap, dong thoi kich hoat song song ca target va nut he thong.
+### 8.3. Adapter Chuyen Biet Cho Caffiliate (`caffiliate_adapter.ts` + `public/caffiliate_bridge.js`)
+Ap dung cho `caffiliate.vn` / `*.caffiliate.vn` va Caffiliate Bench simulator (`http://localhost:3100`, `http://127.0.0.1:3100`). Khong ap dung cho URL chi chua chu "caffiliate.vn" hay cac cong localhost khac.
+
+- **Khong reload, khong bam nut la chinh**: `shouldDisableReload()` = true (reload tren mang that mat 1.8s - 2.2s). Thay vao do, extension goi thang ham diem danh cua chinh trang (`app.checkIn()`), nen khong can F5 va khong phai cho nut bat lai.
+- **Cau noi Main World (`caffiliate_bridge.js`)**: content script chay o isolated world nen khong goi duoc `app.checkIn()`. Bridge duoc nap qua `content_scripts` voi `"world": "MAIN"` (khong dung `web_accessible_resources`, website khong phat hien duoc extension qua file). Hai ben giao tiep bang `CustomEvent` voi `detail` la chuoi JSON:
+  - `dh-caffiliate-strike` (content -> bridge): bat dau chuoi lan thu, kem lich `offsetsMs` va tom tat ke hoach.
+  - `dh-checkin-timing` (bridge -> content): ket qua + do thoi gian tung lan thu, luu vao tab **Log** cua popup.
+  - `dh-checkin-result` (bridge -> content): `{ ok, method }`; chi `ok: true` moi lam `isButtonFinished()` tra ve true.
+- **3 tang moi lan thu (tang tren loi moi xuong tang duoi)**:
+  1. **Ham cua trang**: `app.checkIn()`; neu trang khong co, dung ham co ten khop `/^(check_?in|claim|diem_?danh|attendance|reward)/i` (tim ca tren prototype cua class). Truoc lan thu dau, reset co con sot tu hom qua (`todayCheckedIn`, `isCheckedIn`, `hasClaimed`); truoc moi lan, reset khoa dang chay (`checkInLocked`, `isCheckingIn`). Trang tu xin token Turnstile moi va tu gui request.
+  2. **API** `POST /api/v2/xeng/check-in-secure`: chi khi tang 1 throw/reject. Token lay moi qua `CheckInTurnstile.getToken()` cua trang, chu ky tu `app.generateSignature()` cua trang. Trang khong co ham ky thi bo qua tang nay (khong tu che header `x-nonce`).
+  3. **Bam nut** diem danh (go `disabled` roi `click()`).
+  - **Khong** lay truoc va giu token Turnstile de dung sau.
+- **Lich cac lan thu (`src/lib/strike_plan.ts`)**: muc tieu la request **toi server** quanh 00:00, khong phai bat dau quanh 00:00. Lan thu bat dau luc $s$ toi server khoang $s + P + L$:
+  - $P$ (chuan bi): trung vi "bat dau -> request roi may" cua 10 lan chay gan nhat trong Log (chu yeu la thoi gian Turnstile). Chua co log thi $P = 0$.
+  - $L$ (mang): $RTT/2$ tu lan hieu chuan gio; chua do duoc thi 30ms.
+  - Do khong chac $\sigma = \sqrt{(E/\sqrt{3})^2 + J_P^2 + J_L^2}$ (toi thieu 10ms): $E$ = sai so hieu chuan dong ho, $J_P$ = IQR/1.349 cua $P$ (it hon 4 mau thi $P/4$), $J_L = L/4$ (chua do RTT thi $L$).
+  - So lan: $n = \mathrm{clamp}(\lceil 3\sigma / 20 \rceil + 1, 5, 8)$.
+  - Thoi diem toi server du kien: $a_i = \sigma \cdot (\Phi^{-1}((i + 0.5)/n) + 0.3)$, cach nhau toi thieu 20ms (lech ve sau 0h mot chut: request toi truoc 0h bi tu choi, toi ngay sau 0h van hang cao).
+  - Bat dau: $s_i = a_i - P - L$. Lan dau som toi da 3s. Engine nhan `leadMs = -s_0` qua `planStrike()` (tinh lai ngay sau `preWarmStrike()` o $T - 3.5s$) va bat dau dung luc do; bridge chay cac lan sau theo `offsetsMs` tinh tu luc bat dau (timer tre khong day lui cac lan sau).
+- **Dung som**: trang thai trang duoc kiem moi 10ms; ngay khi server xac nhan (trang thai `todayCheckedIn` chuyen ve `true` sau khi da reset, nut doi thanh "Đã điểm danh #N" khac voi nhan truoc luc bat dau, hoac API tra thanh cong), cac lan chua chay bi huy. Khong tinh popup bat ky (ke ca popup loi) hay nhan "Đã điểm danh" con sot tu hom qua la thanh cong.
+- **Truoc gio G ($T - 3.5s$)**: `preWarmStrike()` reset ket qua cu, them `<link rel="preconnect" href="https://challenges.cloudflare.com">` va tinh lai ke hoach.
+- **Tab Log (popup)**: moi lan chay luu 1 muc (`dh_checkin_logs`, giu 30 muc): ket qua, ke hoach (so lan, lead, $P$, $L$, $\sigma$, thoi diem toi server du kien), va tung lan thu (gio bat dau theo gio server, cac tang da chay + loi, thoi gian Turnstile, luc gui + sau bao nhieu ms, thoi gian server tra loi + HTTP). Bam tay nut diem danh cung duoc ghi.
+- **Turnstile tuong tac**: neu co iframe `challenges.cloudflare.com`, HUD bao nguoi dung tu tick.
+
+> Luu y: muc 8.4 va 8.5 ben duoi mo ta luong chung cua trang `speed_priority` (reload don dau, bam nut). Tren Caffiliate khong co reload va cu bam dau tien duoc thay bang chuoi lan thu o tren.
 
 ### 8.4. Luong Xu Ly Chi Tiet Toan Dien (End-to-End Execution Flow)
 
