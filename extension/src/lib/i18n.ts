@@ -1,6 +1,11 @@
 export type Language = "en" | "vi";
 
 const en = {
+  scheduleNewButton: "Or a new button",
+  scheduleNewOnCurrent: (host: string) => `Pick a button on the open page (${host})`,
+  scheduleNewOnOtherPage: "A button on another page (paste its link)",
+  scheduleNewLinkPlaceholder: "https://...",
+  scheduleNewLinkGo: "Open & pick",
   stepsAllDone: "All 3 steps done",
   homeHuntingNow: "Hunting now",
   tipHuntingNow: "Hunting is on: keep this page open, DealHunter presses on time.",
@@ -37,7 +42,7 @@ const en = {
   step1Empty: "No button yet",
   step1Title: "Button to grab",
   taskLastResult: "Last time:",
-  scheduleNoSavedButtons: "No button yet. Pick one on its page first.",
+  scheduleNoSavedButtons: "No button yet. Pick one on its page; it is remembered and can be scheduled.",
   scheduleChooseButton: "Button to grab",
   newScheduleCta: "Schedule a saved button",
   clockRetry: "Try again",
@@ -285,6 +290,11 @@ type DeepStringify<T> = {
 type TranslationCatalog = DeepStringify<typeof en>;
 
 const vi: TranslationCatalog = {
+  scheduleNewButton: "Hoặc thêm nút mới",
+  scheduleNewOnCurrent: (host: string) => `Chọn nút trên trang đang mở (${host})`,
+  scheduleNewOnOtherPage: "Nút ở trang khác (dán link trang)",
+  scheduleNewLinkPlaceholder: "https://...",
+  scheduleNewLinkGo: "Mở & chọn",
   stepsAllDone: "Đã xong 3 bước",
   homeHuntingNow: "Đang săn",
   tipHuntingNow: "Đang săn: giữ trang này mở, DealHunter tự bấm đúng giờ.",
@@ -321,7 +331,7 @@ const vi: TranslationCatalog = {
   step1Empty: "Chưa chọn nút",
   step1Title: "Nút muốn săn",
   taskLastResult: "Lần trước:",
-  scheduleNoSavedButtons: "Chưa có nút nào. Hãy chọn nút trên trang trước.",
+  scheduleNoSavedButtons: "Chưa có nút nào. Chọn nút trên trang muốn săn, nút sẽ được nhớ để hẹn giờ.",
   scheduleChooseButton: "Nút cần săn",
   newScheduleCta: "Hẹn giờ cho nút đã lưu",
   clockRetry: "Thử lại",

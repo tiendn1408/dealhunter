@@ -1,552 +1,557 @@
-# Kien Truc Universal Sniper va May Trang Thai Hanh Vi (Behavioral State Machine)
+# Kiến trúc DealHunter Extension: bộ săn nút và máy trạng thái
 
-Tai lieu nay mo ta chi tiet kien truc ky thuat, thuat toan loi, va luong xu ly dong bo cua he thong **DealHunter Universal Sniper** tren Chrome Extension (Manifest V3).
+Tài liệu kỹ thuật mô tả kiến trúc, luồng xử lý và các thông số thời gian của Chrome Extension DealHunter (Manifest V3), khớp với mã nguồn trong [`extension/src`](../../extension/src) và [`extension/public`](../../extension/public).
 
-Cap nhat: 2026-10-09 · Dong bo voi ban build production va 192 unit tests.
+Cập nhật: 2026-10-13 · 30 file test / 298 test (`npx vitest run`).
 
----
-
-## 1. Tong Quan Kien Truc Loi
-
-He thong Sniper duoc xay dung dua tren cac thanh phan cot loi duoc to chuc ro rang:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        HuntCoordinator (SSOT)                          │
-│     (Quan ly trang thai tap trung, dieu phoi Arm manual va Schedule)   │
-└──────────────▲──────────────────────────────────────────▲──────────────┘
-               │                                          │
-    Floating HUD (Manual UI)                  Background Scheduler (Auto)
-               │                                          │
-               ▼                                          ▼
-       TargetDiagnostics                         chrome.alarms (MV3)
-   (Static vs Reactive Analyzer)                 (Pre-warm tab o T-60s)
-               │                                          │
-               └────────────────────┬─────────────────────┘
-                                    ▼
-                             HuntEngine (Loi)
-                 (Ticker 10ms, Timing Window, Adaptive Loop)
-                                    │
-                     ┌──────────────┴──────────────┐
-                     ▼                             ▼
-              ElementResolver                 HumanClicker
-         (Behavioral State Machine)    (W3C Pointer Events Level 3)
-```
-
-1. **`HuntCoordinator`**: Single Source of Truth quan ly phien san, dong bo giua Floating HUD truc quan tren man hinh va Background Scheduler hen gio tu dong. Xu ly hop nhat phien (task adoption) va tiep noi phien sau khi reload trang thong qua `sessionStorage`.
-2. **`HuntEngine`**: Co che click don dap adaptive sieu toc dua tren `WorkerTimer` (10ms tick), dieu phoi thoi gian lead (150ms truoc gio G), timing window (8000ms mac dinh, mo rong 10000ms sau reload) va co che phong thu kep.
-3. **`TargetDiagnostics`**: Bo phan tich do tuong thich SPA (React/Vue/Angular), phan biet trang tinh va trang reactive de xac dinh chien luoc `dualDefenseReload` (tat reload tu dong tren cac trang SPA nhu Shopee).
-4. **`ElementResolver`**: Thuat toan nhan dien phan tu, theo doi nut xuyen suot virtual DOM/React re-render va danh gia ket qua hoan tat dua tren may trang thai hanh vi khong phu thuoc ngon ngu.
-5. **`HumanClicker`**: Phat chuoi su kien W3C Pointer Events Level 3 day du voi toa do Gauss 2 chieu tap trung trong tam nut va thoi gian tiep xuc phim vat ly (dwell time).
+Tài liệu liên quan: [Hướng dẫn sử dụng](huong-dan-su-dung.md) · [Kết nối web và extension](ket-noi-web-extension.md) · [Rà soát lỗi và kế hoạch sửa](ra-soat-loi-va-ke-hoach-sua.md).
 
 ---
 
-## 2. Loai Bo Triet De Hardcoded Text — May Trang Thai Hanh Vi
+## Mục lục
 
-Toan bo cac regex tu dien van ban truoc day (`đã lưu`, `hết lượt`, `claimed`, `sold out`) da duoc go bo 100% va thay the bang **May trang thai hanh vi (Behavioral State Machine)** ket hop cac tieu chuan W3C DOM va HTML5:
-
-### 2.1. Nhan dien ket qua sau khi click (Behavioral Mutations)
-Khi da thuc hien it nhat 1 cu click ($clicksCount \ge 1$), trang thai hoan tat duoc xac dinh thong qua su bien doi thuc te cua phan tu trong DOM:
-
-- **DOM Detachment / Unmount**: Neu `!button.isConnected`, phan tu da bi go khoi cay DOM (modal dong lai, card voucher duoc luu va bien mat). Ket qua: `saved`.
-- **Idempotency Transition**: Neu phan tu chuyen sang `disabled`, `aria-disabled="true"`, hoac nhan class `.disabled` sau chuoi click. Day la co che chong click lap chuan cua cac he thong frontend. Ket qua: `saved`.
-- **Text Mutation (Bien doi noi dung chu)**: Loai bo cac chuoi dem nguoc thoi gian (`\d{1,2}:\d{2}`) va so sanh `cleanCurrent !== cleanInitial`. Neu chu tren nut bien doi ngay sau khi click, he thong ghi nhan trang web da tiep nhan va phan hoi tuong tac thanh cong.
-- **Subtree Icon Injection**: Kiem tra viec chen moi the SVG hoac bieu tuong mang ngu nghia hoan thanh (`check`, `tick`, `success`, `done`) vao ben trong nut hoac voucher card.
-- **Voucher Card Behavioral Transition**: Kiem tra su bien doi cua toan bo container (`findVoucherContainer`) qua `getButtonState(card)`:
-  - Chuyen sang `saved` khi the nhan them SVG icon hoan tat hoac dat trang thai `saved`.
-  - Chuyen sang `exhausted` khi thanh tien do day (`progress[value="100"]`, `[aria-valuenow="100"]`, `[data-stock="0"]`) hoac class trang thai can kiet.
-
-### 2.2. Xac nhan thong qua Toast / Notification / Live Region toan trang
-Ham `checkPageToastConfirmation` quet cac vung thong bao noi tren toan trang (`[role="alert"]`, `[role="status"]`, `.toast`, v.v.) hoan toan doc lap voi ngon ngu (hoat dong tren moi phien ban Shopee / Lazada / Tiki quoc te):
-- **Thanh cong (`saved`)**:
-  - Phat hien SVG icon hoan tat: `hasCompletionIcon(el)` (duong dan path hoac class chua `check`, `tick`, `success`, `done`).
-  - Hop dong du lieu HTML5: `data-type="success"` hoac `data-status="success"`.
-  - Code tokens quoc te: `success`, `is-success`, `positive`, `completed`, `toast-success`, `alert-success`.
-  - Vung cap nhat dong W3C ARIA: `role="status"` duoc kich hoat thong bao sau tuong tac.
-- **Het luot / Can kiet (`exhausted`)**:
-  - Phat hien icon loi/canh bao: SVG/Icon chua `warning`, `error`.
-  - Hop dong du lieu HTML5: `data-type="error|warning|exhausted|depleted"`.
-  - Code tokens: `error`, `is-error`, `warning`, `danger`, `exhausted`, `depleted`.
-
-### 2.3. Danh gia trang thai truoc khi click (Pre-existing State Contracts)
-Doi voi cac nut da luu hoac het luot truoc khi bat dau san:
-
-- **Chuan W3C ARIA**: `aria-pressed="true"`, `aria-checked="true"`, `aria-selected="true"`.
-- **Hop dong du lieu HTML5**: `data-state="checked"|"success"|"completed"|"saved"|"done"` va `data-status="success"|"completed"|"saved"`.
-- **CSS Code Tokens**:
-  - Hoan thanh: `completed`, `is-saved`, `btn-saved`, `claimed`, `checked`, `done`.
-  - Can kiet: `exhausted`, `expired`, `soldout`, `sold-out`, `unavailable`, `ended`, `depleted`, `out-of-stock`.
-  - Quota meter: `progress[value="100"]`, `[role="progressbar"][aria-valuenow="100"]`, `[data-stock="0"]`.
-- **Loai tru phan tu phu (Secondary Elements)**:
-  - W3C Dialog Opener: `aria-haspopup="dialog"`, `aria-haspopup="true"`.
-  - Accordion trigger: `aria-expanded`, `aria-controls`.
-  - The lien ket dieu huong: `role="link"`, the `<a>` co `href`.
-  - Class phu tro: `secondary`, `detail`, `terms`, `condition`, `rules`, `info`, `more`, `dismiss`, `cancel`, `close`.
-
-### 2.4. Chuan doan Standby trong TargetDiagnostics
-Trang thai cho gio mo deal duoc danh gia khach quan qua:
-- Bo dem gio trong container: Co chuoi thoi gian `\d{1,2}:\d{2}(?::\d{2})?`.
-- Thuoc tinh vo hieu hoa: `disabled`, `aria-disabled="true"`, hoac class `.disabled`.
-- Code tokens: `data-status="upcoming"|"standby"` hoac class `upcoming`, `standby`, `countdown`, `waiting`.
+1. [Nguyên tắc sản phẩm](#1-nguyên-tắc-sản-phẩm)
+2. [Tổng quan thành phần](#2-tổng-quan-thành-phần)
+3. [Trách nhiệm từng phần: popup, bảng săn, content script, background](#3-trách-nhiệm-từng-phần)
+4. [Máy trạng thái của một lượt săn và mốc thời gian](#4-máy-trạng-thái-của-một-lượt-săn-và-mốc-thời-gian)
+5. [Tìm lại nút và chữ ký nội dung](#5-tìm-lại-nút-và-chữ-ký-nội-dung)
+6. [Quy tắc xác nhận hoàn tất](#6-quy-tắc-xác-nhận-hoàn-tất)
+7. [An toàn khi bấm](#7-an-toàn-khi-bấm)
+8. [Chiến lược tải lại trang](#8-chiến-lược-tải-lại-trang)
+9. [Vòng đời lịch săn (background)](#9-vòng-đời-lịch-săn-background)
+10. [Canh giờ theo máy chủ của trang](#10-canh-giờ-theo-máy-chủ-của-trang)
+11. [Caffiliate: điểm danh theo kế hoạch](#11-caffiliate-điểm-danh-theo-kế-hoạch)
+12. [Khóa lưu trữ](#12-khóa-lưu-trữ)
+13. [Danh sách message](#13-danh-sách-message)
+14. [Bản dev và bản production](#14-bản-dev-và-bản-production)
+15. [Cô lập CSS](#15-cô-lập-css)
+16. [Kiểm thử](#16-kiểm-thử)
 
 ---
 
-## 3. Thuat Toan Mo Phong Sinh Trac Hoc & Dieu Khien Co Hoc (Human Biometrics & Motor Control)
+## 1. Nguyên tắc sản phẩm
 
-De loai bo cac dau vet tu dong hoa (automation signatures) ma cac he thong phong ve hien dai (DataDome, Cloudflare Turnstile, Shopee Risk Engine) quet va phat hien bot, he thong trien khai bo thuat toan sinh trac hoc toan dien tai [`human_biometrics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/human_biometrics.ts):
+- **Người dùng không phải dân kỹ thuật.** Giao diện không có nút chỉnh thông số kỹ thuật; mọi thời gian (độ lệch đồng hồ, lúc tải lại trang, lịch các lần thử) đều được đo và tính tự động. Người dùng chỉ thấy công tắc bật/tắt và lời lẽ tiếng Việt đơn giản.
+- **Quyết định 1: chỉ bấm đúng nút người dùng đã chọn.** "Gợi ý giúp tôi" chỉ tô viền cam một nút (`dh-target-suggest`), người dùng phải xác nhận. Engine không bao giờ tự chuyển sang nút khác khi không tìm thấy nút đã chọn.
+- **Quyết định 2: chỉ đo giờ cho trang đang săn** (bảng săn đang mở, lượt săn đang chạy, lịch săn) hoặc khi người dùng yêu cầu; không bao giờ đo trên trang bình thường. Dữ liệu đo theo từng tên miền bị xóa sau 24 giờ.
+- **Quyết định 3:** giữ quyền `<all_urls>` nhưng bảng săn chỉ tự mở trên trang voucher/deal của sàn (Shopee, Lazada, Tiki, TikTok, Sendo, AliExpress, Taobao, so theo host thật); huy hiệu giá chỉ hiện trên trang sản phẩm của sàn; không có `web_accessible_resources`; không xin quyền `tabs`.
 
-### 3.1. Thuat toan bien doi Box-Muller (Phan phoi Gaussian cho thoi gian)
-Hanh vi van dong cua con nguoi luon co phuong sai tu nhien tuan theo phan phoi Gauss $X \sim \mathcal{N}(\mu, \sigma^2)$:
-$$Z_0 = \sqrt{-2 \ln(U_1)} \cos(2\pi U_2)$$
-$$\Delta t = \mu + Z_0 \cdot \sigma$$
-Trong do $U_1, U_2 \in (0, 1)$ la hai bien ngau nhien dong deu. Khoang cach giua hai lan click duoc tinh toan dong sau tung nhip va bi chan boi nguong sinh hoc $[t_{min}, t_{max}]$.
-
-### 3.2. Phan bo diem cham 2 chieu (2D Bivariate Gaussian Spatial Distribution)
-Nguoi that khong bao gio click vao cung mot toa do diem anh duy nhat va cung khong rai deu dong nhat. Mat va tay tap trung vao trong tam nut:
-$$X_{rel} \sim \mathcal{N}(0.5, 0.10^2), \quad Y_{rel} \sim \mathcal{N}(0.5, 0.10^2)$$
-Toa do thuc te duoc tinh dua tren bounding box:
-$$\text{clientX} = \text{rect.left} + \text{rect.width} \cdot X_{rel}$$
-$$\text{clientY} = \text{rect.top} + \text{rect.height} \cdot Y_{rel}$$
-Voi $X_{rel}, Y_{rel} \in [0.25, 0.75]$ dam bao con tro luon nam trong vung an toan cua phan tu.
-
-### 3.3. Quy dao tiep can chuot Cubic Bezier theo Dinh luat Fitts
-O cu click dau tien, he thong mo phong quy dao tiep can tu vi tri truoc do:
-$$B(t) = (1-t)^3 P_0 + 3(1-t)^2 t P_1 + 3(1-t) t^2 P_2 + t^3 P_3, \quad t \in [0, 1]$$
-Dinh luat Fitts (Ease-Out Deceleration): Tham so $t$ duoc phan bo phi tuyen $t = 1 - (1 - \text{linearT})^2$, mo phong giam toc tu nhien khi con tro tien sat nut muc tieu kem cac su kien trung gian `pointermove` va `mousemove`.
-
-### 3.4. Chuan hoa phan cung W3C Pointer Events Level 3
-Moi click deu phat day du chuoi su kien phan cung:
-- `pointerId: 1`
-- `pointerType: "mouse"`
-- `isPrimary: true`
-- `pressure: 0.5` o pha `pointerdown`, `0.0` o pha `pointerup`
-- `buttons: 1` khi de chuot, `buttons: 0` khi nha chuot
-- `button: 0`, `which: 1`, `detail: 1`
-- `bubbles: true`, `cancelable: true`, `composed: true`
-
-### 3.5. Dong co dinh hinh dong hoc tu thich ung 3 pha (Autonomous Adaptive Kinetic Engine)
-Dong co tu dong dieu chinh chu ky $\Delta t$ dua tren so luong click thuc te ma khong yeu cau nguoi dung phai chon che do thu cong:
-
-```
-[Gio G] ─────────────────────────────────────────────────────────────────►
-├── Pha 1: But toc gio G (Clicks 1-3)
-│   μ = 60ms, σ = 10ms (gioi han [45ms, 80ms]) -> Giat deal trong cua so vang
-├── Pha 2: Gian nhip thich ung (Clicks 4-8)
-│   μ = 95ms, σ = 16ms (gioi han [70ms, 130ms])
-│   + Vi nghi phuc hoi co hoc 65ms ± 15ms truoc click 4 -> Pha vo chu ky bot
-└── Pha 3: On dinh dai han (Clicks 9+)
-    μ = 140ms, σ = 22ms (gioi han [100ms, 190ms])
-    + Vi nghi dinh ky moi 5 clicks -> Bao ve tai khoan an toan
-```
-
-Thuat toan tinh pacing duoc dong bo chat che (`computeNextInterval(profile, 1)` o nhip dau va `computeNextInterval(profile, clicks + 1)` sau moi click), dam bao vi nghi phuc hoi co hoc xuat hien chinh xac ngay truoc cu click thu 4.
-
-### 3.6. Loai bo gioi han 80 clicks co dinh (Dynamic Window Pacing)
-- Truoc day he thong ton tai gioi han gia tao `maxClicks: 80`. Gioi han nay da duoc go bo hoan toan (`maxClicks: Infinity` theo mac dinh).
-- Phien san duoc dieu phoi hoan toan boi:
-  1. Cua so san vang thuc te (`windowMs: 8000ms`, hoac 10000ms neu reload phong thu kep).
-  2. Nhip sinh hoc cua Dong co Kinetic 3 pha: Tu dong giam tan suat va nghi ngoi hop ly nhu thao tac tay con nguoi.
-  3. May trang thai phan ung tu nhien: Dung ngay khi voucher duoc xac nhan da luu (`saved`) hoac het hang (`exhausted`).
+Quyền trong [`public/manifest.json`](../../extension/public/manifest.json): `storage`, `alarms`, `scripting`; `host_permissions: ["<all_urls>"]`.
 
 ---
 
-## 4. Thong Nhat 100% Giua Arm Sniper va Schedule
-
-Hai che do "Arm Sniper" (kich hoat truc tiep tren Floating HUD) va "Schedule" (hen gio ngam tu Background) chia se cung mot co che cot loi thong qua `HuntCoordinator`:
-
-```
-[User bam Arm tren HUD] ──────────┐
-                                  ├──► HuntCoordinator.arm() ────────► HuntEngine
-[Alarm Scheduler kich hoat] ──────┴──► HuntCoordinator.armFromTask() ──┘
-```
-
-1. **Quan ly phien tap trung**: `HuntCoordinator` dam bao tai mot thoi diem chi co duy nhat 1 instance `HuntEngine` hoat dong tren tab. Neu co phien manual cung thoi diem, he thong tu dong gop phien ma khong huy ngang.
-2. **Bao toan phien qua Reload (`sessionStorage`)**:
-   - Khoa session `dh_armed_session` luu tru target descriptor, thoi gian muc tieu va thong tin task.
-   - Khi tab reload, content script kiem tra va tiep tuc phien san ngay lap tuc ma khong lam mat vi tri nut.
-3. **So khop URL chuan hoa (`isSamePageUrl`)**:
-   - So sanh ca origin, pathname, hash route va query parameters (loai tru rieng cac tham so tiep thi `utm_*`, `fbclid`).
-   - Ngan ngua tinh trang nhan dien sai tab khi nguoi dung mo nhieu trang su kien khac nhau.
-
----
-
-## 5. Co Che Tu Toi Uu Phong Thu Kep (Dual-Defense Reload)
-
-### 5.1. Quy trinh hoat dong
-1. **Pre-warm (T-60s tu Background Scheduler)**:
-   - Danh thuc service worker qua `chrome.alarms`.
-   - Tai su dung tab hop le (`isSamePageUrl`) hoac mo tab moi.
-   - Cho su kien `tabs.onUpdated` chuyen sang `status === "complete"` truoc khi gui tin nhan kich hoat de tranh race condition.
-2. **Emergency Reload (T+250ms trong HuntEngine)**:
-   - Chi ap dung khi:
-     - Thoi gian da qua gio G 250ms.
-     - So luot click hien tai bang 0 va nut van bi vo hieu hoa (stale DOM tren trang tinh).
-     - Nhiem vu cho phep reload (`task.dualDefenseReload !== false`).
-     - Trang khong phai la reactive SPA (`diagnostics.strategy !== "reactive_no_reload"`).
-3. **Cua so mo rong 10 giay sau reload**:
-   - Dat co `dh_emergency_reloaded_${DROP}` trong `sessionStorage`.
-   - Mo rong cua so thoi gian len 10,000ms de bu tru thoi gian tai lai ma HTML va API.
-   - Khoa chong lap vo han: chi reload toi da 1 lan duy nhat cho moi moc gio.
-
----
-
-## 6. Bao Mat va Quan Ly Du Lieu
-
-1. **Don dep domain calibrations (P2 & L11)**:
-   - Du lieu can chinh gio cua tung domain duoc quan ly qua chuoi Promise `calibrationWrites` trong `src/lib/storage.ts`.
-   - Tu dong loc va xoa cac domain calibration da qua 24 gio (>86,400,000 ms) moi lan ghi du lieu, tranh luu lai lich su duyet web lau dai.
-2. **Kiem tra URL nghiem ngat (L2 & P4)**:
-   - Ham `isValidHttpUrl` tu choi tat ca cac giao thuc phi cau truc (`javascript:`, `file:`, `chrome://`, `data:`, `blob:`, `about:`).
-3. **Xac thuc tin nhan Service Worker**:
-   - Background kiem tra nguon tin nhan `sender.id === chrome.runtime.id` va chan ket noi trai phep tu cac extension khac.
-   - Thiet lap `externally_connectable` trong `manifest.json` chi ket noi voi cac origin tin cay duoc phep (`DEALHUNTER_WEB_ORIGINS`).
-
----
-
-## 7. Kien Truc Da Nen Tang (Multi-Platform E-Commerce Architecture)
-
-He thong khong gioi han o Shopee ma ho tro dong nhat tren moi san thuong mai dien tu va nen tang ban ve:
-
-1. **Marketplace Adapters & Registry (`src/content/adapters/`)**:
-   - `ShopeeAdapter`: Ho tro Shopee toan cau (`shopee.*` tai VN, TH, ID, MY, PH, SG, TW, BR).
-   - `LazadaAdapter`: Ho tro Lazada Dong Nam A (`lazada.*` tai VN, TH, PH, SG, MY, ID) va trich xuat thong tin san pham.
-   - `TikiAdapter`: Ho tro san Tiki (`tiki.vn`), nhan dien voucher/khuyen mai va trich xuat gia/ma san pham.
-   - `TikTokAdapter`: Ho tro TikTok Shop (`shop.tiktok.com`, `tiktok.com`) va trich xuat gia/san pham.
-   - Registry `getAdapterForUrl(url)`: Tu dong phan giai adapter phu hop theo URL trang hien tai.
-2. **Nhan dien trang deal / voucher da san (`isECommerceVoucherOrDealPage`)**:
-   - Quet cac mau duong dan chien dich (`/voucher`, `/coupon`, `/ma-giam-gia`, `/khuyen-mai`, `/flash-sale`, `/cart`, `/checkout`, `/wow/`, `/m/`) tren tat ca cac domain e-commerce (Shopee, Lazada, Tiki, TikTok Shop, Sendo, Amazon, AliExpress, Taobao).
-   - Tu dong kich hoat Floating HUD ma khong can thao tac thu cong.
-3. **Phat hien chuyen huong Captcha / Xac minh (`detectPlatformAuthOrCaptchaBlock`)**:
-   - Xu ly kiem tra trang thai xac minh / dang nhap cho tung san (Shopee `/verify/`, Lazada `/verification/` hoac `/punish`, Tiki `/customer/account/login`, TikTok Shop `/verify` hoac `/login`, va cac trang captcha tong quat).
-   - Canh bao som cho nguoi dung truoc gio G de tranh loi phien san.
-4. **Bo chon thong bao da nen tang**:
-   - Quet cac container thong bao dac thu cua tung san: `.shopee-toast`, `.next-feedback-toast`, `.lzd-toast`, `.arco-message` (ByteDance/TikTok), `.tiki-toast`, `.ant-message`, kem theo cac container W3C ARIA Live Regions.
-
----
-
-## 8. Chien Luoc Phan Tang Nen Tang & Toi Uu Hyper-Strike
-
-De can bang giua hai muc tieu: (1) An toan tuyet doi truoc he thong quet bot cua cac san lon, va (2) Toc do toi da de chien thang Top 1 tren cac trang diem danh / doi thuong / ban ve toc do cao (`caffiliate.vn`, v.v.), he thong trien khai kien truc **Phan tang nen tang tu dong (Tiered Platform Strategy)**:
-
-### 8.1. Phan tang tu dong (`isMajorMarketplace`)
-Ham `isMajorMarketplace` phan chia pham vi hoat dong:
-- **`major_marketplace` (Shopee, Lazada, TikTok Shop)**:
-  - Giu nguyen mo hinh sinh trac hoc chuan: quy dao tiep can chuot cong Bezier Fitts's Law o click dau tien, duong bao dong hoc Gaussian 3 pha (`adaptive`), khong can thiep DOM tho bao de tranh kich hoat MutationObserver cua DataDome / Cloudflare / Shopee Risk Engine.
-- **`speed_priority` (Trang diem danh `caffiliate.vn`, web dat ve, mini-game, v.v.)**:
-  - Tu dong chuyen sang ho so nhap chuot `hyper` (khoang cach 25ms, ~40 CPS, dwell time 8ms).
-  - Bo qua quy dao chuot Bezier o click dau tien (`skipApproach: true`), dispatch su kien tuc thi trong 0.1ms.
-  - Co che **Ban don gio G (Pre-fire Lead Offset)**: Tinh toan do tre mang Internet ($RTT / 2 \approx 28ms$), kich no chuoi click tu $T - 28ms$ de goi tin HTTP cham cong may chu dung vao tich tac $00:00:00.000$.
-  - **Cuong che thao do `disabled` tren DOM**: Tai thoi diem ban don ($T - 28ms$), neu muc tieu da duoc khoa boi nguoi dung, extension chu dong go bo thuoc tinh `disabled`, `aria-disabled="false"`, va class `.disabled` tren DOM ma khong thu dong ngoi cho React re-render cycle (tiet kiem 30ms - 80ms).
-
-### 8.2. Chien Luoc Reload Don Dau Co Kiem Soat (Chung Cho Cac Web Khac)
-Tren cac trang ban hang / san voucher khong co API hay state noi bo ma phu thuoc hoan toan vao viec server render lai HTML moi (`dualDefenseReload: true`):
-1. **T - 5s (Keep-Alive Socket Pre-warming)**:
-   - Ngam gui request `HEAD` voi `cache: "no-store"` va `keepalive: true` toi origin server de giu am socket TCP/TLS, tranh ton thoi gian bat tay TLS handshake khi click.
-2. **$T - 750ms$ (Precision Pre-Reload Tu Dong 100%)**:
-   - Thuat toan van hanh hoan toan tu dong duoi nen ma khong can nguoi dung phai can thiep hay chon thu cong tren giao dien HUD.
-   - Tai giay thu $59.25s$ truoc gio G ($T - 750ms$), he thong tu dong kiem tra trang thai nut muc tieu. Neu nut van o trang thai khoa cua ngay hom truoc (`disabled` hoac `saved`), dong co tu dong kich hoat reload truoc 750ms de trang kip hoan tat tai lai ma va CSS truoc gio G 100ms - 200ms.
-   - Toan bo trang thai phien san (`ARMED_SESSION_KEY`) bao gom slot gio, gio tuy chinh, va target descriptor duoc luu tru an toan trong `sessionStorage` va tu dong phuc hoi 100% khi trang mount lai.
-3. **Cua so 3 giay quanh gio G ($[T + 150ms, T + 2500ms]$) & Co Che Dead Click Recovery**:
-   - Ap dung co che reload lap lai co kiem soat qua `sessionStorage` (`dh_reload_count_${DROP}`):
-   - Toi da 3 lan reload, moi lan cach nhau toi thieu 500ms de dam bao trinh duyet kip mount DOM tu bo nho cache.
-   - **Phat hien Dead Click (Cưỡng chế thất bại)**:
-     - Khi extension cuong che go `disabled` tren DOM va phat cu click tham do vao gio G, neu sau 150ms:
-       + Nut van bi khoa boi State noi bo cua React hoac van mang nhan `saved` tu ngay hom truoc;
-       + Nut khong ton tai tren DOM (`el === null`);
-       + Khong co bat ky phan hoi thanh cong hay bien doi DOM nao;
-     - **He thong nhan dien ngay day la Cu Click Chet (Dead Click) do server backend mo tre** -> **TUYET DOI KHONG SPAM CLICK TIEP TUC** tren nut chet nay ma lap tuc kich hoat **Guarded Reload ngay** de keo du lieu ngay moi tu may chu!
-   - **Vua phat hien nut kha dung (`isTargetClickable && state !== "saved"`) la lap tuc dung reload va click ngay (0ms tre)**.
-   - **Phong ngua False Positive**: Ham danh gia `isTargetCompleted` khong duoc ngoc nhan thuoc tinh `disabled` ban dau cua ngay hom truoc la da thanh cong. He thong chi cong nhan thanh cong khi da co it nhat 1 cu click duoc phat di hoac DOM co su bien doi trang thai sau gio G.
-   - Khi co click thanh cong hoac deal hoan tat, tu dong don dep toan bo bien dem trong `sessionStorage`.
-
-### 8.3. Adapter Chuyen Biet Cho Caffiliate (`caffiliate_adapter.ts` + `public/caffiliate_bridge.js`)
-Ap dung cho `caffiliate.vn` / `*.caffiliate.vn` va Caffiliate Bench simulator (`http://localhost:3100`, `http://127.0.0.1:3100`). Khong ap dung cho URL chi chua chu "caffiliate.vn" hay cac cong localhost khac.
-
-- **Khong reload, khong bam nut la chinh**: `shouldDisableReload()` = true (reload tren mang that mat 1.8s - 2.2s). Thay vao do, extension goi thang ham diem danh cua chinh trang (`app.checkIn()`), nen khong can F5 va khong phai cho nut bat lai.
-- **Cau noi Main World (`caffiliate_bridge.js`)**: content script chay o isolated world nen khong goi duoc `app.checkIn()`. Bridge duoc nap qua `content_scripts` voi `"world": "MAIN"` (khong dung `web_accessible_resources`, website khong phat hien duoc extension qua file). Hai ben giao tiep bang `CustomEvent` voi `detail` la chuoi JSON:
-  - `dh-caffiliate-strike` (content -> bridge): bat dau chuoi lan thu, kem lich `offsetsMs` va tom tat ke hoach.
-  - `dh-checkin-timing` (bridge -> content): ket qua + do thoi gian tung lan thu, luu vao tab **Log** cua popup.
-  - `dh-checkin-result` (bridge -> content): `{ ok, method }`; chi `ok: true` moi lam `isButtonFinished()` tra ve true.
-- **3 tang moi lan thu (tang tren loi moi xuong tang duoi)**:
-  1. **Ham cua trang**: `app.checkIn()`; neu trang khong co, dung ham co ten khop `/^(check_?in|claim|diem_?danh|attendance|reward)/i` (tim ca tren prototype cua class). Truoc lan thu dau, reset co con sot tu hom qua (`todayCheckedIn`, `isCheckedIn`, `hasClaimed`); truoc moi lan, reset khoa dang chay (`checkInLocked`, `isCheckingIn`). Trang tu xin token Turnstile moi va tu gui request.
-  2. **API** `POST /api/v2/xeng/check-in-secure`: chi khi tang 1 throw/reject. Token lay moi qua `CheckInTurnstile.getToken()` cua trang, chu ky tu `app.generateSignature()` cua trang. Trang khong co ham ky thi bo qua tang nay (khong tu che header `x-nonce`).
-  3. **Bam nut** diem danh (go `disabled` roi `click()`).
-  - **Khong** lay truoc va giu token Turnstile de dung sau.
-- **Lich cac lan thu (`src/lib/strike_plan.ts`)**: muc tieu la request **toi server** quanh 00:00, khong phai bat dau quanh 00:00. Lan thu bat dau luc $s$ toi server khoang $s + P + L$:
-  - $P$ (chuan bi): trung vi "bat dau -> request roi may" cua 10 lan chay gan nhat trong Log (chu yeu la thoi gian Turnstile). Chua co log thi $P = 0$.
-  - $L$ (mang): $RTT/2$ tu lan hieu chuan gio; chua do duoc thi 30ms.
-  - Do khong chac $\sigma = \sqrt{(E/\sqrt{3})^2 + J_P^2 + J_L^2}$ (toi thieu 10ms): $E$ = sai so hieu chuan dong ho, $J_P$ = IQR/1.349 cua $P$ (it hon 4 mau thi $P/4$), $J_L = L/4$ (chua do RTT thi $L$).
-  - So lan: $n = \mathrm{clamp}(\lceil 3\sigma / 20 \rceil + 1, 5, 8)$.
-  - Thoi diem toi server du kien: $a_i = \sigma \cdot (\Phi^{-1}((i + 0.5)/n) + 0.3)$, cach nhau toi thieu 20ms (lech ve sau 0h mot chut: request toi truoc 0h bi tu choi, toi ngay sau 0h van hang cao).
-  - Bat dau: $s_i = a_i - P - L$. Lan dau som toi da 3s. Engine nhan `leadMs = -s_0` qua `planStrike()` (tinh lai ngay sau `preWarmStrike()` o $T - 3.5s$) va bat dau dung luc do; bridge chay cac lan sau theo `offsetsMs` tinh tu luc bat dau (timer tre khong day lui cac lan sau).
-- **Dung som**: trang thai trang duoc kiem moi 10ms; ngay khi server xac nhan (trang thai `todayCheckedIn` chuyen ve `true` sau khi da reset, nut doi thanh "Đã điểm danh #N" khac voi nhan truoc luc bat dau, hoac API tra thanh cong), cac lan chua chay bi huy. Khong tinh popup bat ky (ke ca popup loi) hay nhan "Đã điểm danh" con sot tu hom qua la thanh cong.
-- **Truoc gio G ($T - 3.5s$)**: `preWarmStrike()` reset ket qua cu, them `<link rel="preconnect" href="https://challenges.cloudflare.com">` va tinh lai ke hoach.
-- **Tab Log (popup)**: moi lan chay luu 1 muc (`dh_checkin_logs`, giu 30 muc): ket qua, ke hoach (so lan, lead, $P$, $L$, $\sigma$, thoi diem toi server du kien), va tung lan thu (gio bat dau theo gio server, cac tang da chay + loi, thoi gian Turnstile, luc gui + sau bao nhieu ms, thoi gian server tra loi + HTTP). Bam tay nut diem danh cung duoc ghi.
-- **Turnstile tuong tac**: neu co iframe `challenges.cloudflare.com`, HUD bao nguoi dung tu tick.
-
-> Luu y: muc 8.4 va 8.5 ben duoi mo ta luong chung cua trang `speed_priority` (reload don dau, bam nut). Tren Caffiliate khong co reload va cu bam dau tien duoc thay bang chuoi lan thu o tren.
-
-### 8.4. Luong Xu Ly Chi Tiet Toan Dien (End-to-End Execution Flow)
-
-Duoi day la luong tuong tac chi tiet giua cac thanh phan tu luc khoi tao den khi hoan tat cu click Top 1:
+## 2. Tổng quan thành phần
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor U as Nguoi dung / Scheduler
-    participant C as HuntCoordinator
-    participant D as TargetDiagnostics
-    participant E as HuntEngine
-    participant R as ElementResolver
-    participant H as HumanClicker
-    participant S as Server (app.caffiliate.vn)
+flowchart TB
+  subgraph Popup["Popup (src/popup)"]
+    Home["HomePanel: Trang này"]
+    Tasks["TaskList + ScheduleForm: Lịch săn"]
+    Settings["SettingsPanel + CheckInLog"]
+  end
 
-    Note over U,C: T - 60s den T - 15s: Khoi tao va Dong bo
-    U->>C: Arm Sniper (hoac Scheduled Task trigger)
-    C->>D: inspect(targetElement)
-    D-->>C: platformTier = speed_priority
-    C->>C: Luu phien vao sessionStorage (ARMED_SESSION_KEY)
-    C->>E: startHunt(opts)
-    
-    Note over E,S: T - 5s: Giu am Socket TCP/TLS
-    E->>S: fetch(HEAD, cache: "no-store", keepalive: true)
-    S-->>E: 200 OK (TCP/TLS socket san sang)
+  subgraph BG["Service worker (src/background)"]
+    Index["index.ts: định tuyến message, watchdog"]
+    Sched["scheduler.ts: TaskScheduler"]
+    Cal["time_calibrator.ts: TimeCalibrator"]
+    WebS["web_session.ts"]
+  end
 
-    Note over E,R: T - 750ms: Kiem tra trang thai nut cu
-    E->>R: resolve() & getButtonState()
-    R-->>E: disabled = true / state = "saved" (vet cu hom qua)
-    E->>U: window.location.reload() (dh_reload_count = 1)
+  subgraph Page["Tab trang web"]
+    subgraph CS["Content script (isolated world)"]
+      Entry["content/index.tsx"]
+      HUD["FloatingHUD (bảng săn)"]
+      Coord["HuntCoordinator"]
+      Engine["HuntEngine (startHunt)"]
+      Resolver["ElementResolver"]
+      Clicker["HumanClicker + human_biometrics"]
+      Sync["TimeSyncClient"]
+      Diag["TargetDiagnostics"]
+      Adapters["adapters/*"]
+      Vault["session_vault"]
+    end
+    Bridge["caffiliate_bridge.js (MAIN world, chỉ Caffiliate)"]
+  end
 
-    Note over C,E: T - 750ms den T - 150ms: Trinh duyet tai lai trang
-    U->>C: Content Script nap lai, doc ARMED_SESSION_KEY
-    C->>E: startHunt() tiep tuc phien (isEmergencyReloaded = true)
-    E->>R: resolve() tim lai phan tu qua universalDescriptor
-
-    Note over E,H: T - 28ms: Ban don gio G (Pre-fire Lead)
-    E->>E: Cuong che go bo disabled, aria-disabled, class disabled
-    E->>H: dispatchClick(el, profile: hyper, skipApproach: true)
-    H->>S: Phat chuoi su kien chuot (0.1ms) -> Gui HTTP request qua Internet
-
-    Note over S: T = 00:00:00.000: Goi tin cham dich dung gio G
-    S-->>E: Server ghi nhan diem danh thanh cong (Top 1)
-    
-    Note over E,C: T + 50ms: Xac nhan hoan tat va don dep
-    E->>R: isTargetCompleted(el)
-    R-->>E: completed = true (state: saved)
-    E->>C: finish("saved", detail)
-    C->>C: Xoa sessionStorage (ARMED_SESSION_KEY, dh_reload_count)
-    C-->>U: Cap nhat HUD: Hoan tat / Saved
+  Home -- "ACTIVATE_HUD / GET_HUNT_STATE" --> Entry
+  Tasks -- "SCHEDULE_TASK / UPDATE_TASK / CANCEL_TASK / OPEN_AND_PICK" --> Index
+  Index --> Sched
+  Index --> Cal
+  Sched -- "TRIGGER_FULL_AUTO / ACTIVATE_HUD / CANCEL_TASK" --> Entry
+  Entry --> HUD
+  HUD --> Coord
+  Entry --> Coord
+  Coord --> Engine
+  Engine --> Resolver
+  Engine --> Clicker
+  Engine --> Adapters
+  Coord --> Sync
+  Coord --> Diag
+  Coord --> Vault
+  Sync -- "GET_CALIBRATION / CALIBRATE_TIME" --> Index
+  Coord -- "TASK_STATUS_UPDATE" --> Index
+  Adapters -- "CustomEvent dh-caffiliate-strike" --> Bridge
+  Bridge -- "dh-checkin-timing / dh-checkin-result" --> Adapters
 ```
 
-### 8.4. Ma Tran Tien Trinh Thoi Gian Mili-Giay (Chronological Timeline Matrix)
-
-Bang duoi day mo ta hanh vi cua he thong tai tung moc thoi gian xung quanh gio G doi voi cac nen tang `speed_priority`:
-
-| Moc Thoi Gian | Hanh Dong Chinh | Muc Dich Ky Thuat | Thanh Phan Xu Ly |
-| :--- | :--- | :--- | :--- |
-| **$T - 60s \to T - 50s$** | Wakeup & Focus Foreground Tab | Danh thuc service worker, focus window va dua tab len front de thoat khoi co che bop nghen timer/CPU cua Chromium. | `TaskScheduler`, Chrome APIs |
-| **$T - 50s \to T - 20s$** | 3-Phase Domain Calibration | Gui 3 dot HEAD request toi server dich, trich xuat Date header va RTT de loai bo sai so dong ho he dieu hanh ($\pm 10ms$). | `TimeCalibrator`, `TimeSyncClient` |
-| **$T - 20s \to T - 15s$** | Target Verify & SSOT Session | Dinh vi nut, chan doan nen tang (`speed_priority`), luu phien truc chien vao `sessionStorage` (`ARMED_SESSION_KEY`). | `TargetDiagnostics`, `HuntCoordinator` |
-| **$T - 15s \to T - 5s$** | Web Worker Dedicated Ticker | Khoi dong luong Worker chay nen rieng biet (nhip tick 10ms on dinh), dong bo dem nguoc HUD mili-giay. | `WorkerTimer`, `FloatingHUD` |
-| **$T - 5.000s$** | Socket Keep-Alive Pre-warming | Ngam gui `fetch(HEAD, keepalive: true, cache: "no-store")` giu am ket noi TCP/TLS, triet tieu 30ms-80ms bat tay handshake. | `HuntEngine` |
-| **$T - 750ms$ (hoac Lead)** | Precision Pre-Reload | Neu nut con vuong trang thai cu hom qua (`disabled`/`saved`), tu dong reload truoc 750ms de trang kip lay phien moi. | `HuntEngine` |
-| **$T - 750ms \to T - 150ms$** | Zero-Loss Session Restore | Trinh duyet tai lai ma tu cache; Content Script va HUD doc lai `sessionStorage`, giu nguyen Armed, highlight nut, khoa moc gio G. | `HuntCoordinator`, `FloatingHUD`, `ElementResolver` |
-| **$T - 28ms$** | Pre-fire Lead & DOM Unblock | Cuong che go bo `disabled`, set `aria-disabled="false"`, xoa class `.disabled` tren DOM; bo qua Bezier (0.1ms). | `HuntEngine`, `HumanClicker` |
-| **$T - 28ms \to T = 0ms$** | Network Transit Window | Phat chuoi Pointer Events W3C (dwell time 8ms); goi tin HTTP di chuyen qua ha tang mang Internet (~25-28ms RTT/2). | `HumanClicker`, Network Layer |
-| **$T = 00:00:00.000$** | Server Arrival (Diem G) | Goi tin HTTP cham cong API gateway cua server dung tich tac mo cong ngay moi, doat ve Top 1 tuyet doi. | Origin Server (`caffiliate.vn`) |
-| **$T + 0ms \to T + 500ms$** | Hyper Burst Sequence | Duy tri nhip ban cuong do cao (25ms/click, ~40 CPS) chong nuot su kien, dong thoi theo doi bien doi DOM. | `HuntEngine`, `ElementResolver` |
-| **$T + 250ms \to T + 2500ms$** | Guarded Reload Loop | Neu server cap nhat cham, reload toi da 3 lan (cach nhau $\ge 650ms$). Vua phat hien nut mo la dung reload va click tuc thi. | `HuntEngine` |
-| **$T + 500ms \to T + 3000ms$** | Completion & Cleanup | Phat hien nut chuyen sang da diem danh/saved, ngung ban, cap nhat HUD xanh, don dep `sessionStorage` va cap nhat task. | `ElementResolver`, `HuntCoordinator` |
-| **$T + 3000ms \to T + 10s$** | Safety Watchdog Teardown | Bo hen gio an toan tu dong dong chu trinh san neu khong con phan hoi, giai phong tai nguyen trinh duyet va ghi nhan log. | `HuntEngine`, `TaskScheduler` |
-
-### 8.5. Kich Ban Thuc Thi Chi Tiet Tu 1 Phut Truoc Gio G (23:59:00) Den 10 Giay Sau Gio G (00:00:10)
-
-Gia su muc tieu san la moc giao thua nua dem **$00:00:00.000$** tren trang web React SPA (`https://app.caffiliate.vn`):
-
-```mermaid
-timeline
-    title Luong Thuc Thi Chi Tiet Tu 23:59:00 Den 00:00:10
-    23:59:00 : Wakeup Background : Focus Tab & Dua len Tien canh : Pre-warm Reload tab cu
-    23:59:10 : Time Calibration 3 Vong : Tinh do lech Date & RTT : Triet tieu sai so gio OS
-    23:59:40 : Chuan doan phan tu : Khoa Universal Descriptor : Luu ARMED_SESSION vao sessionStorage
-    23:59:45 : Kich hoat Web Worker Timer : Nhip tick 10ms doc lap : Dem nguoc mili-giay tren HUD
-    23:59:55 : Keep-Alive HEAD Socket Ping : Mo san TCP/TLS socket
-    23:59:59.250 : Precision Pre-Reload : Kiem tra nut cu hom qua : Kich hoat reload truoc 750ms
-    23:59:59.600 : Trang mount xong : HUD phuc hoi session : Re-highlight DOM : Khoa cung moc gio G
-    23:59:59.972 : Ban don T-28ms : Cuong che go disabled tren DOM : Dispatch W3C Pointer Events
-    00:00:00.000 : Goi tin cham API Server : Server mo cong ngay moi : Ghi nhan Top 1
-    00:00:00.050 : Hyper Burst ~40 CPS : May trang thai theo doi DOM : Guarded reload neu server cham
-    00:00:01.200 : Phat hien trang thai Saved : Dung ban : Cap nhat HUD : Don dep storage
-    00:00:10.000 : Safety Watchdog Timeout : Dong toan bo phien an toan : Ghi nhan log hoat dong
-```
-
-#### 1. Giai doan T - 60s den T - 50s (23:59:00 - 23:59:10): Danh thuc Background & Kich hoat Tab
-- **Su kien**: `chrome.alarms.onAlarm` kich hoat Background Service Worker voi ma `dh_task_<id>`.
-- **Hanh dong**:
-  - `scheduler.ts` khoa cung moc gio G tuyet doi: $00:00:00.000$ (tranh tinh nham sang ngay hom sau).
-  - Tim kiem tab co URL khop voi trang muc tieu qua `isSamePageUrl`.
-  - Goi `chrome.windows.update(windowId, { focused: true })` va `chrome.tabs.update(tabId, { active: true })`.
-- **Y nghia ky thuat**: Trinh duyet Chromium tu dong bop nghen (throttle) CPU va timer cua cac tab/cua so nam o che do background xuong tan 1000ms. Dua tab len mat truoc (active & focused) giup loai bo hoan toan co che bop nghen nay.
-- Neu tab da mo tu truoc va con du thoi gian ($\ge 20s$), he thong thuc hien pre-warm reload tab de giai phong DOM stale va lam sach bo nho.
-
-#### 2. Giai doan T - 50s den T - 20s (23:59:10 - 23:59:40): Hieu chuan Dong ho May chu (Domain Time Calibration)
-- **Su kien**: `timeCalibrator.calibrate(3, 4000, targetOrigin)` gui 3 request `HEAD` lien tiep toi origin server.
-- **Hanh dong**:
-  - Trich xuat tieu de `Date` trong response HTTP va do thoi gian khuu hoi 2 chieu ($RTT$).
-  - Tinh toan do lech chuan: $\theta = T_{\text{server}} - (T_{\text{client\_receive}} - RTT / 2)$.
-- **Y nghia ky thuat**: Dong ho he dieu hanh cua may tinh nguoi dung thuong bi lech tu 100ms den hang ngan mili-giay so voi may chu. Buoc nay triet tieu hoan toan do lech, dong bo gio may tinh ve sat gio cua may chu muc tieu trong pham vi $\pm 10ms$.
-
-#### 3. Giai doan T - 20s den T - 15s (23:59:40 - 23:59:45): Chuan doan Muc tieu & Thiet lap Phien SSOT
-- **Su kien**: `scheduler.ts` gui message `TRIGGER_HUNT` toi tab, content script tiep nhan qua `HuntCoordinator`.
-- **Hanh dong**:
-  - `TargetDiagnostics.inspect(targetElement)` danh gia nut muc tieu.
-  - Xac dinh tier la `speed_priority` (nhan dien dac thu trang diem danh doi thuong SPA nhu `caffiliate.vn`).
-  - Tu dong cau hinh che do nhap chuot `hyper` (khoang cach 25ms, ~40 CPS, dwell time 8ms) va lead ban don $T - 28ms$.
-  - Luu phien truc chien vao `sessionStorage` (`ARMED_SESSION_KEY`): bao gom slot gio, gio tuy chinh, `preReloadLeadMs`, `universalDescriptor`, va `diagnostics`.
-
-#### 4. Giai doan T - 15s den T - 5s (23:59:45 - 23:59:55): Khoi dong Web Worker Timer Khong Tre
-- **Su kien**: `TimerWorker` (`timer_worker.ts`) nhan lenh khoi chay luong Worker rieng.
-- **Hanh dong**:
-  - Web Worker phat nhip tick on dinh moi 10ms tren mot Background Thread rieng biet.
-  - Hoan toan khong bi anh huong neu UI Main Thread cua trang bi dung (freeze) boi cac animation hay React re-render.
-  - Floating HUD tren man hinh hien thi dong ho dem nguoc mili-giay thoi gian thuc sat sao tung nhip tick.
-
-#### 5. Mien T - 5.000s (23:59:55.000): Keep-Alive Socket Pre-warming
-- **Su kien**: `HuntEngine` phat mot request ngam `fetch(url, { method: "HEAD", keepalive: true, cache: "no-store" })`.
-- **Hanh dong**:
-  - Bat tay ket noi TCP va thiet lap phien bao mat TLS/SSL san voi may chu.
-- **Y nghia ky thuat**: Ket noi giu o trang thai mo va nong (warm socket). Khi gio G den va extension phat cu click, goi tin HTTP se duoc day di ngay tren socket co san ma khong mat 30ms - 80ms cho TCP handshake va TLS negotiation.
-
-#### 6. Mien T - 750ms (23:59:59.250): Precision Pre-Reload Don Dau
-- **Su kien**: `HuntEngine` kiem tra trang thai nut muc tieu tren man hinh.
-- **Hanh dong**:
-  - Phat hien nut van o trang thai cua ngay hom truoc (`disabled = true` hoac `state = "saved"`).
-  - Ghi nhan bien dem `dh_reload_count_DROP = 1` vao `sessionStorage`.
-  - Goi `window.location.reload()` de trinh duyet tai lai trang truoc gio G 750ms (hoac theo thoi gian nguoi dung chon: 1.5s).
-- **Y nghia ky thuat**: Cac trang React SPA khong co co che tu dong reset nut diem danh theo thoi gian thuc ma phai tai lai trang de lay ma phien ngay moi. Reload truoc 750ms dam bao trang hoan tat tai ma truoc gio G 150ms.
-
-#### 7. Giai doan T - 750ms den T - 150ms (23:59:59.250 - 23:59:59.850): Tai lai Trang & Phuc hoi Phien Tuyet Doi (Zero-State Loss)
-- **Su kien**: Trinh duyet tai lai trang tu bo nho cache trong 200ms - 400ms. Content script va Floating HUD mount lai.
-- **Hanh dong**:
-  - `HuntCoordinator` doc ngay `ARMED_SESSION_KEY` tu `sessionStorage` trong $< 2ms$.
-  - `FloatingHUD` phuc hoi toan bo giao dien:
-    - Giu nguyen trang thai `Armed = true`.
-    - Khoi phuc targetSlot, customTime, tuy chon preReloadLead.
-    - Khoa cung mốc dem nguoc `armedTargetTimestampRef.current` (00:00:00.000), khong bi lech moc gio.
-    - Tu dong highlight lai nut DOM tren man hinh voi vien xanh neon `dh-target-highlight`.
-  - `ElementResolver.relocateUniversal`: Dinh vi lai nut DOM vua duoc React dung moi thong qua van tay noi dung va cay phan cap chi trong $< 10ms$.
-
-#### 8. Mien T - 28ms (23:59:59.972): Ban don gio G & Cuong che go `disabled` DOM
-- **Su kien**: Bo dem cham moc $T - (RTT / 2) \approx T - 28ms$.
-- **Hanh dong**:
-  - `HuntEngine` lap tuc can thiep truc tiep vao phan tu DOM:
-    - Go bo thuoc tinh `disabled = false`.
-    - Thiet lap `aria-disabled="false"`.
-    - Xoa bo class `.disabled` khoi danh sach class cua nut.
-  - Bo qua hoan toan quy dao chuot cong Bezier (`skipApproach: true`).
-  - Bat dau phat su kien click ngay lap tuc trong 0.1ms ma khong can doi React tick cycle (tiet kiem 30ms - 80ms).
-
-#### 9. Giai doan T - 28ms den T = 0ms (23:59:59.972 - 00:00:00.000): Dispatch W3C Events & Di chuyen Mang
-- **Su kien**: `HumanClicker` phat chuoi su kien chuot W3C Pointer Events Level 3:
-  `pointerdown` $\to$ `mousedown` $\to$ `pointerup` $\to$ `mouseup` $\to$ `click`.
-- **Hanh dong**:
-  - Toa do click duoc phan bo ngau nhien Bivariate Gaussian quanh tam nut.
-  - Thoi gian de chuot (physical dwell time): 8ms.
-  - Trinh duyet dong goi goi tin HTTP POST / GET diem danh va ban ra card mang.
-  - Goi tin di chuyen tren ha tang mang Internet trong thoi gian $\approx 25-28ms$.
-
-#### 10. Mien T = 00:00:00.000 (Dung gio G nua dem): Goi tin cham Dich (Server Arrival)
-- **Su kien**: Goi tin HTTP cham vao API Gateway cua may chu `caffiliate.vn` dung tich tac $00:00:00.000$.
-- **Hanh dong**:
-  - May chu vua mo cong tiep nhan luot diem danh cua ngay moi.
-  - Goi tin cua DealHunter duoc server tiep nhan dau tien trong danh sach request gui ve, xac lap thu hang Top 1 tuyet doi.
-
-#### 11. Giai doan T + 0ms den T + 500ms (00:00:00.000 - 00:00:00.500): Duy tri Loat ban Hyper Burst (~40 CPS)
-- **Su kien**: `HuntEngine` tiep tuc phat chuoi click voi chu ky 25ms/click.
-- **Hanh dong**:
-  - Phong ngua truong hop goi tin dau tien bi drop mang hoac server yeu cau nhieu lan xac nhan.
-  - `ElementResolver.isTargetCompleted` theo doi lien tuc:
-    - DOM mutation tren nut (chu doi thanh "Da diem danh", "Da nhan").
-    - Toast thong bao thanh cong xuat hien tren man hinh.
-    - SVG checkmark hoac thuoc tinh W3C ARIA cap nhat.
-
-#### 12. Giai doan T + 250ms den T + 2500ms (00:00:00.250 - 00:00:02.500): Guarded Post-Drop Reload Loop (Neu backend cham)
-- **Su kien**: Neu backend cua trang cap nhat cham, qua gio G ma nut van chua mo khoa:
-- **Hanh dong**:
-  - Tu dong kich hoat reload lap lai co kiem soat qua `dh_reload_count_DROP` (toi da 3 lan, moi lan cach nhau $\ge 650ms$).
-  - **Dac tinh 0ms latency**: Vua phat hien nut tro nen kha dung o bat ky tich tac nao, extension lap tuc huy lenh reload va ban click ngay lap tuc.
-
-#### 13. Giai doan T + 500ms den T + 3000ms: Xac nhan Hoan tat & Don dep Phien
-- **Su kien**: `isTargetCompleted` xac nhan hoan tat (`state = "saved"`).
-- **Hanh dong**:
-  - `HuntEngine` ngung ban click ngay lap tuc de bao ve server va tai khoan.
-  - Floating HUD doi sang huy hieu xanh: `Saved` / `Hoan tat`.
-  - `HuntCoordinator` don dep `ARMED_SESSION_KEY`, `dh_reload_count` khoi `sessionStorage`.
-  - Cap nhat trang thai nhiem vu trong `chrome.storage.local` thanh `completed`.
-
-#### 14. Giai doan T + 3000ms den T + 10s (00:00:03 - 00:00:10): Safety Watchdog Teardown
-- **Su kien**: Bo hen gio bao ve an toan 10s hoat dong.
-- **Hanh dong**:
-  - Neu qua 10 giay sau gio G ma van khong nhan duoc phan hoi thanh cong (vi du: server trang sup do, rot mang), he thong chu dong dung toan bo vong lap san.
-  - Giai phong tai nguyen bo nho, dam bao an toan 100% cho trinh duyet va luu log ket qua de nguoi dung tra cuu.
-
----
-
-## 9. So Sanh Phan Tang Nen Tang (Platform Tiering Matrix)
-
-He thong tu dong ap dung chien luoc rieng biet tuy thuoc vao do nhay cam cua he thong chong bot tren tung nen tang:
-
-| Dac Tinh Ky Thuat | Sàn Lớn (`major_marketplace`) | Trang Tốc Độ Cao (`speed_priority`) |
+| Thành phần | File | Vai trò |
 | :--- | :--- | :--- |
-| **Nền tảng áp dụng** | Shopee, Lazada, TikTok Shop | `caffiliate.vn`, ticketbox, web đổi thưởng, điểm danh, mini-game |
-| **Hồ sơ nhấp chuột** | `adaptive` (Surge $\to$ Adaptation $\to$ Steady) | `hyper` (Cực đại 25ms, ~40 CPS, dwell 8ms) |
-| **Quỹ đạo chuột** | Đường cong Bezier Fitts's Law 4 bước | Bỏ qua hoàn toàn (`skipApproach: true`), tức thì 0.1ms |
-| **Bắn đón giờ G** | Không ($T - 0ms$) để tránh gửi request trước giờ bị sàn khóa | Có ($T - 28ms \approx RTT / 2$) bù đắp độ trễ mạng |
-| **Can thiệp DOM `disabled`** | Không can thiệp (tránh MutationObserver của DataDome quét) | Chủ động gỡ bỏ `disabled`, `aria-disabled`, class `disabled` tại giờ G |
-| **Pre-reload $T - 750ms$** | Tắt mặc định (trang SPA tự cập nhật qua WebSocket/Timer) | Bật tự động nếu nút vẫn mang trạng thái hôm qua |
-| **Guarded Reload Loop** | Chỉ reload khi cấu hình tường minh | Tự động lặp lại tối đa 3 lần trong cửa sổ $[T - 750ms, T + 2250ms]$ |
-| **Mục tiêu ưu tiên** | An toàn 100% trước WAF/Bot Filter | Tốc độ tối đa, đoạt Top 1 tuyệt đối tại $00:00:00.000$ |
+| `HuntCoordinator` | [`content/core/hunt_coordinator.ts`](../../extension/src/content/core/hunt_coordinator.ts) | Nguồn sự thật duy nhất của lượt săn trên tab: chỉ một engine chạy tại một thời điểm; nhận lượt săn từ bảng săn (`arm`) và từ lịch (`armFromTask`); lưu và khôi phục phiên qua reload; báo kết quả về background. |
+| `HuntEngine` | [`content/core/hunt_engine.ts`](../../extension/src/content/core/hunt_engine.ts) | Vòng lặp nhịp 10 ms (`WorkerTimer`): chờ tới giờ, tìm lại nút, bấm, xác nhận hoàn tất, tải lại trang khi cần. |
+| `ElementResolver` | [`content/core/element_resolver.ts`](../../extension/src/content/core/element_resolver.ts) | Mô tả nút đã chọn (`describeUniversal`), tìm lại nút (`relocateUniversal`), đọc trạng thái nút (`getButtonState`) và xác nhận hoàn tất (`isTargetCompleted`). |
+| `HumanClicker` | [`content/core/human_clicker.ts`](../../extension/src/content/core/human_clicker.ts), [`human_biometrics.ts`](../../extension/src/content/core/human_biometrics.ts) | Phát chuỗi sự kiện Pointer/Mouse, tọa độ Gauss quanh tâm nút, nhịp bấm theo hồ sơ, kiểm tra nút có bấm được không. |
+| `TargetDiagnostics` | [`content/core/target_diagnostics.ts`](../../extension/src/content/core/target_diagnostics.ts) | Phân loại trang: framework, có đồng hồ đếm ngược không, chiến lược tải lại, nhóm nền tảng (`major_marketplace` / `speed_priority`). |
+| `TimeSyncClient` | [`content/core/time_sync_client.ts`](../../extension/src/content/core/time_sync_client.ts) | Giờ máy chủ của trang (`Date.now() + offsetMs`), RTT, sai số; xin background đo khi cần. |
+| `session_vault` | [`content/core/session_vault.ts`](../../extension/src/content/core/session_vault.ts) | Bản sao phiên săn trong `chrome.storage.local`, trang web không đọc/sửa được. |
+| `WorkerTimer` | [`content/core/timer_worker.ts`](../../extension/src/content/core/timer_worker.ts) | Nhịp 10 ms từ Web Worker (Blob URL), không bị Chrome hãm khi tab chạy nền; CSP chặn Worker thì dùng `setInterval`. |
+| Adapters | [`content/adapters/`](../../extension/src/content/adapters) | Shopee, Lazada, Tiki, TikTok, Caffiliate; `getAdapterForUrl(url)` chọn theo host. Chỉ Caffiliate có hành vi riêng khi săn. |
+| `TaskScheduler` | [`background/scheduler.ts`](../../extension/src/background/scheduler.ts) | Lịch săn: tạo/sửa/xóa, `chrome.alarms`, mở/focus tab, chuyển ngày cho lịch hằng ngày, watchdog. |
+| `TimeCalibrator` | [`background/time_calibrator.ts`](../../extension/src/background/time_calibrator.ts) | Đo độ lệch đồng hồ bằng các yêu cầu `HEAD` tới đúng trang đang săn. |
 
 ---
 
-## 10. Co Che Phong Thu va Xu Ly Ngoai Le (Fault Tolerance & Edge Case Recovery)
+## 3. Trách nhiệm từng phần
 
-1. **Bao toan trang thai qua Reload (Cross-Reload State Continuity)**:
-   - Moi thong tin san gom `targetTimestamp`, `targetSlot`, `customTime`, `preReloadLeadMs`, `universalDescriptor`, `diagnostics`, `clickProfileMode`, `dualDefenseReload` duoc luu tai `sessionStorage` (`ARMED_SESSION_KEY`).
-   - Khi trang web reload (do F5 thu cong hay tu dong reload cua he thong), Content Script va `FloatingHUD` nap lai se doc ngay `ARMED_SESSION_KEY`:
-     - `HuntCoordinator` tu dong phuc hoi phien san va dinh vi lai nut trong vong 10ms.
-     - `FloatingHUD` tu dong khoi phuc toan bo giao dien: giu nguyen trang thai `Armed`, khoi phuc slot gio/gio custom, cau hinh preReloadLead, khoi phuc vien highlight DOM, va duy tri timestamp dem nguoc chinh xac khong bi nhay lui moc gio.
-2. **Tu dong tai dinh vi nut khi React re-render**:
-   - Khi React huy phan tu DOM cu va chen phan tu DOM moi vao cay tai gio G, `elementResolver.relocateUniversal(desc)` su dung chu ky noi dung (`matchesContentSignature`) va bo neo vi tri (`documentTop`, `ancestorSelector`) de tim lai nut moi trong 1 tick (10ms), khong lam dut gay chuoi click.
-3. **Chong click lap vao trang thai cu hom truoc**:
-   - Neu tai gio G nut tren man hinh van dang o trang thai `saved` tu ngay hom truoc, he thong kiem tra `state !== "saved"` truoc khi ban click, tranh lang phi luot click vao nut chua duoc lam moi.
-4. **Gioi han reload va Dead Click Recovery (Anti-Spam & Dead Click Protection)**:
-   - Moi lan reload duoc ghi nhan vao `dh_reload_count_${DROP}` va `dh_last_reload_time_${DROP}` trong `sessionStorage`.
-   - Chi cho phep reload cach nhau toi thieu 500ms va toi da 3 lan trong cua so 3 giay de tranh spam may chu.
-   - Khi da phat cu click tham do (clicks $\ge 1$) nhung nut khong phan hoi hoac van mang trang thai cu cua ngay hom truoc sau 150ms (Dead Click), he thong van chu dong kich hoat Guarded Reload de tim phien moi tu server thay vi tiep tuc spam click vo nghia.
+### 3.1. Popup ([`src/popup`](../../extension/src/popup))
+
+- Hai tab: **"Trang này"** (`HomePanel`) và **"Lịch săn (n)"** (`TaskList` + `ScheduleForm`), nút bánh răng mở `SettingsPanel`.
+- `HomePanel` hỏi tab đang mở bằng `GET_HUNT_STATE` để biết có lượt săn đang chạy (lượt săn bắt đầu từ bảng săn không có task). Nút "Chọn nút" / "Mở bảng săn" gọi `openHuntPanel` ([`page_actions.ts`](../../extension/src/popup/page_actions.ts)): gửi `ACTIVATE_HUD {pickTarget}`; tab mở trước khi cài/cập nhật extension chưa có content script thì chèn `content.css` rồi `content.js` bằng `chrome.scripting` trước.
+- Dòng trạng thái đồng hồ (`ClockStatus` trong [`TimeOffsetCard.tsx`](../../extension/src/popup/components/TimeOffsetCard.tsx)) chỉ hiện với trang đang săn (có nút đã lưu hoặc task `pending`/`running`); tự đo lại khi chưa đo, đo hỏng hoặc kết quả cũ hơn 5 phút.
+- Form lịch săn là bottom sheet: chọn nút đã lưu (theo trang), "Chọn lại nút trên trang" (`OPEN_AND_PICK`), "Hoặc thêm nút mới" (trang đang mở khi chưa có nút lưu, hoặc dán link trang khác → `OPEN_AND_PICK`; chưa có nút nào thì khung chỉ hiện phần này), giờ HH:mm:ss (nhanh: 00:00, 12:00, 20:00), "Lặp lại mỗi ngày", "Tải lại trang trước giờ". Popup chỉ gửi message qua [`lib/scheduler_client.ts`](../../extension/src/lib/scheduler_client.ts); danh sách task do background ghi.
+- Cài đặt: ngôn ngữ, tài khoản DealHunter, "Nhật ký điểm danh" (Caffiliate), "Dữ liệu trên máy này" (xóa `dh_clock_calibration`, `dh_domain_calibrations`, `dh_page_load_samples`; không đụng task và nút đã lưu), phiên bản ("(bản dev)" ở bản dev).
+
+### 3.2. Bảng săn trên trang ([`content/ui/FloatingHUD.tsx`](../../extension/src/content/ui/FloatingHUD.tsx))
+
+- Gắn vào `#dealhunter-hud-root` ở góc dưới phải, kéo được, thu nhỏ thành viên thuốc. Chiều cao không đổi khi dùng: thông báo nằm trong ô cố định 2 dòng; "Tuỳ chọn thêm" là panel nổi (bấm ra ngoài thì đóng; sự kiện giả `isTrusted === false` bị bỏ qua để "Bấm thử" không đóng panel).
+- Bước 1, chọn nút: chế độ chọn (viền khi rê chuột, bấm để chọn, Esc hoặc chuột phải để thôi) hoặc "Gợi ý giúp tôi" (lấy từ `adapter.findVoucherButtons()` hoặc `elementResolver.findCollectButtons()`). Nút đã chọn được lưu tự động cho trang (`savePageTarget`) kèm descriptor và kết quả `targetDiagnostics.analyze()`.
+- Bước 2, giờ săn: 0:00 (mặc định), giờ khác HH:mm:ss, "Thử sau 10 giây" (`now + 10 000 ms`). Giờ hiểu theo giờ Việt Nam (GMT+7, [`lib/drop_time.ts`](../../extension/src/lib/drop_time.ts)) bất kể múi giờ máy tính.
+- Bước 3: "Bắt đầu săn" gọi `huntCoordinator.arm()`; "Hẹn giờ" gửi `SCHEDULE_TASK` (task `full_auto`, `preWarmSeconds: 60`, `dualDefenseReload` theo công tắc). Trước khi săn, `detectPlatformBlock()` ([`content/platform_block.ts`](../../extension/src/content/platform_block.ts)) chặn nếu tab đang ở trang đăng nhập/xác minh của sàn.
+- "Tuỳ chọn thêm": công tắc "Tải lại trang trước giờ" (thời điểm do `reloadTiming` tính, hiện "~x giây"), "Bấm thử" (một lần `humanClicker.dispatchClick` thật lên nút đã chọn), "Quên nút".
+- Khi trang có Turnstile tương tác (iframe `challenges.cloudflare.com`), adapter Caffiliate thay dòng trạng thái bằng lời nhắc người dùng tự tick ô.
+
+### 3.3. Content script ([`content/index.tsx`](../../extension/src/content/index.tsx))
+
+- Chạy ở `document_end`, chỉ ở khung trên cùng và không chạy trên SVG/XML/PDF (`exclude_matches` trong manifest + `isTopWindow()`).
+- Mỗi lần nạp tạo `INSTANCE_ID`; `removeStaleRoots()` gỡ bảng săn/huy hiệu do bản content script cũ để lại (đánh dấu `data-dh-instance`) sau khi extension được tải lại.
+- Tự mở bảng săn khi: trang voucher/deal của sàn (`isECommerceVoucherOrDealPage`), trang có nút đã lưu, có task chưa xong, hoặc có phiên săn đang chạy. Huy hiệu giá (`PriceHistoryBadge`) chỉ trên trang sản phẩm của sàn (`isECommerceProductPage`).
+- Khi nạp trang: tìm task chưa xong của trang có giờ săn trong khoảng `[T − 60 s, T + 15 s]` để chạy (`executeFullAutoTask`); nếu không có thì khôi phục phiên săn thủ công (`checkAndResumeArmedSession`). Đồng thời đo thời gian trang sẵn sàng cho `reloadTiming` (mục 8.1).
+- Đồng hồ không được đo khi nạp trang; chỉ bảng săn, lượt săn hoặc lịch săn mới gọi `timeSyncClient.init()`.
+
+### 3.4. Background ([`background/index.ts`](../../extension/src/background/index.ts))
+
+- Bỏ qua message có `sender.id` khác extension. Kiểm tra URL bằng `isValidHttpUrl` (chỉ `http:`/`https:`) cho `CALIBRATE_TIME`, `SCHEDULE_TASK`, `UPDATE_TASK`, `OPEN_AND_PICK`.
+- Chỉ background ghi danh sách task, qua hàng đợi đọc-sửa-ghi `storage.mutateTasks`; content script báo kết quả bằng `TASK_STATUS_UPDATE`.
+- Nhận phiên đăng nhập từ web DealHunter qua `onMessageExternal` (chi tiết: [ket-noi-web-extension.md](ket-noi-web-extension.md)); token nằm trong `chrome.storage.session`. `GET_PRICE_CONTEXT` chỉ gọi API cho URL của sàn được theo dõi giá (`isPriceContextUrl`).
 
 ---
 
-## 11. Quy Chuan Chat Luong va Kiem Thu
+## 4. Máy trạng thái của một lượt săn và mốc thời gian
 
-- **Unit Tests**: 207/207 tests pass tren 18 test suites (`npm test` / `npx vitest run`).
-- **Type Checking**: Clean 100% khong loi qua `npx tsc --noEmit`.
-- **Production Build**: Bien dich hoan tat sach se `popup.js`, `background.js`, `content.js` va `content.css`.
-- **Zero-Emoji**: Tuyet doi khong su dung emoji trong ma nguon, log, test va tai lieu.
+### 4.1. Trạng thái của coordinator và kết quả của engine
+
+```mermaid
+stateDiagram-v2
+  [*] --> idle
+  idle --> armed: arm() / armFromTask() / khôi phục sau reload
+  armed --> firing: đã bấm ("Target active · n clicks")
+  armed --> idle: disarm() (Dừng săn)
+  firing --> success: saved
+  firing --> warning: exhausted / timeout
+  armed --> error: not_found
+  armed --> success: saved (đã xác nhận trước reload)
+  success --> idle: resetOutcome()
+  warning --> idle: resetOutcome()
+  error --> idle: resetOutcome()
+```
+
+`HuntResult` của engine: `saved`, `exhausted`, `not_found` (không có nút / không bấm được lần nào), `timeout` (đã bấm nhưng trang không xác nhận), `cancelled`. Ánh xạ sang trạng thái task: `saved → completed`, `cancelled → cancelled`, còn lại `→ failed`.
+
+Những điều kiện kết thúc khác:
+- Không có nút đã chọn (`locked`/`universalDescriptor`) → `not_found` ngay ("No target locked"): từ khóa đơn thuần không phải là mục tiêu.
+- URL của tab đổi sang trang khác (`isSamePageUrl` sai) → `cancelled`.
+- Lỗi bất ngờ trong một nhịp → `not_found` kèm thông báo lỗi.
+- Sau `T + 2 s` mà chưa bấm lần nào, nếu nút đã ở trạng thái `exhausted` hoặc `saved` → kết thúc với trạng thái đó.
+
+### 4.2. Tham số theo nhóm nền tảng
+
+`isMajorMarketplace()` coi Shopee, Lazada, Tiki, TikTok là `major_marketplace`; mọi trang khác là `speed_priority`.
+
+| Tham số | `major_marketplace` | `speed_priority` (trang thường) | Caffiliate |
+| :--- | :--- | :--- | :--- |
+| Hồ sơ nhịp bấm | `adaptive` | `hyper` | `hyper` (chỉ 1 lần kích hoạt) |
+| Bấm sớm trước T (`preFireLeadMs`) | 0 ms | `clamp(round(RTT/2), 28, 180)` ms; 28 ms khi chưa đo RTT hoặc trên localhost | `leadMs` của kế hoạch (≤ 3 000 ms) |
+| Số lần bấm tối đa | không giới hạn | 6 | 1 (adapter) |
+| Cửa sổ sau T (`windowMs`) | 8 000 ms | 2 000 ms | 8 000 ms (adapter) |
+| Cửa sổ khi đã reload cho mốc này | ≥ 10 000 ms | ≥ 2 500 ms | (không reload) |
+| HEAD giữ kết nối ở T − 5 s | không | có | có |
+| Tải lại trang | theo mục 8 | theo mục 8 | tắt (`shouldDisableReload`) |
+
+Khi engine khởi động sau mốc bấm (ví dụ trang vừa reload), cửa sổ được nới thành ít nhất `thời gian đã trôi qua kể từ T + 2 000 ms` (`speed_priority`) hoặc `+ 8 000 ms` (`major_marketplace`).
+
+Hồ sơ `adaptive` ([`human_biometrics.ts`](../../extension/src/content/core/human_biometrics.ts), `computeAdaptiveInterval`), khoảng cách tới lần bấm kế tiếp lấy mẫu Gauss (Box-Muller) rồi kẹp:
+
+| Pha | Lần bấm | Khoảng cách | Nghỉ ngắn |
+| :--- | :--- | :--- | :--- |
+| Tăng tốc | 1–3 | N(60, 10) kẹp [42, 80] ms | không |
+| Giãn nhịp | 4–8 | N(95, 16) kẹp [70, 130] ms | lần 4: thêm N(50, 12) kẹp [35, 75] ms |
+| Ổn định | 9+ | N(140, 22) kẹp [100, 190] ms | mỗi lần thứ 5: thêm N(65, 15) kẹp [40, 100] ms |
+
+Hồ sơ `hyper`: N(25, 4) kẹp [18, 40] ms, nghỉ N(20, 5) sau mỗi 12 lần. (Còn có `stealth`, `pro_gamer`, `turbo` trong `CLICK_PROFILES` nhưng giao diện không cho chọn.)
+
+### 4.3. Dòng thời gian: trang thường (một nhịp 10 ms của engine)
+
+T là giờ săn theo đồng hồ máy chủ của trang (`timeSyncClient.getServerTime()`).
+
+| Mốc | Việc engine làm | Ghi chú |
+| :--- | :--- | :--- |
+| T − 60 s (lịch săn) | Alarm của task kêu: background đo giờ, mở/focus tab (reload nếu tab đã mở và còn ≥ 20 s), gửi `TRIGGER_FULL_AUTO`. | Mục 9.3 |
+| < T − 60 s → | Chờ; trong 60 s cuối: tìm lại nút mỗi nhịp và cuộn nút vào giữa màn hình một lần. | Không thấy nút mà descriptor có `documentTop`: cuộn tới vùng đó để trang nạp lười. |
+| T − 5 s … T − 1 s | `speed_priority`: một `fetch(location.href, {method: "HEAD", cache: "no-store", keepalive: true})` để làm nóng kết nối. | |
+| T − 3.5 s … T − 0.5 s | Gọi `adapter.preWarmStrike()` (nếu có) rồi tính lại kế hoạch của adapter. | Chỉ Caffiliate có hook này. |
+| T − lead … T − max(200, lead − 400) ms | Tải lại trước giờ nếu được bật và nút còn trạng thái hôm qua. | lead đo theo trang (mục 8.1), mặc định 750 ms. |
+| T − 800 ms → | `humanClicker.preWarmStrike(el)`: tính sẵn tọa độ và tạo sẵn 7 sự kiện. | |
+| T − max(150, preFire + 40) ms | Hết pha chờ, bắt đầu kiểm tra mốc bấm mỗi nhịp. | `leadMs = 150` |
+| T − preFire − 35 ms | Bỏ nhịp 10 ms, chờ bằng `requestAnimationFrame` (tab hiện) / `setTimeout(1)`, 6 ms cuối bằng microtask, để bấm sát mốc. | Chỉ khi dùng `WorkerTimer` mặc định. |
+| T − preFire | **Mốc bấm.** Nút đã chọn đang `disabled` / `aria-disabled="true"` / class `disabled` thì engine gỡ ra (ghi nhớ `unblockedByUs`), chụp nhãn nút và các thông báo đang có, rồi bấm lần đầu bằng chuỗi sự kiện tạo sẵn. | `major_marketplace`: preFire = 0, nên mốc bấm là T. |
+| (T − preFire, T) | Không bấm thêm: trước T chỉ được một lần bấm. | |
+| T … T + 2.5 s | Tải lại có kiểm soát khi nút không bấm được hoặc lần bấm "chết". | Mục 8.2 |
+| Sau T | Bấm tiếp theo nhịp của hồ sơ cho tới `maxClicks`; tạm dừng khi có tín hiệu hoàn tất đang chờ ổn định. | Mục 6 |
+| T + windowMs | Hết cửa sổ: `not_found` (chưa bấm) hoặc `timeout` (đã bấm, không xác nhận). | |
+
+### 4.4. Dòng thời gian: Caffiliate
+
+Chi tiết thuật toán ở mục 11.
+
+| Mốc | Việc xảy ra |
+| :--- | :--- |
+| Khi nạp trang | `caffiliateAdapter.listenForTimings()`: nghe kết quả từ bridge, đọc lịch sử nhật ký để lấy mẫu thời gian chuẩn bị. Bridge (MAIN world, `document_start`) đã bọc `fetch`, `XMLHttpRequest` và `CheckInTurnstile.getToken` để đo. |
+| T − 5 s | HEAD giữ kết nối (như `speed_priority`). |
+| T − 3.5 s | `preWarmStrike()`: xóa kết quả lần trước, tính lại kế hoạch (`planStrike`), thêm `<link rel="preconnect" href="https://challenges.cloudflare.com">`. Không lấy trước token Turnstile. |
+| T − leadMs (≤ 3 s) | Engine tới mốc bấm, gọi `executeDirectStrike()`: phát `dh-caffiliate-strike` kèm `offsetsMs` và tóm tắt kế hoạch. Việc này tính là lần bấm duy nhất (`maxClicks = 1`); không tải lại trang. |
+| T − leadMs + offset_i | Bridge chạy lần thử thứ i (≥ 5 lần): hàm của trang → API → bấm nút. |
+| Mỗi 10 ms | Bridge kiểm tra xác nhận; xác nhận xong thì hủy các lần chưa chạy và báo `dh-checkin-result {ok: true}`. Engine thấy `confirmsCompletion` → `saved` ngay. |
+| startAt + 8 s / T + 8 s | Bridge: "not confirmed by the page"; engine hết cửa sổ → `timeout`. |
 
 ---
 
-## 12. Toi Uu Hoa Tang Nhan Nut Cuc Han (Sub-Millisecond DOM Strike Optimization)
+## 5. Tìm lại nút và chữ ký nội dung
 
-Doi voi cac trang web chan API (chong bot, yeu cau chu ky chuot hoac CSRF token phat sinh luc click), viec nhan nut DOM duoc toi uu cham moc gioi han vat ly:
+React/Vue có thể thay node của nút khi đếm ngược kết thúc, nên engine tìm lại nút mỗi nhịp. Nút đang giữ vẫn được dùng nếu còn trong DOM; trước lần bấm đầu, nó phải còn khớp chữ ký nội dung, nếu không thì tìm lại. Sau khi đã bấm, cùng node đổi nhãn ("Điểm danh" → "Đã điểm danh") là câu trả lời đang chờ, không phải nút khác.
 
-1. **Khoi tao truoc su kien (Zero-Allocation Pre-Warmed Strike)**:
-   - Tai $T - 800\text{ms}$, he thong tinh san toa do Gaussian va khoi tao san toan bo chuoi W3C Level 3 Pointer & Mouse Events (`pointerover`, `pointerenter`, `pointerdown`, `mousedown`, `pointerup`, `mouseup`, `click`) trong RAM.
-   - Khi den gio G, cu click vang dau tien duoc phat thang vao phan tu ma khong ton 1 micro-giay cap phat bo nho nao, loai bo 100% nguy co bi nghen do V8 Minor Garbage Collection.
-2. **Vong lap do do phan giai duoi mili-giay (Sub-Millisecond Microtask Spin-Wait)**:
-   - Trong 35ms cuoi cung truoc thoi khac ban, he thong kich hoat che do Spin-Wait qua `requestAnimationFrame` va hang doi microtask `Promise.resolve().then()`.
-   - V8 Engine lien tuc kiem tra dong ho voi do phan giai $< 0.1\text{ms}$, triet tieu hoan toan do lech ngau nhien $0\text{ms} - 10\text{ms}$ do nhip `postMessage` cua Web Worker.
-3. **Bu tre duong truyen dong (Dynamic Network Pre-Fire)**:
-   - Khi nguoi dung click tren giao dien, trinh duyet phai mat thoi gian bay cua goi tin mot chieu ($\frac{\text{RTT}}{2}$) de mang request den may chu.
-   - He thong tu dong tinh toan `preFireLeadMs = Math.round(rttMs / 2)` (gioi han an toan tu 28ms den 180ms) dua tren thong so do tu `timeSyncClient`.
-   - Nho do, du click xay ra o tang DOM, goi tin HTTP cua trang van cham may chu dung o mili-giay dau tien cua gio G.
+### 5.1. Descriptor (`describeUniversal`)
+
+`UniversalTargetDescriptor` gồm: `id`, `uniqueSelector`, `tagName`, các thuộc tính (`data-testid`, `data-test-id`, `name`, `role`, `type`, `aria-label`, `class`, `title`), `initialText` (nhãn nút), `childIndex`, `parentSelector`, `rect`, `documentTop`, `containerText` (chữ của thẻ voucher trừ nhãn nút) và `valueTokens` (số tiền, %, ngày... trích từ `containerText`, bỏ giờ dạng `hh:mm(:ss)`).
+
+### 5.2. Chữ ký nội dung (`matchesContentSignature`)
+
+- **Có thẻ voucher:** các value token phải khớp (`matchesTokens`: trùng hết, chứa đủ, hoặc trùng ≥ 60% và ≥ 2 token), rồi tỷ lệ từ của thẻ trùng phải ≥ 40% khi có token, ≥ 60% khi không có token. Nhãn nút được phép đổi (đếm ngược → "Lưu").
+- **Không có thẻ:** so nhãn nút sau khi bỏ giờ, số, khoảng trắng và dấu câu (`labelKey`); nút chỉ có icon thì so `aria-label`, `title`, `class`.
+
+### 5.3. Thứ tự tìm lại (`relocateUniversal`)
+
+1. `id` duy nhất trong trang → tin ngay (kể cả khi chữ đã đổi, ví dụ "Đã điểm danh #3" hôm qua, "Điểm danh" hôm nay); `id` trùng thì phải khớp chữ ký.
+2. Gom mọi phần tử cùng `tagName` khớp chữ ký nội dung (bỏ qua UI của DealHunter). Có 0 hoặc 1 thì trả về luôn.
+3. Nhiều phần tử: xếp theo độ giống (Jaccard từ của thẻ + 0.5 nếu cùng nhãn); lấy phần tử điểm cao nhất nếu duy nhất.
+4. Còn hòa: gợi ý cấu trúc (`uniqueSelector`, `data-testid`, `data-test-id`, `name`, `aria-label`) chỉ đúng một phần tử thì lấy.
+5. Cuối cùng: vị trí, chỉ khi rõ ràng (gần nhất ≤ 40 px và phần tử kế tiếp ≥ 120 px). Nếu không thì **không trả về gì**: thà không bấm còn hơn bấm nhầm.
+
+Cấu trúc (selector, đường DOM, vị trí) chỉ dùng để phá hòa, không bao giờ đứng một mình.
+
+---
+
+## 6. Quy tắc xác nhận hoàn tất
+
+Engine chỉ xét hoàn tất khi **đã bấm ít nhất một lần** cho mốc này (hoặc đã bấm trước một lần reload, khóa `dh_clicked_<T>`): nhãn "đã lưu" của hôm qua không phải thành công của hôm nay.
+
+### 6.1. Tín hiệu (`isTargetCompleted`)
+
+- Nút không còn trong DOM **không** phải bằng chứng thành công (có thể là chuyển trang, captcha, re-render).
+- Nút đang tải (`aria-busy="true"`, class `loading`/`spinner`/`busy`) → chưa xong.
+- Sau khi bấm, một trong các thay đổi sau:
+  - nút chuyển sang `disabled` (bỏ qua nếu chính engine đã gỡ `disabled` trước đó: trang chỉ khóa lại như cũ);
+  - nhãn đổi so với nhãn chụp ngay trước lần bấm đầu (bỏ phần giờ);
+  - xuất hiện icon hoàn tất trong nút (`check`, `tick`, `success`, `done`...);
+  - nút có class hoàn tất (`completed`, `success`, `is-saved`, `claimed`, `done`, `checked`...).
+  Nếu lúc đó `getButtonState` là `exhausted` thì kết quả là `exhausted`, ngược lại `saved`.
+- Thẻ voucher có icon hoàn tất hoặc chuyển sang `saved`/`exhausted`.
+- Thông báo của trang (`checkPageToastConfirmation`): `[role=alert|status|dialog|alertdialog]`, `aria-live`, toast của Shopee/Lazada/TikTok/Tiki/Ant Design/SweetAlert và các lớp chung (`toast`, `snackbar`, `notification`, `popup`...). Thông báo phải hiện thấy, không nằm trong UI DealHunter và **không có sẵn từ trước lần bấm đầu** (`snapshotToasts`, so cả nội dung). Lỗi/cảnh báo (icon, `data-type`, class, màu đỏ/cam) → `exhausted`; thành công (icon, `data-type`, class, màu xanh) → `saved`. Vùng live chỉ có chữ thì không tính.
+- Trạng thái tĩnh của nút: ARIA (`aria-pressed|checked|selected="true"`), `data-state`/`data-status` hoàn tất, class hết hàng, thanh tiến độ 100% hoặc `data-stock="0"`.
+
+### 6.2. Thời gian giữ ổn định (`settle`)
+
+- Một tín hiệu phải giữ nguyên **300 ms** mới được tính (`CONFIRM_STABLE_MS`).
+- Nếu tín hiệu duy nhất là nút chuyển `disabled` (`weak`), phải giữ **1 500 ms** (`CONFIRM_WEAK_MS`): nút cũng bị khóa trong lúc request đang chạy.
+- Trong lúc tín hiệu đang chờ ổn định, engine **không bấm thêm** (một lần bấm nữa có thể hủy việc lưu).
+- Chỉ adapter biết chắc kết quả (`confirmsCompletion`, hiện chỉ Caffiliate) mới kết thúc ngay không cần chờ.
+
+---
+
+## 7. An toàn khi bấm
+
+- **Chỉ nút đã chọn.** Không tìm thấy nút đã chọn thì không bấm gì (mục 5.3). "Bấm thử" cũng chỉ bấm nút đã chọn.
+- **Không bấm lần đầu vào nút hết hàng** (`state === "exhausted"`). Nút còn nhãn `saved` của hôm qua chỉ được bấm xuyên qua ở lần đầu, trừ khi đã bấm mốc này trước một lần reload.
+- **Trước T chỉ một lần bấm** (lần bấm sớm bù độ trễ mạng); các sàn lớn có `preFireLeadMs = 0` nên không bao giờ bấm trước T.
+- **Nút phải bấm được thật:** mọi đường bấm (`dispatchClick`, `dispatchPreWarmedStrike`, `dispatchClickAsync`) đều kiểm tra kích thước khác 0 và `document.elementFromPoint` tại tọa độ bấm phải là nút (hoặc con/cha của nó). Bị modal, captcha, banner cookie che thì không bấm; chỉ UI của DealHunter được miễn. Nút ngoài màn hình thì cuộn vào trước khi bấm.
+- **Gợi ý tự động loại nút nguy hiểm:** `allVoucherButtons` bỏ qua nút mở dialog/accordion, liên kết điều hướng, nút phụ (`secondary`, `detail`, `terms`, `close`...), và nút mua/thanh toán theo class (`checkout`, `buy-now`, `payment`, `pay`...) hoặc theo nhãn bắt đầu bằng "Mua ngay", "Mua với voucher", "Thanh toán", "Đặt hàng", "Buy now"... (kể cả "Mua ngay -50%").
+- **Chuỗi sự kiện:** `pointerover → pointerenter → pointerdown → mousedown → focus → pointerup → mouseup → click`, `pointerId: 1`, `pointerType: "mouse"`, `isPrimary: true`, `pressure` 0.5 khi nhấn, `buttons` 1/0, `bubbles/cancelable/composed: true`. Tọa độ Gauss N(0.5, 0.1) theo chiều rộng/cao của nút, kẹp [0.25, 0.75]. Engine phát chuỗi này đồng bộ; quỹ đạo Bezier (`simulateApproach`) chỉ dùng cho "Bấm thử" và khi lần bấm đầu trên sàn lớn không có chuỗi tạo sẵn.
+
+---
+
+## 8. Chiến lược tải lại trang
+
+### 8.1. Khi nào được tải lại
+
+- Adapter tắt reload (Caffiliate) → không bao giờ.
+- `TargetDiagnostics.inspect()` thấy trang là `reactive_no_reload` (nhận ra React/Vue/Angular/Svelte, hoặc có đồng hồ đếm ngược quanh nút) → không reload, dù công tắc đang bật: trang tự cập nhật nút.
+- Trang tĩnh (`static_dual_defense`) → theo công tắc "Tải lại trang trước giờ" (mặc định bật); không có kết quả chẩn đoán thì theo công tắc.
+
+Phiên lưu cả giá trị hiệu lực (`dualDefenseReload`) và công tắc người dùng (`reloadSwitch`) để bảng săn hiển thị lại đúng sau reload.
+
+**Thời điểm tải lại trước giờ được đo, không cố định** ([`lib/reload_timing.ts`](../../extension/src/lib/reload_timing.ts)):
+
+```
+lead = median(thời gian sẵn sàng) + 1.5 × spread + 150 ms,   kẹp trong [400 ms, 6 000 ms]
+spread = IQR / 1.349 khi có ≥ 4 mẫu, ngược lại median / 4
+chưa có mẫu: 750 ms
+```
+
+Mẫu = thời gian từ lúc bắt đầu điều hướng tới khi `relocateUniversal` tìm thấy nút, đo trên trang có nút đã lưu hoặc phiên săn đang chạy; chỉ khi tab đang hiện, không phải từ bộ nhớ back/forward, tối đa 15 s (hỏi lại mỗi 50 ms). Lưu theo trang (origin + path), giữ 10 mẫu mới nhất, quên trang không ghé sau 30 ngày.
+
+### 8.2. Các lần tải lại trong một mốc
+
+Bộ đếm `dh_reload_count_<T>` trong `sessionStorage` dùng chung cho cả hai loại, nên **tối đa 3 lần reload cho mỗi mốc**, kể cả lần trước giờ.
+
+1. **Trước giờ:** khi `T − lead ≤ now ≤ T − max(200, lead − 400)`, chưa bấm, chưa reload lần nào và nút còn trạng thái hôm qua (`disabled` hoặc `saved`) → reload (bộ đếm = 1).
+2. **Trong `[T, T + 2.5 s]`**, khi bộ đếm < 3 và đã cách lần reload trước ≥ 450 ms:
+   - chưa bấm lần nào và nút không có, không bấm được, hoặc vẫn `saved`; hoặc
+   - **lần bấm "chết"**: đã bấm, nút đã bị khóa từ lúc nạp, không có tín hiệu hoàn tất đang chờ, và đã ≥ **600 ms** (`DEAD_CLICK_MS`) từ lần bấm cuối mà không có phản hồi. Chờ 600 ms để request kịp trả về; reload sớm hơn sẽ hủy nó.
+
+Sau một lần reload mà trước đó đã bấm (`dh_clicked_<T> = "1"`), trạng thái `saved` trên trang được coi là kết quả của chính lượt săn. Khi lượt săn kết thúc, engine xóa `dh_reload_count_<T>`, `dh_last_reload_time_<T>`, `dh_clicked_<T>`.
+
+### 8.3. Giữ phiên qua reload
+
+- `HuntCoordinator.persistSession()` ghi phiên vào vault `chrome.storage.local["dh_armed_sessions"]` theo token ngẫu nhiên (`crypto.randomUUID()`); `sessionStorage["dh_armed_session"]` chỉ dùng để mang token (kèm bản sao để hiển thị). Ghi vault qua hàng đợi; mục cũ hơn 24 giờ bị xóa.
+- Khi nạp lại, `checkAndResumeArmedSession()` lấy token từ `sessionStorage` nhưng **chỉ nạp phiên từ vault**, nên trang không thể giả hoặc sửa một lượt săn. Phiên bị bỏ nếu khác trang hoặc đã quá `T + 15 s`.
+- Task lịch săn thì được nạp lại từ danh sách task (mục 3.3), không qua vault.
+
+---
+
+## 9. Vòng đời lịch săn (background)
+
+### 9.1. Dữ liệu và trạng thái task
+
+`ScheduledTask` lưu giờ dạng `targetHour/targetMinute/targetSecond` (giờ Việt Nam), `targetUrl`, `isDaily`, `descriptor`, `savedTargetId`, `dualDefenseReload`, `preWarmSeconds` (60), `diagnostics` và `targetAt` (mốc tuyệt đối). Trạng thái: `pending`, `running`, `completed`, `failed`, `cancelled`, `missed`.
+
+- **`targetAt` được khóa** khi tạo task (`nextExactDropAt` từ lúc tạo), không tính lại mỗi lần đọc, để không nhảy sang ngày hôm sau. Task cũ chưa có `targetAt` dùng mốc đầu tiên sau `createdAt`.
+- **Alarm** `dh_task_<id>` kêu lúc `targetAt − preWarmSeconds × 1000`, ít nhất 500 ms sau hiện tại.
+
+### 9.2. Tạo, sửa, xóa, chọn lại nút
+
+- `SCHEDULE_TASK` → `scheduleTask`: nếu đã có task `pending` cùng trang (`isSamePageUrl`) và cùng giờ:phút:giây thì **cập nhật task đó** (giữ `id`, `createdAt`) thay vì thêm bản trùng; đặt lại alarm.
+- `UPDATE_TASK` → `updateTask`: ghi đè thay đổi, đưa về `pending`, tính lại `targetAt` từ hiện tại, đặt lại alarm.
+- `CANCEL_TASK` → `cancelTask`: **xóa** task, xóa alarm, gửi `CANCEL_TASK {taskId}` tới các tab cùng trang; tab chỉ dừng nếu lượt săn đang chạy đúng là của task đó (không đụng lượt săn thủ công hay task khác).
+- `OPEN_AND_PICK` → `openAndPick`: tìm tab cùng trang để focus, không có thì mở tab mới; chờ tab `complete` (tối đa 15 s, hỏi mỗi 300 ms); gửi `ACTIVATE_HUD {pickTarget: true}`, nếu lỗi thì chèn `content.css` + `content.js` rồi gửi lại.
+- Nút đã lưu của trang luôn thắng bản sao trong task: khi alarm kêu và khi `armFromTask` chạy, descriptor được lấy lại từ `dh_saved_page_targets` (theo `savedTargetId` hoặc theo URL). Chọn lại nút trên trang là đổi nút cho mọi lượt săn của trang đó.
+
+### 9.3. Khi alarm kêu (`handleAlarm`)
+
+1. Bỏ qua nếu task không còn `pending`/`running`.
+2. `now > targetAt + 15 s` → báo `missed` ("máy ngủ hoặc tắt").
+3. Lấy lại nút đã lưu; nếu task chưa đặt `dualDefenseReload` thì theo nút đã lưu.
+4. Đo giờ: `timeCalibrator.calibrate(3, 4000, "<origin>/favicon.ico")` (mục 10).
+5. Tìm tab cùng trang: có thì focus tab và cửa sổ; nếu còn ≥ 20 s trước T thì reload tab và chờ `complete` (tối đa 10 s). Không có thì mở tab mới.
+6. Đánh dấu task `running`, ghi nhớ tab đang chạy task.
+7. Gửi `TRIGGER_FULL_AUTO {task}` (thử lại một lần sau 1 s nếu content script chưa sẵn sàng); tab mới/đang tải thì hỏi trạng thái mỗi 400 ms, tối đa 15 s.
+
+Phía content: `executeFullAutoTask` mở bảng săn, chặn nếu đang ở trang đăng nhập/xác minh (báo `failed`), rồi `armFromTask`: khởi tạo đồng hồ, quá `T + 15 s` thì báo `missed`, ngược lại `arm()`. Nếu đang có lượt săn thủ công không gắn task và lệch ≤ 1 s với task, coordinator **nhận task đó vào lượt săn hiện tại** thay vì hủy và chạy lại.
+
+Ngoài ra:
+- Tab đang chạy task tải xong (`tabs.onUpdated` `complete`) trong khoảng `[T − preWarm, T + 10 s]` → gửi lại `TRIGGER_FULL_AUTO`.
+- Tab đang chạy task bị đóng khi task còn `running` → `failed` ("Target tab was closed before drop").
+
+### 9.4. Kết quả và chuyển ngày
+
+`TASK_STATUS_UPDATE` → `handleTaskStatusUpdate`. Task hằng ngày gặp bất kỳ kết quả nào trong `completed`, `failed`, `missed`, `cancelled` thì **chuyển sang mốc kế tiếp** (`rollDailyTask`: mốc đầu tiên sau `max(now, targetAt) + 60 s`), về `pending`, giữ `lastResult`, đặt alarm mới. "Dừng săn" trên một lượt săn theo lịch chỉ bỏ lượt hôm nay. Task một lần thì lưu trạng thái và kết quả. Task đã bị xóa thì bỏ qua.
+
+### 9.5. Watchdog và khởi động
+
+Alarm `dh_watchdog` mỗi 5 phút, cộng `onStartup` và `onInstalled`, chạy `restorePendingAlarms()` trong một lần ghi:
+
+- **Gộp bản trùng:** các task `pending` cùng trang (URL chuẩn hóa), cùng giờ:phút:giây và cùng cờ hằng ngày → giữ bản cũ nhất, xóa alarm của bản thừa.
+- Task `pending` quá `T + 15 s` hoặc `running` quá `T + 60 s` (kết quả không bao giờ về) → hằng ngày thì chuyển sang mốc kế tiếp, một lần thì `missed`.
+- Task `pending` thiếu alarm thì tạo lại; **alarm đang có được giữ nguyên** để task sắp chạy không bị kích hoạt hai lần.
+
+Không đo giờ khi cài đặt hoặc khởi động trình duyệt (quyết định 2).
+
+---
+
+## 10. Canh giờ theo máy chủ của trang
+
+### 10.1. Ai yêu cầu đo
+
+- `timeSyncClient.init()` chỉ được gọi bởi bảng săn, `armFromTask`, và (sau lần gọi đầu) khi tab được focus/hiện lại. Trước lần `init()` đầu tiên, sự kiện focus không làm gì: trang thường không bao giờ bị đo.
+- `init()` hỏi `GET_CALIBRATION {domain}`. Có kết quả đúng tên miền, `calibrated` và mới hơn 5 phút thì dùng; ngược lại gửi `CALIBRATE_TIME {samples: 3, targetUrl: "<origin>/favicon.ico"}`. Nút "Thử lại" trên bảng săn gọi `calibrate()` trực tiếp.
+- Alarm lịch săn đo bằng `calibrate(3, 4000, ...)`; dòng đồng hồ trong popup gửi `CALIBRATE_TIME` cho trang đang săn.
+- Không có trang mặc định để đo: `calibrate()` bắt buộc có URL `http(s)`.
+
+### 10.2. Thuật toán (`TimeCalibrator`)
+
+- Gửi `HEAD` (`cache: "no-store"`, `credentials: "omit"`) liên tiếp, cách nhau 80 ms, tới khi thấy đủ số lần giây máy chủ nhảy (`boundaries`, mặc định 3) hoặc hết thời gian (`budgetMs`: 4 000 ms cho alarm, 6 000 ms qua message).
+- Header `Date` chỉ chính xác tới giây, nên chỉ dùng **cặp mẫu liên tiếp mà giây tăng đúng 1**: mốc giây nằm giữa trung điểm hai lần đo, `offset = giây máy chủ − (mid_trước + mid_sau)/2`, sai số = nửa khoảng cách hai trung điểm. Lấy trung vị các ước lượng; RTT là trung vị các vòng.
+- **Favicon cũ từ CDN:** nếu `Date` lệch giờ máy hơn 10 phút, hoặc vẫn cùng một giây sau hơn 2 s, thì favicon đang được phục vụ từ cache. Khi đó chuyển (một lần) sang trang chủ của cùng site (`<origin>/`) và đo lại từ đầu. Không bao giờ đo sang site khác.
+- 3 lần lỗi liên tiếp thì dừng; sau mỗi lần lỗi chờ 200 ms.
+- **Một lần đo cho mỗi host tại một thời điểm** (`inFlight`): các bên gọi cùng lúc (focus tab, popup, alarm) dùng chung một promise.
+- Lần đo hỏng (`calibrated: false`) không ghi đè kết quả tốt đã lưu, và tab đã có độ lệch tốt vẫn giữ độ lệch đó (`TimeSyncClient.calibrate`). Chỉ khi chưa từng đo được thì tab dùng giờ máy tính (offset 0) và bảng săn hiện "Dùng giờ máy tính (trang không báo giờ)".
+
+### 10.3. Lưu trữ
+
+`saveCalibration` ghi `dh_clock_calibration` (lần đo gần nhất) và `dh_domain_calibrations[host]` (bỏ `www.`); mỗi lần ghi xóa các host đo đã quá 24 giờ, `getCalibration` cũng không trả kết quả quá 24 giờ. Mọi tab cùng tên miền nhận kết quả mới qua `chrome.storage.onChanged`.
+
+---
+
+## 11. Caffiliate: điểm danh theo kế hoạch
+
+Áp dụng cho `caffiliate.vn` và `*.caffiliate.vn`; bản dev thêm Caffiliate Bench simulator ở `http://localhost:3100` / `http://127.0.0.1:3100`. URL chỉ chứa chữ "caffiliate.vn" ở path/query không khớp.
+
+### 11.1. Cầu nối MAIN world
+
+Content script chạy ở isolated world nên không gọi được hàm của trang. [`public/caffiliate_bridge.js`](../../extension/public/caffiliate_bridge.js) được nạp qua `content_scripts` với `"world": "MAIN"`, `run_at: document_start` (không dùng `web_accessible_resources`). Hai bên trao đổi bằng `CustomEvent` có `detail` là chuỗi JSON:
+
+| Sự kiện | Chiều | Nội dung |
+| :--- | :--- | :--- |
+| `dh-caffiliate-strike` | content → bridge | `offsetsMs` và tóm tắt kế hoạch (`attempts`, `leadMs`, `prepMs`, `oneWayMs`, `sigmaMs`, `arrivalsMs`). |
+| `dh-checkin-timing` | bridge → content | Toàn bộ lần chạy: từng lần thử, các tầng, thời gian Turnstile, lúc gửi, phản hồi. |
+| `dh-checkin-result` | bridge → content | `{ ok, method, error }`; chỉ `ok: true` mới đặt `confirmed`. |
+
+Bridge còn đặt `data-dh-turnstile-challenge="active"` trên `<html>` (kiểm tra mỗi 500 ms) khi có iframe Turnstile để bảng săn nhắc người dùng.
+
+### 11.2. Ba tầng của mỗi lần thử
+
+Trước lần thử đầu, bridge đặt lại các cờ còn từ hôm qua (`todayCheckedIn`, `isCheckedIn`, `hasClaimed`) trong `app.state`; trước mỗi lần thử, đặt lại khóa đang chạy (`checkInLocked`, `isCheckingIn`). Máy chủ quyết định có cho điểm danh hay không.
+
+1. **Hàm của trang:** `app.checkIn()`; không có thì hàm đầu tiên có tên khớp `/^(check_?in|claim|diem_?danh|attendance|reward)/i` (tìm cả trên prototype). Trang tự xin token Turnstile và tự gửi request. Chỉ chuyển tầng khi hàm throw hoặc promise bị reject.
+2. **API** `POST /api/v2/xeng/check-in-secure`: token mới từ `CheckInTurnstile.getToken()` của trang, chữ ký từ `app.generateSignature(ts, nonce)` của trang, kèm CSRF của trang. Trang không có hàm ký thì bỏ qua tầng này (không tự chế header).
+3. **Bấm nút** điểm danh: gỡ `disabled`/`aria-disabled`/`pointer-events-none` rồi `click()`.
+
+Không lấy trước hoặc giữ token Turnstile để dùng sau.
+
+**Xác nhận:** `app.state.todayCheckedIn === true` (sau khi đã đặt lại), nút đổi thành "Đã điểm danh #N" khác với nhãn trước lúc bắt đầu, hoặc API trả thành công. Kiểm tra mỗi 10 ms; xác nhận xong thì hủy các lần chưa chạy; quá 8 s thì kết thúc thất bại. Popup bất kỳ (kể cả popup lỗi "Chưa tới giờ") không được tính là thành công.
+
+### 11.3. Công thức kế hoạch ([`lib/strike_plan.ts`](../../extension/src/lib/strike_plan.ts))
+
+Mục tiêu là request **tới máy chủ** quanh 00:00, không phải bắt đầu quanh 00:00. Lần thử bắt đầu lúc $s$ tới máy chủ khoảng $s + P + L$.
+
+- $P$ (chuẩn bị, chủ yếu là Turnstile): trung vị "bắt đầu lần thử → request rời máy" trong 10 lần chạy gần nhất của nhật ký (chỉ các lần thử mà tầng đầu là hàm của trang và thành công, hoặc lần bấm tay). Chưa có mẫu: $P = 0$.
+- $L$ (một chiều mạng): $RTT/2$ từ lần canh giờ; chưa đo: 30 ms.
+- Độ không chắc chắn: $\sigma = \max\left(10,\ \sqrt{(E/\sqrt{3})^2 + J_P^2 + J_L^2}\right)$ với $E$ = sai số canh giờ (giới hạn 1 000 ms), $J_P$ = IQR/1.349 của $P$ (dưới 4 mẫu thì $P/4$), $J_L = L/4$ (chưa đo RTT thì $J_L = L$).
+- Số lần thử: $n = \mathrm{clamp}(\lceil 3\sigma / 20 \rceil + 1,\ 5,\ 8)$.
+- Thời điểm tới máy chủ: $a_i = \sigma \cdot (\Phi^{-1}((i + 0.5)/n) + 0.3)$, mỗi lần cách lần trước ít nhất 20 ms. Lệch về sau 0h một chút: request tới trước 0h bị từ chối, tới ngay sau 0h vẫn hạng cao.
+- Bắt đầu: $s_i = a_i - P - L$. `leadMs` $= \min(3000, -s_0)$; `offsetsMs` $= s_i - s_0$.
+
+Engine nhận `leadMs` qua `planStrike()` (tính lúc khởi động và tính lại ngay sau `preWarmStrike()` ở T − 3.5 s) và dùng nó làm mốc bấm. Bridge đặt hẹn giờ cho mỗi lần thử tính từ lúc bắt đầu chuỗi (hẹn giờ trễ không đẩy lùi các lần sau), lần nào tới sớm thì chờ nốt phần còn lại. Thiếu lịch trong sự kiện thì dùng `[0, 35, 70, 105, 140]` ms.
+
+### 11.4. Nhật ký điểm danh
+
+Mỗi lần chạy (theo kế hoạch hoặc bấm tay) được ghi vào `dh_checkin_logs` (mới nhất trước, giữ 30 mục), thời gian đổi sang giờ máy chủ: kết quả, cách thành công, kế hoạch, và từng lần thử (giờ bắt đầu, các tầng và lỗi, thời gian Turnstile, lúc gửi và sau bao nhiêu ms, thời gian máy chủ trả lời, HTTP). Xem trong Cài đặt → "Nhật ký điểm danh" ([`CheckInLog.tsx`](../../extension/src/popup/components/CheckInLog.tsx)).
+
+---
+
+## 12. Khóa lưu trữ
+
+`chrome.storage.local` (khai báo trong [`lib/constants.ts`](../../extension/src/lib/constants.ts)):
+
+| Khóa | Nội dung | Người ghi |
+| :--- | :--- | :--- |
+| `dh_scheduled_tasks` | Danh sách task | Background (`mutateTasks`) |
+| `dh_saved_page_targets` | Nút đã lưu theo trang (descriptor, tên, giờ, công tắc reload) | Bảng săn |
+| `dh_clock_calibration` | Lần canh giờ gần nhất | Background |
+| `dh_domain_calibrations` | Canh giờ theo host, hết hạn sau 24 giờ | Background |
+| `dh_page_load_samples` | Thời gian sẵn sàng theo trang (10 mẫu, 30 ngày) | Content script |
+| `dh_armed_sessions` | Vault phiên săn theo token (24 giờ) | Content script |
+| `dh_checkin_logs` | Nhật ký điểm danh Caffiliate (30 mục) | Content script |
+| `dh_settings` | Ngôn ngữ và cài đặt khác | Popup |
+| `dh_last_web_url` | URL web DealHunter gần nhất | Background |
+
+`chrome.storage.session`: `dh_web_session` (phiên đăng nhập web, mất khi đóng trình duyệt).
+
+`sessionStorage` của trang: `dh_armed_session` (token phiên), `dh_reload_count_<T>`, `dh_last_reload_time_<T>`, `dh_clicked_<T>`. Engine vẫn đọc `dh_emergency_reloaded_<T>` (khóa cũ) nhưng không còn ghi.
+
+Alarm: `dh_task_<id>`, `dh_watchdog`. Dấu trên DOM: `#dealhunter-hud-root`, `#dealhunter-badge-root`, `#dh-picker-overlay`, `data-dh-instance`, `data-dh-turnstile-challenge`, class `dh-target-highlight`, `dh-target-suggest`.
+
+---
+
+## 13. Danh sách message
+
+Gửi tới background (`chrome.runtime.sendMessage`):
+
+| `action` | Từ | Tham số | Xử lý |
+| :--- | :--- | :--- | :--- |
+| `CALIBRATE_TIME` | content, popup | `samples`, `targetUrl` | `timeCalibrator.calibrate(samples ‖ 5, 6000, targetUrl)` |
+| `GET_CALIBRATION` | content | `domain` | Kết quả canh giờ của host (≤ 24 giờ) |
+| `TASK_STATUS_UPDATE` | content | `taskId`, `status`, `result` | `handleTaskStatusUpdate` |
+| `SCHEDULE_TASK` | HUD, popup | `task` | `scheduleTask` (gộp bản trùng) |
+| `UPDATE_TASK` | popup | `task` | `updateTask` |
+| `CANCEL_TASK` | popup | `taskId` | Xóa task và báo các tab cùng trang |
+| `OPEN_AND_PICK` | popup | `url` | Mở/focus trang và vào chế độ chọn nút |
+| `GET_PRICE_CONTEXT` | huy hiệu giá | `url` | Chỉ URL sàn theo dõi giá, chỉ khi đã đăng nhập |
+| `GET_WEB_SESSION` | popup | | `{signedIn, email, name}` (không bao giờ trả token) |
+
+Gửi tới content script (`chrome.tabs.sendMessage`):
+
+| `action` | Từ | Tham số | Xử lý |
+| :--- | :--- | :--- | :--- |
+| `ACTIVATE_HUD` | popup, background | `pickTarget` | Mở bảng săn, tùy chọn vào chế độ chọn nút |
+| `TRIGGER_FULL_AUTO` | background | `task` | `executeFullAutoTask(task)` |
+| `CANCEL_TASK` | background | `taskId` | Dừng lượt săn nếu đúng là của task đó |
+| `GET_HUNT_STATE` | popup | | `{isArmed, targetTimestamp}` |
+
+Từ web DealHunter (`onMessageExternal`): `{ type: "DH_WEB_SESSION", ... }`, trả `{ accepted }`. Chi tiết ở [ket-noi-web-extension.md](ket-noi-web-extension.md).
+
+`START_BURST_CLICK` và `STOP_BURST_CLICK` vẫn có trong `MESSAGE_ACTIONS` nhưng không có bên nào xử lý.
+
+---
+
+## 14. Bản dev và bản production
+
+| | `npm run build` (production) | `npm run build:dev` / `npm run dev` (watch) |
+| :--- | :--- | :--- |
+| `__DH_DEV__` ([`lib/build_env.ts`](../../extension/src/lib/build_env.ts)) | `false` | `true` (`--mode development` hoặc `DH_ENV=development`) |
+| Web được trao phiên đăng nhập (`DEALHUNTER_WEB_ORIGINS`) | `https://dealhunter.vn`, `https://www.dealhunter.vn` | thêm `http://localhost:3000`, `http://localhost:3100` |
+| API mặc định | `https://dealhunter.vn/api/v1` | `http://localhost:8080/api/v1` |
+| Manifest | [`src/build/manifest_env.ts`](../../extension/src/build/manifest_env.ts) bỏ mọi mẫu localhost khỏi `externally_connectable` và `content_scripts` | giữ nguyên `public/manifest.json` |
+| Caffiliate Bench simulator (:3100) | không | có |
+
+Build gồm hai bước Vite: [`vite.config.ts`](../../extension/vite.config.ts) (popup, `background.js`, chép `public/` và chỉnh manifest theo môi trường) và [`vite.content.config.ts`](../../extension/vite.content.config.ts) (`content.js` dạng IIFE, `content.css`, `publicDir: false` để không ghi đè manifest đã chỉnh).
+
+Nạp vào Chrome: `chrome://extensions` → bật Developer mode → Load unpacked → chọn `extension/dist`; tải lại extension sau mỗi lần build.
+
+---
+
+## 15. Cô lập CSS
+
+`content.css` được chèn vào mọi trang có bảng săn hoặc huy hiệu giá, nên không được ảnh hưởng tới trang ([`tailwind.content.config.js`](../../extension/tailwind.content.config.js)):
+
+- `important: ":is(#dealhunter-hud-root, #dealhunter-badge-root, .dh-root)"`: utility chỉ áp dụng bên trong container của DealHunter (không bao giờ dùng `#root`, nơi gắn của đa số app React).
+- `content` chỉ quét `src/content/**`; tắt `preflight` và `container`.
+- Keyframes đổi tên `dh-spin`, `dh-ping`, `dh-pulse`, `dh-bounce` để không trùng với trang.
+- Plugin `remToPxPlugin` đổi `rem` thành `px` (1 rem = 16 px), để trang đổi cỡ chữ gốc không làm méo bảng săn.
+
+Popup dùng [`tailwind.config.js`](../../extension/tailwind.config.js) riêng.
+
+---
+
+## 16. Kiểm thử
+
+- `npx vitest run` (môi trường happy-dom): **30 file, 298 test**.
+- `npx tsc --noEmit -p .`: kiểm tra kiểu.
+
+| Nhóm | File (số test) |
+| :--- | :--- |
+| Engine và an toàn | `hunt_engine.test.ts` (31), `engine_safety.test.ts` (16), `hunt_engine_marketplace.test.ts` (1), `hunt_engine_strike_plan.test.ts` (1), `hunt_coordinator.test.ts` (13), `armed_session.test.ts` (2) |
+| Tìm nút, bấm, chẩn đoán | `element_resolver.test.ts` (19), `human_clicker.test.ts` (8), `human_biometrics.test.ts` (12), `target_diagnostics.test.ts` (9), `timer_worker.test.ts` (2) |
+| Đồng hồ | `time_calibrator.test.ts` (8), `time_sync_client.test.ts` (6), `TimeOffsetCard.test.ts` (3) |
+| Lịch săn | `scheduler.test.ts` (10), `task_lifecycle.test.ts` (13), `drop_time.test.ts` (9) |
+| Adapter và Caffiliate | `adapters.test.ts` (20), `caffiliate_bridge.test.ts` (8), `strike_plan.test.ts` (5) |
+| Reload và lưu trữ | `reload_timing.test.ts` (9), `storage.test.ts` (10), `url.test.ts` (8) |
+| UI và phạm vi | `content_scope.test.ts` (6), `isolation.test.ts` (2), `status_text.test.ts` (9) |
+| Web, API, build | `web_session.test.ts` (19), `api_client.test.ts` (12), `endpoints.test.ts` (21), `production_build.test.ts` (5) |

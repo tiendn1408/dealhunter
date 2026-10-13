@@ -137,4 +137,16 @@ describe("TimeSyncClient", () => {
     expect(res?.offsetMs).toBe(95);
     expect(client.getOffset()).toBe(95);
   });
+
+  it("a failed re-measure keeps the last good offset instead of falling back to the computer clock", async () => {
+    const good: ClockCalibration = { offsetMs: 420, rttMs: 30, errorMs: 15, lastCalibratedAt: Date.now(), calibrated: true, serverHost: "example.com" };
+    client.applyCalibration(good);
+    const send = chrome.runtime.sendMessage as unknown as ReturnType<typeof vi.fn>;
+    send.mockResolvedValueOnce({ calibration: { ...good, offsetMs: 0, calibrated: false } });
+    expect(await client.calibrate()).toBeNull();
+    expect(client.getOffset()).toBe(420);
+    send.mockRejectedValueOnce(new Error("offline"));
+    await client.calibrate();
+    expect(client.getOffset()).toBe(420);
+  });
 });

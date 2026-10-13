@@ -94,11 +94,14 @@ export class TimeSyncClient {
         targetUrl: targetUrl || defaultPing,
       });
       if (res && res.calibration) {
+        // A failed re-measure (offline, probe blocked) must not replace a good measurement of this site
+        // with the computer's own clock: keep the last good offset, as the stored calibration does.
+        if (!res.calibration.calibrated && this.isCalibrated) return null;
         this.applyCalibration(res.calibration);
         return res.calibration;
       }
     } catch {
-      this.offsetMs = 0;
+      if (!this.isCalibrated) this.offsetMs = 0;
     } finally {
       this.isCalibrating = false;
     }

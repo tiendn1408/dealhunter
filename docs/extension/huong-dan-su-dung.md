@@ -1,250 +1,243 @@
-# DealHunter Assistant — Huong Dan Su Dung (User Guide)
+# DealHunter — Hướng dẫn sử dụng
 
-> Tien ich mo rong Chrome chuyen dung de **san voucher va tu dong click nut tren moi website dung gio G** (dac biet la nua dem 00:00:00 hoac cac khung gio vang 9h, 12h, 15h, 18h, 21h). Chay truc tiep tren trinh duyet voi tai khoan cua ban, an toan tuyet doi va toi uu toc do mili-giay.
->
-> Cap nhat: 2026-10-09 · Ap dung cho ban build Universal Sniper trong `extension/dist`.
+DealHunter là tiện ích (extension) cho trình duyệt Chrome. Bạn chọn một nút trên trang web (ví dụ nút «Lưu» voucher, nút «Điểm danh»), chọn giờ, rồi DealHunter **tự bấm nút đó đúng giờ** giúp bạn.
 
----
+Bạn không cần biết kỹ thuật. Không có thông số nào phải chỉnh: DealHunter tự đo giờ và tốc độ trang.
 
-## Muc Luc
+**Hai điều cần nhớ:**
 
-1. [Tong quan tinh nang](#1-tong-quan-tinh-nang)
-2. [Cai dat tien ich vao trinh duyet](#2-cai-dat-tien-ich-vao-trinh-duyet)
-3. [Giao dien va tuy chon ngon ngu (EN / VI)](#3-giao-dien-va-tuy-chon-ngon-ngu-en--vi)
-4. [Che do 1 — Live Sniper (San truc tiep tren moi trang web)](#4-che-do-1--live-sniper-san-truc-tiep-tren-moi-trang-web)
-5. [Che do 2 — Schedule (Hen gio tu dong 100%)](#5-che-do-2--schedule-hen-gio-tu-dong-100)
-6. [Che do 3 — My Hunts (Quan ly lich hen va lich su san)](#6-che-do-3--my-hunts-quan-ly-lich-hen-va-lich-su-san)
-7. [Thuoc tinh ky thuat va thuat toan loi](#7-thuoc-tinh-ky-thuat-va-thuat-toan-loi)
-8. [Kiem thu thuc te voi Test Simulator](#8-kiem-thu-thuc-te-voi-test-simulator-benchmark--simulation)
-9. [Xu ly su co thuong gap (Troubleshooting)](#9-xu-ly-su-co-thuong-gap-troubleshooting)
-10. [Luu y quan trong va an toan tai khoan](#10-luu-y-quan-trong-va-an-toan-tai-khoan)
+- DealHunter **chỉ bấm đúng nút bạn đã chọn**. Nó không tự ý bấm nút khác.
+- Đến giờ săn, **máy tính phải bật và Chrome phải mở**.
 
 ---
 
-## 1. Tong Quan Tinh Nang
+## Mục lục
 
-### Tinh nang vuot troi
-- **Universal Web Sniper**: Khong gioi han rieng tren Shopee. Tien ich ho tro san voucher, mua flash sale, giat ve su kien (Ticketbox), dang ky hoc phan, hoac click bat ky nut nao tren **moi trang web** dung gio G.
-- **Can chinh gio mili-giay theo tung domain (Domain Time Calibration)**: Tinh toan do lech giua dong ho may tinh va may chu cua trang web dang mo thong qua tieu de `Date` va do do tre 2 chieu (RTT), loai bo sai so gio he thong.
-- **Bo dem khong tre (Web Worker Timer)**: Trinh duyet Chrome bop toc do tab nen xuong 1000ms. DealHunter su dung luong Web Worker rieng biet de duy tri nhip tick 10ms on dinh, tu dong fallback sang `setInterval` neu trang bat CSP nghiem ngat.
-- **Dong co dinh hinh nhip do sinh hoc tu dong (Autonomous Adaptive Kinetic Engine)**:
-  - **Pha 1 — But toc gio G (Clicks 1-3)**: Chu ky 60ms ± 10ms (~14-16 CPS) de giat deal trong cua so vang mili-giay dau tien.
-  - **Pha 2 — Gian nhip thich ung (Clicks 4-8)**: Chu ky 95ms ± 16ms, bo sung vi nghi phuc hoi co hoc 65ms ± 15ms ngay truoc cu click thu 4 de pha vo hoan toan pho tu tuong quan (Autocorrelation) cua bo loc bot.
-  - **Pha 3 — On dinh dai han (Clicks 9+)**: Chu ky 140ms ± 22ms kem vi nghi dinh ky sau moi 5 clicks nham bao ve tai khoan an toan khi cho may chu xu ly.
-- **Che do Hyper Strike & Phan tang nen tang tu dong (Tiered Platform Sniper)**:
-  - Tu dong nhan dien trang toc do cao (diem danh doi thuong, dat ve): Kich hoat ho so `hyper` 25ms (~40 CPS), bo qua quy dao chuot, go bo thuoc tinh `disabled` tren DOM va ban don truoc RTT/2 de goi tin cham server dung 00:00:00.000.
-  - Rieng `caffiliate.vn`: khong reload, khong bam nut la chinh; goi `app.checkIn()` cua trang (loi thi API, roi bam nut), toi thieu 5 lan thu theo lich tinh tu so do thuc (xem tab **Log** trong popup). Chi tiet: muc 8.3 tai lieu kien truc.
-  - Tu dong bao ve san lon (Shopee, Lazada, TikTok Shop): Giu nguyen mo hinh sinh trac hoc tiep can Fitts's Law de tranh bi DataDome / Cloudflare quet bot.
-- **Reload don dau thong minh (Guarded Precision Pre-Reload Loop)**: Tu dong reload don dau truoc 750ms tren cac trang can phien moi va reload co kiem soat trong cua so 3 giay quanh gio G.
-- **Kich hoat som 150ms truoc gio G (Lead Time)**: Bat dau quy trinh click truoc gio G 150ms de hap thu do tre mang Internet, dam bao cu click dau tien cham vao may chu dung miligiay mo deal.
-- **May trang thai hanh vi (Behavioral State Machine)**: Loai bo 100% tu dien ngon ngu hardcode. Xac dinh ket qua san dua tren bien doi DOM thuc te (unmount, disabled state, text mutation, W3C ARIA, SVG icon injection).
-- **Price History Intelligence Badge**: Tu dong hien thi huy hieu lich su gia va so sanh deal tren cac trang san pham Shopee, ho tro xem bien dong gia va chuyen huong ve DealHunter Web.
+1. [Cài đặt](#1-cài-đặt)
+2. [Săn trong 3 bước](#2-săn-trong-3-bước)
+3. [Bảng săn trên trang](#3-bảng-săn-trên-trang)
+4. [Hẹn giờ, sửa lịch, lặp mỗi ngày](#4-hẹn-giờ-sửa-lịch-lặp-mỗi-ngày)
+5. [Tab «Lịch săn»](#5-tab-lịch-săn)
+6. [Cài đặt](#6-cài-đặt)
+7. [Điểm danh Caffiliate và «Nhật ký điểm danh»](#7-điểm-danh-caffiliate-và-nhật-ký-điểm-danh)
+8. [Mẹo](#8-mẹo)
+9. [Xử lý sự cố](#9-xử-lý-sự-cố)
 
 ---
 
-## 2. Cai Dat Tien Ich Vao Trinh Duyet
+## 1. Cài đặt
 
-### 2.1. Bien dich ma nguon
-Mo Terminal va di chuyen den thu muc extension cua du an:
-```bash
-cd /Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension
-npm install
-npm run build
-```
-Thu muc build hoan tat se duoc tao tai:
-```text
-/Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/dist
-```
+Hiện tại DealHunter được cài bằng tay từ một thư mục trên máy (chưa có trên Chrome Web Store).
 
-### 2.2. Nap tien ich vao Chrome / Edge / Brave / Coc Coc
-1. Mo trinh duyet va truy cap dia chi: `chrome://extensions`.
-2. Bat cong tac **Developer mode** (Che do nha phat trien) o goc tren ben phai.
-3. Bam nut **Load unpacked** (Tai tien ich da giai nen).
-4. Chon thu muc:
-   ```text
-   /Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/dist
-   ```
-5. Tien ich **DealHunter Assistant** se xuat hien tren thanh cong cu trinh duyet. Bam bieu tuong manh ghep va **Ghim (Pin)** tien ich de tien thao tac.
+1. Lấy thư mục `dist` của DealHunter (người phụ trách kỹ thuật sẽ gửi cho bạn, hoặc nằm ở `extension/dist` trong bộ mã nguồn).
+2. Mở Chrome, gõ vào thanh địa chỉ: `chrome://extensions` rồi nhấn Enter.
+3. Bật công tắc **Developer mode** (Chế độ dành cho nhà phát triển) ở góc trên bên phải.
+4. Bấm **Load unpacked** (Tải tiện ích đã giải nén) và chọn thư mục `dist`.
+5. Bấm biểu tượng mảnh ghép trên thanh công cụ Chrome, rồi bấm hình ghim cạnh **DealHunter** để biểu tượng luôn hiện.
 
-### 2.3. Cap nhat sau khi bien dich lai
-Moi khi build lai ma nguon (`npm run build`), hay vao `chrome://extensions` va bam nut **Reload** (mui ten xoay tron) tren the DealHunter Assistant de ap dung code moi nhat.
+**Khi có bản mới:** chép đè thư mục `dist` mới, vào lại `chrome://extensions` và bấm nút tải lại (mũi tên vòng tròn) ở thẻ DealHunter. Sau đó tải lại các trang đang săn (xem [mục 9](#9-xử-lý-sự-cố)).
+
+**Bản phát hành và bản dev:**
+
+| Bản | Dùng cho | Cách nhận biết |
+| --- | --- | --- |
+| Bản phát hành | Người dùng bình thường. Chỉ kết nối với trang DealHunter chính thức. | Phần phiên bản trong Cài đặt không có chữ gì thêm. |
+| Bản dev | Người làm kỹ thuật thử nghiệm trên máy. | Phần phiên bản ghi **(bản dev)**. |
+
+Nếu bạn không làm kỹ thuật, hãy dùng bản phát hành.
 
 ---
 
-## 3. Giao Dien Va Tuy Chon Ngon Ngu (EN / VI)
+## 2. Săn trong 3 bước
 
-DealHunter Assistant su dung giao dien Dark Cyber-Tactical voi 3 the thao tac chinh va ho tro 2 ngon ngu:
-- **Tieng Anh (English)**: Ngon ngu mac dinh quoc te.
-- **Tieng Viet (Vietnamese)**: Ban dia hoa day du, chuan xac.
+1. **Mở trang muốn săn.** Ví dụ trang voucher Shopee, trang điểm danh. Bấm biểu tượng DealHunter trên thanh công cụ.
+2. **Chọn nút cần bấm.** Trong cửa sổ nhỏ của DealHunter, bấm **«Chọn nút»**. Bảng săn hiện ở góc dưới bên phải trang. Rê chuột lên trang: nút nào được viền là nút sẽ được chọn. Bấm vào nút bạn muốn săn.
+3. **Chọn giờ và bắt đầu săn.** Trên bảng săn, chọn giờ (mặc định **«0:00»**, tức nửa đêm), rồi bấm **«Bắt đầu săn»**. Giữ trang mở là xong.
 
-**Cach chuyen doi ngon ngu**:
-- Tren Popup: Bam vao nut **`EN`** hoac **`VI`** o goc tren ben phai tieu de.
-- Tren Floating HUD: Bam vao nut **`EN`** hoac **`VI`** tren thanh tieu de cua bang HUD.
-- Thiet lap ngon ngu duoc dong bo ngay lap tuc giua popup va toan bo cac tab dang mo.
+Cửa sổ nhỏ (khi bấm biểu tượng DealHunter) có hai tab:
 
----
-
-## 4. Che Do 1 — Live Sniper (San Truc Tiep Tren Moi Trang Web)
-
-Dung khi ban dang theo doi truc tiep tren man hinh va can kich hoat san mot nut bam vao moc gio xac dinh.
-
-### Buoc 1: Mo trang web can san
-- Mo trang chua nut can bam: trang voucher Shopee (`https://shopee.vn/m/ma-giam-gia`), gio hang, trang ban ve Ticketbox, hoac trang su kien flash sale tren bat ky website nao.
-
-### Buoc 2: Bat bang dieu khien Sniper HUD
-1. Bam vao icon DealHunter tren thanh cong cu Chrome de mo Popup.
-2. The **Live Sniper** tu dong nhan dien domain cua trang dang mo (vi du: `shopee.vn active`, `ticketbox.vn active`).
-3. Bam nut noi bat:
-   - **`START SNIPER ON THIS PAGE`** (hoac **`BAT DAU SAN TREN TRANG NAY`**).
-   - Popup se tu dong chen tep CSS va script vao trang web (neu trang chua co) va hien thi bang **Floating HUD** o goc duoi ben phai man hinh.
-
-### Buoc 3: Thiet lap tren bang Sniper HUD
-1. **Chon moc gio san**:
-   - **`+10s`**: San sau 10 giay (phu hop test nhanh).
-   - **`+30s`**: San sau 30 giay.
-   - **`00:00`**: San vao dung nua dem tiep theo (00:00:00).
-   - **`+1m` / `+1p`**: San vao dau phut tiep theo.
-   - **`Custom` / `Tuy chinh`**: Nhap gio bat ky theo dinh dang `HH:mm:ss`. He thong kiem tra tinh hop le va canh bao neu gio nhap khong dung dinh dang.
-2. **Khoa nut muc tieu (Target Button)**:
-   - Bam nut **`Pick button`** (**`Chon nut`**): Re chuot len man hinh den nut ban muon click (nut Luu voucher, nut Mua ngay, nut Dat cho). Nut se duoc lam noi bat voi vien xanh neon `dh-target-highlight`. Click vao nut de khoa muc tieu.
-   - Hoac bam **`Auto-detect`** (**`Tu quet`**): Neu dang o tren Shopee, tien ich tu dong quet va de xuat nut voucher hop le dau tien tren man hinh.
-   - Neu muon huy chon nut da khoa, bam bieu tuong nut **X** ben canh ten muc tieu de reset ve trang thai ban dau.
-3. **Kiem tra dong bo dong ho**:
-   - Bang HUD hien thi thoi gian thuc va do lech giua may tinh va server (vi du: `+120ms ±15ms`).
-   - Bam bieu tuong xoay tron ben canh de can chinh lai neu can.
-4. **Bam thu 1 click (Test click)**:
-   - Bam **`Test click (1x)`** (**`Bam thu 1 click`**) de kiem tra xem chuoi pointer events co truyen dung vao nut muc tieu hay khong.
-
-### Buoc 4: Kich hoat truc chien (Arm Sniper)
-1. Bam nut lon: **`Arm sniper`** (**`Kich hoat san`**).
-2. Nut chuyen sang trang thai **`Disarm`** (**`Huy kich hoat`**) va bang HUD bat dau dem nguoc mili-giay den gio G.
-3. **Thuat toan Precision Pre-Reload tu dong 100%**:
-   - Nguoi dung khong can phai cau hinh thu cong. Tai giay thu 59.25s truoc gio G (T - 750ms), he thong tu dong kiem tra trang thai nut. Neu nut van bi khoa tu ngay hom truoc, extension tu dong reload don dau de trang kip lay phien moi.
-   - Khi trang reload, Floating HUD va dong co san tu dong khoi phuc toan bo thiet lap va muc tieu tu `sessionStorage`, giu nguyen trang thai Armed va tiep tuc dem nguoc chinh xac khong bi gian doan.
-4. Ban co the bam nut Minimize (`-`) de thu gon HUD xuong thanh trang thai nho gon o goc man hinh.
-5. Dung gio G (co tinh lead 150ms hoac 28ms tren `speed_priority`), he thong se tu dong kich hoat chuoi click adaptive cho den khi trang web xac nhan luu thanh cong hoac het thoi gian san.
+- **«Trang này»**: nói về trang bạn đang mở.
+  - Nếu chưa mở trang web nào, bạn thấy «Mở trang bạn muốn săn» và các nút mở nhanh Shopee, Lazada, Tiki, TikTok Shop.
+  - Nếu đang ở một trang web, bạn thấy tiến độ 3 bước cho trang đó. Khi xong cả 3 bước, phần này thu gọn thành **«Đã xong 3 bước»**.
+  - Dòng **«Nút: «...»»** cho biết nút đã chọn. Bên dưới là **«● Đang săn · còn ...»** (đang săn ngay trên trang) hoặc **«Săn lúc HH:mm · còn ...»** (đã hẹn giờ).
+  - Nút chính là **«Chọn nút»** hoặc **«Mở bảng săn»**. Có thêm **«Chọn nút khác»**.
+  - Dòng nhỏ **«Đã canh giờ»** hoặc **«Giờ máy tính»** cho biết DealHunter đang dùng giờ nào (xem [mục 3](#3-bảng-săn-trên-trang)).
+  - Thẻ **«Lịch săn kế tiếp»** cho biết lần săn sắp tới ở trang khác. Bấm vào để xem tab «Lịch săn».
+- **«Lịch săn»**: danh sách các lần săn đã hẹn (xem [mục 5](#5-tab-lịch-săn)).
 
 ---
 
-## 5. Che Do 2 — Schedule (Hen Gio Tu Dong 100%)
+## 3. Bảng săn trên trang
 
-Dung khi ban muon dat lich truoc va de trinh duyet tu dong mo trang, khoa muc tieu va san khi den gio (vi du: san voucher nua dem khi ban khong ngoi truoc may).
+Bảng săn là khung nhỏ nổi ở góc dưới bên phải trang web.
 
-### Buoc 1: Mo the Schedule tren Popup
-1. Bam icon DealHunter tren thanh cong cu Chrome.
-2. Chon the o giua: **`Schedule`** (**`Dat lich`**).
+- Bảng **tự hiện** trên trang voucher/deal của các sàn lớn (Shopee, Lazada, Tiki, TikTok, Sendo, AliExpress, Taobao) và trên trang bạn đã chọn nút hoặc đã hẹn giờ.
+- Ở trang khác, bảng chỉ hiện khi bạn bấm biểu tượng DealHunter rồi bấm «Chọn nút» hoặc «Mở bảng săn».
+- Kéo phần đầu bảng để di chuyển. Bấm nút thu nhỏ để bảng gọn thành một viên nhỏ (khi đang săn, viên này ghi «còn ...»). Bấm nút đóng để tắt bảng.
+- Bảng giữ nguyên kích thước khi bạn dùng, nên các nút không bị nhảy chỗ dưới chuột.
 
-### Buoc 2: Chon gio san va phuong thuc muc tieu
-1. **Gio san (Drop time - Vietnam)**:
-   - Nhap gio truc tiep theo dinh dang `HH:mm:ss` (gio Viet Nam GMT+7).
-   - Hoac bam nhanh vao cac nut goi y flash sale Shopee: `00:00`, `09:00`, `12:00`, `15:00`, `18:00`, `21:00`.
-2. **Che do muc tieu (Target Mode)**:
-   - **`Current tab`** (**`Tab hien tai`**): Su dung duong dan URL cua tab dang mo lam trang muc tieu.
-   - **`Saved list`** (**`Danh sach da luu`**): Chon tu danh sach cac nut voucher ban da khoa va luu truoc do tu Floating HUD.
-   - **`Custom link`** (**`Link tuy chinh`**):
-     - Dan duong link web bat ky vao o nhap URL (he thong chi chap nhan giao thuc `http://` hoac `https://` hop le).
-     - Bam nut **`Open page and pick`** (**`Mo trang & chon nut`**) de tien ich tu dong mo trang web do trong tab moi va bat che do chon nut tren HUD de ban khoa muc tieu.
+### Bước 1: «Nút muốn săn»
 
-### Buoc 3: Tao lich hen
-1. Bam nut **`Schedule hunt`** (**`Dat lich san`**).
-2. Nhiem vu moi se duoc luu vao bo nho va hien thi trong danh sach quan ly.
+| Nút | Tác dụng |
+| --- | --- |
+| **«Chọn nút»** | Bật chế độ chọn. Rê chuột: nút dưới chuột có viền và nhãn. Bấm để chọn. Nhấn **Esc** hoặc chuột phải để thôi. Trong lúc chọn, nút này đổi thành **«Thôi chọn»**. |
+| **«Gợi ý giúp tôi»** | DealHunter đoán nút bạn cần và viền **màu cam** để bạn xem. Nó **chưa chọn**. Bạn bấm **«Đúng rồi»** để chọn, **«Nút khác»** để xem gợi ý tiếp, hoặc **«Bỏ qua»**. |
+| **«Đổi nút»** | Chọn lại nút khác. |
 
-### Co che he thong thuc thi ngam:
-1. **Truoc gio G 60 giay (Pre-warm T-60s)**:
-   - Background Alarm danh thuc service worker.
-   - He thong kiem tra xem da co tab nao dang mo dung trang web do hay chua (`isSamePageUrl`). Neu da co, tien ich tai su dung tab do va focus len dau; neu chua co, tien ich mo mot tab moi.
-   - Tab duoc tai moi de lam sach cache va do lai gio may chu.
-2. **Khoa muc tieu tu dong**:
-   - Khi tab hoan tat tai trang, content script tu dong khoi phuc target descriptor va cuon nut vao khung nhin (`scrollIntoView`).
-3. **Dung gio G**:
-   - Content script kich hoat dong co san adaptive va ghi nhan ket qua vao danh sach lich hen.
+Sau khi chọn, bảng hiện tên nút trong dấu «» và dòng **«Đã nhớ cho trang này»**. DealHunter tự nhớ nút này, lần sau mở lại trang không cần chọn lại.
 
----
+### Bước 2: «Giờ săn»
 
-## 6. Che Do 3 — My Hunts (Quan Ly Lich Hen Va Lich Su San)
+| Nút | Tác dụng |
+| --- | --- |
+| **«0:00»** | Săn lúc nửa đêm (mặc định). |
+| **«Giờ khác»** | Gõ giờ dạng giờ:phút:giây, ví dụ `20:00:00`. |
+| **«Thử sau 10 giây»** | Săn thử sau 10 giây để kiểm tra trước. |
 
-1. Mo Popup, chon the thu ba: **`My Hunts`** (**`Lich hen`**).
-2. Danh sach hien thi toan bo cac lich da len kem trang thai thoi gian thuc:
-   - **`Waiting`** (**`Cho den gio`**): Dang cho den moc gio hen.
-   - **`Hunting`** (**`Dang san`**): Dang trong qua trinh chuan bi tab va ban click.
-   - **`Saved`** (**`Da luu ma`**): San thanh cong, trang da tiep nhan va xac nhan luu deal.
-   - **`Cancelled`** (**`Da huy`**): Nhiem vu da duoc nguoi dung chu dong huy.
-   - **`Failed`** (**`That bai`**): Khong luu duoc (het ma, nut khong xuat hien, hoac loi ket noi).
-   - **`Missed`** (**`Bo lo`**): Qua gio G do may tinh bi tat nguon hoac mat mang trong luc hen.
-3. Ban co the bam bieu tuong nut thung rac de xoa nhiem vu khoi danh sach bat ky luc nao.
+Bảng ghi rõ, ví dụ: **«Săn lúc 00:00:00 · còn 9 giờ 34 phút»**.
 
----
+Dòng giờ bên dưới cho biết DealHunter dùng giờ nào:
 
-## 7. Thuoc Tinh Ky Thuat Va Thuat Toan Loi
+- **«Đã canh giờ theo shopee.vn»** (tên trang thay đổi theo trang bạn săn): DealHunter đã đo giờ của chính trang đó. Đây là trường hợp tốt nhất.
+- **«Dùng giờ máy tính (trang không báo giờ)»**: trang không cho biết giờ, nên DealHunter dùng đồng hồ máy tính. Bấm **«Thử lại»** để đo lại.
 
-| Thanh phan | File ma nguon | Co che hoat dong |
-|---|---|---|
-| **Hunt Coordinator (SSOT)** | [`hunt_coordinator.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_coordinator.ts) | Single Source of Truth quan ly phien san tap trung, thong nhat giua Arm manual tren HUD va Schedule tu dong tu Background. Xu ly ket noi lai phien qua reload. |
-| **Tiered Platform Engine** | [`target_diagnostics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/target_diagnostics.ts) | Tu dong phan tang: giu nguyen tiep can sinh trac hoc chuan tren Shopee/Lazada/TikTok, tu dong kich hoat che do Hyper Strike tren web nho/caffiliate.vn. |
-| **Hyper Strike & Pre-fire** | [`human_biometrics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/human_biometrics.ts), [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Cua so nhap chuot 25ms (~40 CPS), ban don gio G truoc 28ms bu tru mang Internet, cuong che go disabled tren DOM dung tich tac 00:00:00.000. |
-| **Guarded Precision Reload** | [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Socket Keep-Alive o T-5s, Precision Pre-Reload o T-750ms neu nut con vuong trang thai cu, va vong lap reload toi da 3 lan trong cua so 3 giay quanh gio G. |
-| **Autonomous Adaptive Engine** | [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Dong co dinh hinh dong hoc 3 pha tren san lon: 60ms but toc dau, 95ms kem vi nghi phuc hoi co 65ms truoc click 4, va 140ms on dinh dai han. |
-| **Behavioral State Machine** | [`element_resolver.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/element_resolver.ts) | Loai bo hoan toan regex tu dien. Xac dinh ket qua dua tren DOM detachment, disabled transition, text mutation, W3C ARIA contracts va SVG icon injection. |
-| **Target Diagnostics** | [`target_diagnostics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/target_diagnostics.ts) | Chuan doan phan tu muc tieu va tinh chat trang (SPA reactive vs Static). Tu dong tat phong thu kep reload tren ung dung React de tranh mat state trang. |
-| **Dual-Defense Reload** | [`scheduler.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/background/scheduler.ts), [`hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Pre-warm tab o T-60s tu Background; Emergency reload o T+250ms tren trang tinh neu nut bi stale DOM; cua so mo rong 10 giay sau reload voi khoa chong lap vo han. |
-| **Human Biometrics** | [`human_biometrics.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/human_biometrics.ts) | Bien doi Box-Muller Gaussian cho khoang thoi gian, phan bo toa do 2 chieu Bivariate Gaussian trong tam nut, va quy dao tiep can chuot theo Dinh luat Fitts. |
-| **Human Clicker** | [`human_clicker.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/human_clicker.ts) | Phat day du chuoi su kien W3C Pointer Events Level 3 (`pointerdown` -> `mousedown` -> `pointerup` -> `mouseup` -> `click`) voi toa do ngau nhien va dwell time vat ly. |
-| **Time Calibrator** | [`time_calibrator.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/background/time_calibrator.ts) | Can chinh dong ho may chu theo tieu de `Date` va RTT theo tung domain; tu dong don dep cac domain calibration qua han 24 gio. |
-| **Web Worker Ticker** | [`timer_worker.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/timer_worker.ts) | Chay tren luong Worker rieng voi chu ky 10ms chong throttling tab nen cua Chrome; tu dong fallback sang window timer khi gap loi CSP. |
-| **Full-Auto Scheduler** | [`scheduler.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/background/scheduler.ts) | Quan ly lich trinh bang `chrome.alarms` MV3, tai su dung tab thong minh voi so khop URL chuan hoa (`isSamePageUrl`). |
+### Bước 3: Bắt đầu
 
-Chi tiet kien truc toan dien duoc tai lieu hoa tai: [`docs/extension/kien-truc-universal-sniper-va-state-machine.md`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/kien-truc-universal-sniper-va-state-machine.md).
+| Nút | Tác dụng |
+| --- | --- |
+| **«Bắt đầu săn»** | Bắt đầu chờ tới giờ rồi bấm. Chỉ bấm được khi đã chọn nút. Bảng nhắc: «Giữ trang này mở là được.» |
+| **«Hẹn giờ»** | Lưu thành lịch săn. Tới giờ DealHunter **tự mở trang** và săn, bạn không cần để trang mở sẵn. |
+| **«Mỗi ngày»** | Công tắc đi kèm «Hẹn giờ»: bật lên để săn lại vào giờ này mỗi ngày. |
 
----
+### Khi đang săn
 
-## 8. Kiem Thu Thuc Te Voi Test Simulator (Benchmark & Simulation)
+Bảng hiện **«Đang chờ tới giờ»**, đồng hồ đếm ngược lớn, dòng **«Săn lúc ... · «tên nút»»** và nút **«Dừng săn»**.
 
-De kiem thu extension mot cach chinh xac ma khong can cho den gio G thuc te (00:00:00), he thong cung cap bo Test Simulator rieng biet tai `/Users/tiendn/Workplace/Projects/deal-hunter/simulator`.
+Nếu trang tải lại trong lúc chờ, DealHunter vẫn tiếp tục săn.
 
-### 8.1. Khoi dong Simulator
-1. Mo Terminal va chay lenh:
-   ```bash
-   cd /Users/tiendn/Workplace/Projects/deal-hunter/simulator
-   npm run dev
-   ```
-2. Truy cap trinh duyet tai: `http://localhost:3100/`.
+Kết quả có thể là:
 
-### 8.2. Kich ban kiem thu Caffiliate (Diem danh doi thuong)
-Tab **Caffiliate Bench** mo phong trang `app.caffiliate.vn` (extension nhan `http://localhost:3100` va `http://127.0.0.1:3100` la Caffiliate):
-1. **Thiet lap trang thai hom qua**: chon `Initial state: Yesterday Claimed` (nut bi `disabled` tu hom truoc).
-2. **Dat moc gio G**: nhap gio hoac bam `+10s` / `+30s` tren Simulator.
-3. **Khoa nut va kich hoat tren Extension**:
-   - Mo Popup tren tab do, bam `START SNIPER ON THIS PAGE`.
-   - Tren Floating HUD: chon moc gio khop voi Simulator, bam `Pick button` va click vao nut Diem danh, roi bam `Arm sniper`.
-4. **Quan sat ket qua**:
-   - Khong co reload. Truoc gio G vai tram ms (theo ke hoach tinh tu Log), extension bat dau toi thieu 5 lan thu: goi ham diem danh cua trang -> API -> bam nut; co ket qua la dung.
-   - Mo Popup > tab **Log** de xem ke hoach va tung lan thu (gio bat dau, tang da dung, thoi gian Turnstile, luc gui, thoi gian server tra loi).
-   - Simulator neu khong co `app.checkIn()` thi extension xuong tang bam nut; Activity Logs cua Simulator ghi do lech mili-giay so voi gio G.
+| Thông báo | Nghĩa |
+| --- | --- |
+| «Thành công, trang đã xác nhận» | Trang đã báo nhận (ví dụ voucher đã lưu). |
+| «Đã hết lượt» | Voucher/deal đã hết. |
+| «Tới giờ không thấy nút» | Đến giờ mà nút không có trên trang. |
+| «Đã bấm, trang chưa xác nhận. Hãy kiểm tra lại.» | Đã bấm nhưng trang không báo gì. Hãy tự xem lại trên trang. |
+| «Đã dừng» | Bạn đã dừng săn. |
 
-## 9. Xu Ly Su Co Thuong Gap (Troubleshooting)
+### «Tuỳ chọn thêm»
 
-### Q1: Toi bam nut Start tren trang web ma khong thay bang HUD xuat hien?
-- **Tra loi**: Hien tai popup da duoc tich hop co che tu dong chen tep CSS va script vao tab dang mo khi ban bam `START SNIPER ON THIS PAGE`. Neu ban van khong thay HUD, co the do tab dang o dia chi cam cua trinh duyet (vi du: `chrome://`, `about:blank`, hoac Web Store). Hay thu tren mot trang web `https://` thong thuong.
+Bấm «Tuỳ chọn thêm» để mở một khung nhỏ đè lên bảng. Bấm ra ngoài để đóng.
 
-### Q2: Dong ho bao "Not synced" hoac "Chua dong bo"?
-- **Tra loi**: Do ket noi mang cham hoac domain chua hoan tat do thoi gian khuu hoi RTT. Ban co the bam bieu tuong xoay tron ben canh dong ho tren HUD hoac bam `Re-sync` tren Popup de thuc hien can chinh lai ngay lap tuc.
-
-### Q3: Nut tren trang web bi disabled (mo di) truoc gio G, tien ich co bam duoc khong?
-- **Tra loi**: Hoan toan duoc. Tinh nang **Pick button** cho phep ban khoa ca nhung nut dang bi `disabled`. He thong se quan sat va ngay khi nut duoc kich hoat vao gio G, dong co san se ban loat click ngay lap tuc.
-
-### Q4: May tinh dat mui gio khac (khong phai GMT+7) thi he thong co san dung gio khong?
-- **Tra loi**: Luon luon dung. Thuat toan gio cua DealHunter luon quy doi thoi gian ve chuan gio Viet Nam (GMT+7, khong DST), dam bao chay dung gio du ban dang o bat ky quoc gia nao tren the gioi.
-
-### Q5: Tai sao mo 3 cua so trinh duyet tren cung 1 may lai cham hon chay 1 cua so duy nhat?
-- **Tra loi**: Trinh duyet Chromium tu dong ap dung co che bop nghen tai nguyen nen (Background Tab / Inactive Window Throttling) doi voi cac cua so khong duoc nguoi dung focus truc tiep. Chay nhieu tai khoan song song tren cung 1 may khien timer bi cham tre va bang thong mang bi phan manh, dan den ket qua thap hon (Top 8, 9, 15). Khuyen nghi chi su dung **1 tai khoan chinh tren 1 cua so duy nhat duoc focus** de dat toc do Top 1 tuyet doi.
+| Mục | Tác dụng |
+| --- | --- |
+| **«Tải lại trang trước giờ»** | Bật/tắt. Khi bật, DealHunter tải lại trang ngay trước giờ săn để nút mới nhất hiện ra. Thời điểm tải lại được tự canh theo tốc độ trang (bảng ghi «Tự canh, khoảng ... giây trước»). |
+| **«Bấm thử»** | Bấm nút đã chọn **một lần thật** để kiểm tra đúng nút. Sau khi bấm, nút ghi «Đã bấm» kèm dấu tích. Lưu ý: đây là bấm thật trên trang. |
+| **«Quên nút»** | Xoá nút đã nhớ cho trang này. |
 
 ---
 
-## 10. Luu Y Quan Trong Va An Toan Tai Khoan
+## 4. Hẹn giờ, sửa lịch, lặp mỗi ngày
 
-1. **Bao mat tuyet doi**: Tien ich hoat dong hoan toan tai phia client tren trinh duyet cua ban, su dung phien dang nhap co san cua chinh ban. Tien ich khong bao gio luu tru mat khau hay thong tin the tin dung.
-2. **Uu tien 1 tai khoan / 1 cua so focus duy nhat**: Voi cac deal mili-giay khoc liet (nhu diem danh doi thuong caffiliate.vn), luon giu 1 cua so trinh duyet duy nhat tren man hinh va dam bao cua so dang duoc focus.
-3. **Chuan bi truoc gio G**:
-   - Voi Shopee: Dang nhap san tai khoan, mo thu trang voucher truoc 5-10 phut de vuot qua captcha neu co.
-   - Voi cac trang web khac: Dang nhap va chon san thong tin can thiet tren man hinh de san sang bam nut ngay khi gio G den.
-4. **Giu trinh duyet hoat dong**: Khong gap man hinh hoac de may tinh roi vao che do Sleep neu ban dat lich san tu dong khi khong ngoi truoc may.
+Hẹn giờ phù hợp khi bạn không muốn ngồi chờ, hoặc muốn săn mỗi ngày.
+
+**Cách 1 — từ bảng săn trên trang:** chọn nút, chọn giờ, bật «Mỗi ngày» nếu cần, rồi bấm **«Hẹn giờ»**.
+
+**Cách 2 — từ cửa sổ DealHunter:** vào tab «Lịch săn», bấm **«+ Hẹn giờ cho nút đã lưu»**. Một khung trượt lên từ dưới:
+
+| Mục | Tác dụng |
+| --- | --- |
+| **«Nút cần săn»** | Chọn một nút đã lưu (mỗi nút gắn với một trang). |
+| **«Chọn lại nút trên trang»** | DealHunter mở trang đó và bật chế độ chọn để bạn chọn lại nút. |
+| **«Hoặc thêm nút mới»** | **«Chọn nút trên trang đang mở»** (khi trang đang mở chưa có nút) hoặc **«Nút ở trang khác (dán link trang)»** → dán link → **«Mở & chọn»**. DealHunter mở trang ở chế độ chọn nút; chọn xong, bấm «Hẹn giờ» trên bảng săn (hoặc mở lại khung này). Chưa có nút nào thì khung chỉ hiện hai lựa chọn này. |
+| **«Giờ săn»** | Gõ giờ dạng giờ:phút:giây, hoặc bấm nhanh `00:00`, `12:00`, `20:00`. Bên cạnh ghi «còn ...». |
+| **«Lặp lại mỗi ngày»** | Săn lại vào giờ này mỗi ngày. |
+| **«Tải lại trang trước giờ»** | Như trong bảng săn: tự canh theo tốc độ tải trang. |
+| **«Hẹn săn lúc ...»** | Lưu lịch. |
+
+**Sửa lịch:** trong tab «Lịch săn», bấm vào một lịch. Khung hiện ra với tiêu đề «Sửa lịch săn». Đổi xong bấm **«Lưu thay đổi»**.
+
+**Xoá lịch:** bấm biểu tượng thùng rác ở lịch đó.
+
+**Không bị trùng:** nếu bạn hẹn cùng một trang, cùng một giờ lần nữa, DealHunter cập nhật lịch cũ thay vì tạo thêm lịch mới.
+
+**Tới giờ thì sao:** khoảng 1 phút trước giờ săn, DealHunter tự mở (hoặc chuyển sang) trang đó và chuẩn bị. Lỡ đóng trang cũng không sao. Máy tính chỉ cần bật và Chrome đang mở.
+
+**Lặp mỗi ngày:** dù hôm nay thành công, không thành công hay bị lỡ, lịch vẫn tự chuyển sang ngày mai. Bấm «Dừng săn» chỉ bỏ qua hôm nay.
+
+---
+
+## 5. Tab «Lịch săn»
+
+Tab này ghi số lịch, ví dụ «Lịch săn (3)». Lịch sắp tới ở trên, lịch đã xong ở dưới. Mỗi dòng ghi giờ, tên nút, trang, trạng thái, nhãn «Mỗi ngày» (nếu có), thời gian còn lại và kết quả lần trước.
+
+| Trạng thái | Nghĩa |
+| --- | --- |
+| **Đang chờ** | Chưa tới giờ. DealHunter sẽ tự mở trang và săn. |
+| **Đang săn** | Đang chạy trên trang. |
+| **Thành công** | Trang đã xác nhận. |
+| **Không thành công** | Đã thử nhưng không được (hết lượt, không thấy nút, hoặc trang không xác nhận). Xem dòng «Lần trước:» để biết lý do. |
+| **Đã hủy** | Lịch đã bị dừng. |
+| **Đã lỡ (máy tắt)** | Đến giờ mà máy tắt, ngủ, hoặc Chrome đóng, nên DealHunter không chạy kịp. |
+
+---
+
+## 6. Cài đặt
+
+Bấm hình bánh răng ở góc trên cửa sổ DealHunter.
+
+| Mục | Nội dung |
+| --- | --- |
+| **«Ngôn ngữ»** | Tiếng Việt hoặc English. Mặc định theo ngôn ngữ của trình duyệt. |
+| **«Tài khoản DealHunter»** | Cho biết bạn đã đăng nhập chưa. Bạn đăng nhập trên trang web DealHunter, tiện ích tự nhận ra. |
+| **«Nhật ký điểm danh»** | Xem lại các lần điểm danh Caffiliate (xem [mục 7](#7-điểm-danh-caffiliate-và-nhật-ký-điểm-danh)). |
+| **«Dữ liệu trên máy này»** | Giờ và tốc độ tải trang DealHunter đã đo. Bấm **«Xoá số đo»** rồi xác nhận **«Xoá»** nếu muốn xoá. Xoá vẫn an toàn, lần sau DealHunter tự đo lại. |
+| Phiên bản | Ví dụ «DealHunter Assistant 1.0.0». Bản dev có thêm «(bản dev)». |
+
+---
+
+## 7. Điểm danh Caffiliate và «Nhật ký điểm danh»
+
+Trên trang Caffiliate (caffiliate.vn), DealHunter có cách săn riêng cho nút điểm danh:
+
+- DealHunter **không tải lại trang** Caffiliate.
+- Gần 00:00, DealHunter gửi vài lần thử (ít nhất 5) cách nhau rất ngắn, rải quanh đúng 00:00. Lần nào được trang xác nhận thì dừng ngay.
+- Nếu trang hiện ô xác minh «Tôi không phải người máy», bảng săn sẽ nhắc: **«Trang cần xác minh: hãy tick vào ô trên trang.»** Hãy tick vào ô đó.
+
+**«Nhật ký điểm danh»** (trong Cài đặt) ghi lại từng lần điểm danh:
+
+- Kết quả: **«Đã điểm danh»** hoặc **«Chưa xác nhận»**. Lần bạn tự bấm tay được ghi là **«Bấm tay»**.
+- Kế hoạch DealHunter đã dùng: thử mấy lần, bắt đầu sớm bao lâu, mạng mất khoảng bao lâu.
+- Từng lần thử («Lần 1», «Lần 2»...): đã thử bằng cách nào («Hàm», «API» hoặc «Bấm nút»), gửi lúc nào, trang trả lời lúc nào.
+
+Bạn không cần hiểu hết các con số này. Nhật ký giúp người hỗ trợ kỹ thuật biết chuyện gì đã xảy ra nếu điểm danh không được. DealHunter cũng dùng nhật ký này để tự canh thời gian tốt hơn cho lần sau. Bấm **«Xoá»** để xoá nhật ký.
+
+---
+
+## 8. Mẹo
+
+- **Thử trước:** bấm **«Thử sau 10 giây»** để xem DealHunter bấm đúng nút chưa, trước giờ săn thật.
+- **Đăng nhập trước:** đăng nhập vào trang (Shopee, Caffiliate...) trước giờ săn. DealHunter không đăng nhập giúp bạn.
+- **Giữ máy thức:** tắt chế độ ngủ của máy trong đêm săn. Máy ngủ thì lịch sẽ thành «Đã lỡ (máy tắt)».
+- **Dùng «Hẹn giờ» cho việc lặp lại:** ví dụ điểm danh mỗi ngày lúc 00:00, bật «Mỗi ngày» một lần là xong.
+- **Một trang, một nút:** mỗi trang nhớ một nút. Muốn đổi, bấm «Đổi nút».
+- **Nút «Mua ngay», «Thanh toán»:** «Gợi ý giúp tôi» không bao giờ gợi ý các nút này. Nếu bạn thật sự muốn săn chúng, hãy tự chọn.
+
+---
+
+## 9. Xử lý sự cố
+
+| Vấn đề | Cách xử lý |
+| --- | --- |
+| **Bảng săn không hiện** | Bấm biểu tượng DealHunter rồi bấm «Chọn nút» hoặc «Mở bảng săn». Nếu vẫn không hiện, tải lại trang (F5) rồi thử lại. Trang `chrome://` và trang tab mới không dùng được. |
+| **Bảng ghi «Dùng giờ máy tính (trang không báo giờ)»** | Trang không cho biết giờ. Bấm «Thử lại». Nếu vẫn vậy, DealHunter vẫn săn bình thường theo đồng hồ máy tính. Hãy đảm bảo giờ máy tính đúng (bật tự động đặt giờ trong cài đặt của máy). |
+| **Trang hiện ô xác minh (Cloudflare, «Verify you are human»)** | Tick vào ô xác minh và đăng nhập trước giờ săn. DealHunter không tự vượt qua bước xác minh. |
+| **Lịch ghi «Đã lỡ (máy tắt)»** | Đến giờ mà máy tắt, ngủ hoặc Chrome đóng. Lần sau giữ máy bật và Chrome mở. Lịch «Mỗi ngày» tự chuyển sang ngày mai. |
+| **«Tới giờ không thấy nút»** | Trang đã đổi giao diện. Mở trang, bấm «Đổi nút» (hoặc «Chọn lại nút trên trang» trong lịch) và chọn lại. |
+| **«Đã bấm, trang chưa xác nhận»** | Tự xem trên trang đã được chưa (ví dụ trong ví voucher). |
+| **«Gợi ý giúp tôi» không gợi ý được** | Hãy tự bấm «Chọn nút» và chọn. |
+| **Vừa cập nhật hoặc tải lại DealHunter** | Tải lại (F5) các trang đang mở mà bạn muốn săn. Bảng săn cũ trên trang sẽ được thay bằng bảng mới. Lịch đã hẹn vẫn còn, không cần hẹn lại. |
+
+---
+
+Xem thêm (dành cho người làm kỹ thuật): [README của extension](../../extension/README.md).

@@ -92,21 +92,23 @@ go run cmd/notifier/main.go
 - [x] Production Docker Packaging: Multi-stage Dockerfile for Go & Next.js standalone, `docker-compose.prod.yml`, `.dockerignore`
 - [x] Production Deployment Guide (`docs/deployment/production-deployment-guide.md`)
 
-### Chrome Extension: DealHunter Assistant (Universal Sniper & Price Intelligence) [100% Completed]
-- [x] Universal Web Sniper: Kich hoat va click chinh xac vao gio G tren moi website (Shopee, Ticketbox, dang ky hoc phan, v.v.).
-- [x] Autonomous Adaptive Kinetic Engine: Dong co sinh trac hoc 3 pha (60ms but toc dau, 95ms kem vi nghi phuc hoi co hoc 65ms truoc click 4, va 140ms on dinh dai han).
-- [x] Behavioral State Machine: Loai bo 100% tu dien ngon ngu hardcode, danh gia ket qua dua tren DOM detachment, disabled mutation, text change, W3C ARIA.
-- [x] Pre-warm T-60s & Dual-Defense Reload: Pre-warm tab o T-60s boi Background Scheduler; emergency reload ngam o T+250ms tren trang tinh.
-- [x] In-Page Price Intelligence: Huy hieu Price History Tracker Badge tren trang san pham Shopee.
-- [x] Two-Way Auth & Session Sync: Dong bo xac thuc tu Web App Next.js qua `externally_connectable` va `chrome.storage.session`.
-- [x] Test Coverage & Build: 165/165 unit tests pass (`extension/`), build production hoan tat (`extension/dist`).
+### Chrome Extension: DealHunter Assistant (San voucher dung gio & Price Intelligence)
+- [x] San dung gio tren moi website: nguoi dung tu chon nut (hoac "Goi y giup toi" roi xac nhan), chon gio, bat dau san; chi bam dung nut da chon.
+- [x] Giao dien cho nguoi khong chuyen: popup 3 buoc ("Trang nay" / "Lich san"), bang san tren trang khong nhay bo cuc, trang Cai dat (ngon ngu, tai khoan, nhat ky diem danh, du lieu tren may).
+- [x] Lich san: hen gio, lap lai moi ngay, sua lich da hen, them nut moi tu link, extension tu mo trang; khong tao lich trung.
+- [x] Canh gio theo may chu cua trang dang san; tai trang truoc gio voi thoi gian tu do theo tung trang (chi co cong tac bat/tat).
+- [x] An toan khi bam: tim lai dung nut sau tai trang (khong doan), xac nhan hoan tat co thoi gian giu, khong bam nut het luot / bi che.
+- [x] Caffiliate: diem danh 3 tang (ham cua trang -> API cua trang -> bam nut), toi thieu 5 lan gui theo lich tinh toan, nhat ky trong Cai dat.
+- [x] Huy hieu gia tren trang san pham Shopee / Lazada / Tiki / TikTok Shop cho thanh vien da dang nhap.
+- [x] Dang nhap mot lan qua web (`DH_WEB_SESSION`, `externally_connectable`, `chrome.storage.session`).
+- [x] Ban phat hanh / ban dev: `npm run build` (chi tin `dealhunter.vn`) va `npm run build:dev` (them localhost). 30 file, 298 unit test pass.
 
 ## Documentation
 Chi tiet tai lieu he thong duoc quan ly trong thu muc [`docs/`](docs/README.md):
-- [**DealHunter Assistant Extension Guide**](docs/extension/huong-dan-su-dung.md): Huong dan su dung tien ich Chrome (Live Sniper, Schedule, My Hunts).
-- [**Kien truc Universal Sniper & State Machine**](docs/extension/kien-truc-universal-sniper-va-state-machine.md): Dac ta kien truc loi, dong co adaptive pacing va may trang thai DOM.
-- [**Ket noi Web App & Extension**](docs/extension/ket-noi-web-extension.md): Giao thuc ket noi hai chieu, sync auth session va bao mat.
-- [**Extension Source & Build Guide**](extension/README.md): Huong dan phat trien, kiem thu 165 unit tests va dong goi extension.
+- [**DealHunter Assistant Extension Guide**](docs/extension/huong-dan-su-dung.md): Huong dan su dung cho nguoi khong chuyen (3 buoc, bang san, Lich san, Cai dat).
+- [**Kien truc Universal Sniper & State Machine**](docs/extension/kien-truc-universal-sniper-va-state-machine.md): Kien truc hien tai cua extension (dong co bam, lich san, canh gio, Caffiliate).
+- [**Ket noi Web App & Extension**](docs/extension/ket-noi-web-extension.md): Giao thuc `DH_WEB_SESSION`, origin theo ban build va bao mat.
+- [**Extension Source & Build Guide**](extension/README.md): Build ban phat hanh / ban dev, kiem thu (298 unit test) va cau truc ma nguon.
 - [**Ra soat loi & Ke hoach sua Extension**](docs/extension/ra-soat-loi-va-ke-hoach-sua.md): Bien ban ra soat toan dien, theo doi Dot 1 -> Dot 3 va danh gia ky thuat.
 - [**Cam nang Trien khai San xuat**](docs/deployment/production-deployment-guide.md): Huong dan trien khai Production (Docker Compose Prod, Systemd, Nginx SSL, Backup).
 - [**Dac ta REST API Toan Dien**](docs/api/rest-api-reference.md): Danh muc 24+ HTTP endpoints, payload, auth va curl examples.
@@ -116,6 +118,6 @@ Chi tiet tai lieu he thong duoc quan ly trong thu muc [`docs/`](docs/README.md):
 - [**Ke hoach Phase 2**](docs/plans/phase-2-alert-and-zalo.md): Thiet ke Alert Engine & Zalo Notification.
 - [**Ke hoach Phase 3**](docs/plans/phase-3-cross-platform.md): Thiet ke So Sanh Gia Da Nen Tang & Bao cao kiem dinh.
 - [**Ke hoach Phase 3.5**](docs/plans/phase-3-5-monetization-and-voucher-engine.md): Affiliate Link Engine & Voucher Intelligence 2 Buoc.
-- [**Ke hoach Chrome Extension Assistant**](docs/plans/chrome-extension-assistant-and-fast-clicker.md): Thiet ke Client-Side Fast Voucher Clicker & Price Intelligence In-Page.
+- [**Ke hoach Chrome Extension Assistant**](docs/plans/chrome-extension-assistant-and-fast-clicker.md): Ke hoach ban dau (tai lieu lich su).
 - [**Ke hoach Gia co truoc Phase 4**](docs/plans/hardening-before-phase-4.md): Danh sach day du loi bao mat, do tin cay va du lieu can sua truoc khi deploy production.
 

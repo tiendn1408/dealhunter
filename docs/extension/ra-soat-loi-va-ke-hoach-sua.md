@@ -2,7 +2,7 @@
 
 > **Ngày rà soát**: 2026-10-09 · **Phạm vi**: toàn bộ `extension/` (lõi săn, background/popup, UI/i18n) và tài liệu extension.
 > **Cách rà**: 3 agent độc lập, chỉ đọc; nhiều lỗi đã được **tái hiện bằng test riêng** (đánh dấu [R]). Build, `tsc`, `vitest` (120/120) đều pass — các lỗi dưới đây là lỗi logic/race mà test hiện có không phủ.
-> **Trạng thái**: ĐÃ HOÀN THÀNH 100% (Tất cả Đợt 1, Đợt 2, Đợt 3 đã hoàn tất, 165/165 unit tests pass, build production thành công).
+> **Trạng thái (cập nhật 2026-10-13)**: các lỗi C/H/M/L/P/E đã được sửa, nhưng một số dòng "Đã sửa" bên dưới ghi lại cách sửa **của thời điểm 2026-10-09** và nay đã được thay bằng cách khác (xem **mục 10**). Số test hiện tại: 30 file, 298 test pass; `tsc` sạch; `npm run build` (bản phát hành) và `npm run build:dev` đều build được. Các con số "165/165", "206/206" trong bài là số cũ.
 
 ---
 
@@ -222,3 +222,31 @@ Trong đợt rà soát mở rộng toàn diện sau khi hoàn thành kế hoạc
 | **E11** | Hieu nham yeu cau reload va mat trang thai phien san qua Reload (Regression Incident) | Khi nhan phan hoi "reload lam mat tien trinh", agent hieu sai va tu y xoa bo reload tren `speed_priority` (commit `e0a4db0`). Trang React SPA (caffiliate.vn) can reload de lay session ngay moi, nhung `FloatingHUD` khong doc `ARMED_SESSION_KEY`, `updateClock` bi nhay lui moc gio G, va `isTargetCompleted` bao saved ao khi nut disabled san. | 1. Khoi phuc Pre-reload va Guarded Reload trong `hunt_engine.ts`.<br>2. Bo sung tuy chon reload (`750ms`, `1.5s`, `Tat`) tren Floating HUD.<br>3. `FloatingHUD` doc va phuc hoi 100% session tu `sessionStorage`, khoa moc `armedTargetTimestampRef.current`.<br>4. Phong ngua False-positive trong `isTargetCompleted`.<br>5. Simulator luu `dropTimestamp` vao `localStorage` va lang nghe bang Native Event Listener. |
 
 Toan bo 18 test suites voi 206/206 tests (100% pass) va build production sach se khong loi. Toan bo he thong extension dat do hoan thien cao nhat.
+
+---
+
+## 10. Trạng thái thực tế (2026-10-13)
+
+Một số mục ở trên được đánh dấu `[x]` sớm hơn thực tế, hoặc cách sửa ghi trong bài đã bị thay. Bảng dưới là trạng thái đúng theo mã nguồn hiện tại; tài liệu hành vi đầy đủ ở `huong-dan-su-dung.md`, `kien-truc-universal-sniper-va-state-machine.md`, `ket-noi-web-extension.md` và `extension/README.md`.
+
+| Mục | Ghi trong bài | Hiện tại |
+|---|---|---|
+| C1, M10 | Xác nhận "đã lưu" | Tín hiệu hoàn tất phải giữ 300 ms (1,5 giây nếu chỉ có nút chuyển disabled); bỏ qua toast có sẵn trước cú bấm đầu; nút disabled do chính engine gỡ `disabled` không tính là thành công; chỉ adapter chắc chắn (Caffiliate) mới kết thúc ngay. |
+| C2 | Relocate an toàn | Tìm lại theo chữ ký nội dung (giá trị + chữ trên thẻ), xếp theo độ giống; hoà thì dùng gợi ý cấu trúc, vị trí chỉ khi rõ ràng duy nhất; còn lại **không bấm** (không đoán). |
+| M8 | Kiểm tra lớp phủ | Mọi đường bấm đều kiểm tra kích thước 0 và `elementFromPoint`; chỉ UI của DealHunter được miễn. |
+| M13, P1 | "Chỉ tự bật trên Shopee" | HUD tự mở trên trang voucher/deal của Shopee, Lazada, Tiki, TikTok, Sendo, AliExpress, Taobao (nhận theo tên miền thật) và trên trang đã có nút lưu / lịch hẹn / phiên săn; huy hiệu giá trên trang sản phẩm Shopee / Lazada / Tiki / TikTok Shop. |
+| P3, E9 | `web_accessible_resources` | Đã bỏ hẳn `web_accessible_resources` (logo nhúng base64 trong `logo_data.ts`), không có quyền `tabs`; website không dò được extension qua file của nó. |
+| H5, M9 | Đo đồng hồ | Chỉ đo cho trang đang săn (HUD mở, phiên săn, lịch hẹn) hoặc khi người dùng yêu cầu; bắt buộc có URL; một lần đo mỗi tên miền; đo hỏng không ghi đè kết quả tốt; favicon bị CDN cache giờ cũ thì chuyển sang trang chủ. |
+| H6, E11 | Nút chọn reload `750ms` / `1.5s` / `Tắt` | Không còn chọn mốc ms. "Tải lại trang trước giờ" là công tắc bật/tắt; thời gian tải lại được **tự đo theo từng trang** (`lib/reload_timing.ts`). Tự tắt trên trang React/Vue/Angular/Svelte hoặc có đồng hồ đếm ngược. Reload cứu chỉ khi nút bị khoá lúc bắt đầu săn và bấm không phản hồi sau 600 ms; tổng cộng tối đa 3 lần tải lại mỗi giờ săn (tính cả lần trước giờ), cách nhau ≥450 ms. |
+| E11 | Phiên săn sống qua reload bằng `sessionStorage` | Phiên săn lưu ở kho của extension (`chrome.storage.local` `dh_armed_sessions`); `sessionStorage` chỉ giữ một mã ngẫu nhiên, trang web không giả mạo / sửa được phiên. |
+| M1, L11 | Hàng đợi ghi task | Mọi ghi task đi qua background (`storage.mutateTasks`, đọc–sửa–ghi tuần tự); content script chỉ gửi `TASK_STATUS_UPDATE`. |
+| H2, H3, E5, E6 | Lịch hẹn | `targetAt` khoá cho từng task; alarm trễ → "Đã lỡ (máy tắt)"; lịch mỗi ngày tự sang lần kế tiếp sau mọi kết quả; kiểm tra định kỳ mỗi 5 phút khôi phục alarm, gộp lịch trùng (cùng trang, cùng giờ, cùng kiểu lặp). |
+| L3 | Mốc giờ flash sale | Form hẹn giờ có mốc nhanh 00:00 / 12:00 / 20:00 (cộng ô giờ tự do). |
+| Popup | "Form Schedule 3 chế độ", "My Hunts" | Popup 2 tab «Trang này» / «Lịch săn», khung Hẹn giờ trượt lên: chọn nút đã lưu, «Chọn lại nút trên trang», «Hoặc thêm nút mới» (trang đang mở hoặc dán link); sửa lịch đã hẹn; trang Cài đặt có nút bánh răng. |
+| L7, L8 | Adaptive pacing / micro-pause | Vẫn có trong `human_biometrics.ts`, nhưng không còn là điểm nhấn: an toàn (bấm đúng nút, không bấm trước giờ trên sàn lớn, tối đa 1 cú trước T ở trang `speed_priority`) được ưu tiên. |
+| Caffiliate | (không có trong bài cũ) | Điểm danh 3 tầng (hàm của trang `app.checkIn()` → API của trang → bấm nút), ≥5 lần gửi theo lịch tính từ lịch sử, dừng ngay khi có kết quả; nhật ký trong Cài đặt. Không lấy trước / giữ token Turnstile, không giả header. |
+| Bản build | (không có trong bài cũ) | `npm run build` chỉ tin `dealhunter.vn`; `npm run build:dev` thêm localhost và trình mô phỏng Caffiliate. Cờ `__DH_DEV__`. |
+| Mục 6 (tài liệu) | "Đã cập nhật 2026-10-09" | Nội dung cũ (165 test, PING/SYNC_AUTH, mốc `+1m`, 3 chế độ form) đã được viết lại ngày 2026-10-13 theo mã nguồn hiện tại; `docs/plans/chrome-extension-assistant-and-fast-clicker.md` giữ làm tài liệu lịch sử. |
+
+Chưa kiểm chứng trên Chrome thật sau đợt sửa 2026-10-13: «Chọn lại nút trên trang» sau khi reload extension (đã sửa HUD cũ còn sót bằng `data-dh-instance`, đã có test đơn vị) và script `e2e/ext_semi.mjs` sau khi đổi nhãn.
+

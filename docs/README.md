@@ -10,47 +10,47 @@ Cap nhat: 2026-10-09
 
 ### 1. Kien Truc He Thong (`docs/architecture/`)
 Chua cac tai lieu mo ta kien truc tong the, quyet dinh ky thuat va thiet ke du lieu dai han:
-- [**overview.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/architecture/overview.md): Tong quan kien truc he thong (Modular Monolith, Ports & Adapters, phan tang ma nguon).
+- [**overview.md**](architecture/overview.md): Tong quan kien truc he thong (Modular Monolith, Ports & Adapters, phan tang ma nguon).
 
 ---
 
 ### 2. Ke Hoach & Dac Ta Nghiep Vu Theo Phase (`docs/plans/`)
 Chua tai lieu PRD, dac ta BA/PM va ke hoach trien khai chi tiet cho tung giai doan:
-- [**phase-1-core-tracking.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/plans/phase-1-core-tracking.md): Dac ta goc va tieu chuan nghiem thu Phase 1 (Core Price Tracking Pipeline).
-- [**phase-2-alert-and-zalo.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/plans/phase-2-alert-and-zalo.md): Ke hoach va thiet ke kien truc chuan bi cho Phase 2 (Alert Engine + Zalo Notification).
-- [**phase-3-cross-platform.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/plans/phase-3-cross-platform.md): Ke hoach va thiet ke kien truc Phase 3 (Cross-platform Price Comparison).
-- [**gap-resolution-and-foundation-completion.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/plans/gap-resolution-and-foundation-completion.md): Ke hoach giai quyet dut diem cac thanh phan con thieu (Scraper thuc te, Auth, Auto-matching, Local dev runner) va ghi chu trien khai Docker tai Phase 6.
-- [**phase-3-5-monetization-and-voucher-engine.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/plans/phase-3-5-monetization-and-voucher-engine.md): Ke hoach & dac ta ky thuat Phase 3.5 (Monetization & Voucher Engine - Tiep thi lien ket Affiliate & San voucher 2 buoc).
-- [**chrome-extension-assistant-and-fast-clicker.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/plans/chrome-extension-assistant-and-fast-clicker.md): Dac ta kien truc & ke hoach Chrome Extension Assistant (Universal Fast Clicker & Multi-Platform Voucher Sniper).
-- [**hardening-before-phase-4.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/plans/hardening-before-phase-4.md): Ke hoach gia co bao mat, do tin cay va tinh dung dan du lieu sau dot ra soat Phase 1 -> 3.5 (bat buoc truoc khi deploy production va Phase 4).
+- [**phase-1-core-tracking.md**](plans/phase-1-core-tracking.md): Dac ta goc va tieu chuan nghiem thu Phase 1 (Core Price Tracking Pipeline).
+- [**phase-2-alert-and-zalo.md**](plans/phase-2-alert-and-zalo.md): Ke hoach va thiet ke kien truc chuan bi cho Phase 2 (Alert Engine + Zalo Notification).
+- [**phase-3-cross-platform.md**](plans/phase-3-cross-platform.md): Ke hoach va thiet ke kien truc Phase 3 (Cross-platform Price Comparison).
+- [**gap-resolution-and-foundation-completion.md**](plans/gap-resolution-and-foundation-completion.md): Ke hoach giai quyet dut diem cac thanh phan con thieu (Scraper thuc te, Auth, Auto-matching, Local dev runner) va ghi chu trien khai Docker tai Phase 6.
+- [**phase-3-5-monetization-and-voucher-engine.md**](plans/phase-3-5-monetization-and-voucher-engine.md): Ke hoach & dac ta ky thuat Phase 3.5 (Monetization & Voucher Engine - Tiep thi lien ket Affiliate & San voucher 2 buoc).
+- [**chrome-extension-assistant-and-fast-clicker.md**](plans/chrome-extension-assistant-and-fast-clicker.md): Ke hoach ban dau cua Chrome Extension (tai lieu lich su; hanh vi hien tai xem `docs/extension/`).
+- [**hardening-before-phase-4.md**](plans/hardening-before-phase-4.md): Ke hoach gia co bao mat, do tin cay va tinh dung dan du lieu sau dot ra soat Phase 1 -> 3.5 (bat buoc truoc khi deploy production va Phase 4).
 
 ---
 
 ### 3. Cam Nang Van Hanh & Huong Dan (`docs/runbooks/`)
 Chua cac huong dan cai dat moi truong, chay ung dung, cau hinh va xu ly su co:
-- [**setup-and-run.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/runbooks/setup-and-run.md): Huong dan cau hinh moi truong (.env), chay Docker Compose, migration va khoi dong cac tien trinh Go o moi truong local dev.
+- [**setup-and-run.md**](runbooks/setup-and-run.md): Huong dan cau hinh moi truong (.env), chay Docker Compose, migration va khoi dong cac tien trinh Go o moi truong local dev.
 
 ---
 
 ### 4. Trien Khai He Thong San Xuat (`docs/deployment/`)
 Chua huong dan trien khai moi truong Production thuc te, dong goi Docker, bao mat va sao luu:
-- [**production-deployment-guide.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/deployment/production-deployment-guide.md): Cam nang trien khai Production toan dien (Docker Compose Prod, Systemd, Nginx SSL, Migration Runbook, Monitoring & Backup).
+- [**production-deployment-guide.md**](deployment/production-deployment-guide.md): Cam nang trien khai Production toan dien (Docker Compose Prod, Systemd, Nginx SSL, Migration Runbook, Monitoring & Backup).
 
 ---
 
 ### 5. Dac Ta Giao Dien Lap Trinh REST API (`docs/api/`)
 Chua danh muc day du tat ca cac endpoint HTTP API, tham so va vi du curl:
-- [**rest-api-reference.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/api/rest-api-reference.md): Dac ta chi tiet 24+ endpoint (Health, Auth, Tracking, Pricing, Alerts, Notifications, Comparison, Auto-Matching, Vouchers, Webhook).
+- [**rest-api-reference.md**](api/rest-api-reference.md): Dac ta chi tiet 24+ endpoint (Health, Auth, Tracking, Pricing, Alerts, Notifications, Comparison, Auto-Matching, Vouchers, Webhook).
 
 ---
 
 ### 6. Tien Ich Chrome DealHunter Assistant (`docs/extension/` & `extension/`)
 Chua toan bo tai lieu ky thuat, huong dan va dac ta kien truc cua tien ich trinh duyet:
-- [**extension/README.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/README.md): Huong dan cai dat, phat trien, kiem thu (165 unit tests) va dong goi extension.
-- [**huong-dan-su-dung.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/huong-dan-su-dung.md): Huong dan su dung chi tiet cac che do Live Sniper, Schedule, My Hunts va xu ly su co.
-- [**kien-truc-universal-sniper-va-state-machine.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/kien-truc-universal-sniper-va-state-machine.md): Dac ta kien truc Universal Sniper, May trang thai hanh vi (Behavioral State Machine) va Dong co sinh trac hoc Adaptive 3 pha.
-- [**ket-noi-web-extension.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/ket-noi-web-extension.md): Dac ta giao thuc ket noi hai chieu giua DealHunter Web App va Extension qua `externally_connectable` va `chrome.storage.session`.
-- [**ra-soat-loi-va-ke-hoach-sua.md**](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/docs/extension/ra-soat-loi-va-ke-hoach-sua.md): Bien ban ra soat toan dien, theo doi khac phuc loi (Dot 1, Dot 2, Dot 3) va danh gia an toan.
+- [**extension/README.md**](../extension/README.md): Huong dan cai dat, ban phat hanh / ban dev (`npm run build` / `npm run build:dev`), kiem thu (30 file, 298 unit test) va cau truc ma nguon extension.
+- [**huong-dan-su-dung.md**](extension/huong-dan-su-dung.md): Huong dan su dung cho nguoi khong chuyen: 3 buoc (mo trang, chon nut, chon gio), bang san tren trang, Lich san (hen gio, sua, them nut moi), Cai dat va xu ly su co.
+- [**kien-truc-universal-sniper-va-state-machine.md**](extension/kien-truc-universal-sniper-va-state-machine.md): Kien truc hien tai: popup / bang san / background, tim lai nut sau tai trang, xac nhan hoan tat, tai trang truoc gio tu do, hang doi lich san, canh gio may chu va Caffiliate 3 tang.
+- [**ket-noi-web-extension.md**](extension/ket-noi-web-extension.md): Giao thuc `DH_WEB_SESSION` giua web va extension, origin theo ban build, bien `NEXT_PUBLIC_EXTENSION_ID`, huy hieu gia va quy tac an toan.
+- [**ra-soat-loi-va-ke-hoach-sua.md**](extension/ra-soat-loi-va-ke-hoach-sua.md): Bien ban ra soat loi extension va trang thai sua thuc te cua tung muc.
 
 ---
 

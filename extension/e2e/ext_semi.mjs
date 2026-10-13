@@ -60,30 +60,32 @@ const clickByText = (text) =>
 await new Promise((r) => setTimeout(r, 4000)); // let the clock calibrate
 const hudBefore = await page.$eval("#dealhunter-hud-root", (e) => e.innerText);
 
-const clickedNextMinute = (await clickByText("+1m")) || (await clickByText("+1p"));
 const hudStatus = () => page.$eval("#dealhunter-hud-root", (e) => e.innerText.split("\n").pop());
-console.log("after Next Minute slot:", clickedNextMinute, "|", await hudStatus());
 
-const clickedPick = (await clickByText("Pick")) || (await clickByText("Chọn"));
-console.log("after Pick Button:", clickedPick, "|", await hudStatus());
+const clickedPick = (await clickByText("Chọn nút")) || (await clickByText("Pick a button"));
+console.log("after Pick a button:", clickedPick, "|", await hudStatus());
 
-await page.click("#b-target"); // lock the target voucher
+await page.click("#b-target"); // choose the target voucher
 await new Promise((r) => setTimeout(r, 300));
 console.log("after picking target:", await hudStatus(), "| highlighted:", await page.$$eval(".dh-target-highlight", (els) => els.map((e) => e.id || e.tagName)));
 
-const armed = await page.evaluate(() => {
-  const btn = document.querySelector(".dh-arm-btn");
-  if (btn) {
-    btn.click();
-    return true;
-  }
-  return false;
-});
+// "Giờ khác" / "Other time" → type the fixture's release time (next minute, local clock)
+const clickedOther = (await clickByText("Giờ khác")) || (await clickByText("Other time"));
+await new Promise((r) => setTimeout(r, 200));
+const releaseAt = await page.evaluate(() => window.__release);
+const hhmmss = new Date(releaseAt).toTimeString().slice(0, 8);
+await page.evaluate((v) => {
+  const input = document.getElementById("dh-custom-time");
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, v); // React-controlled input
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}, hhmmss);
+console.log("time set:", clickedOther, hhmmss);
+
+const armed = (await clickByText("Bắt đầu săn")) || (await clickByText("Start hunting"));
 console.log("arm click:", armed);
 await new Promise((r) => setTimeout(r, 500));
 console.log("HUD after arm:", (await page.$eval("#dealhunter-hud-root", (e) => e.innerText)).replace(/\n/g, " | "));
 
-const releaseAt = await page.evaluate(() => window.__release);
 const waitMs = releaseAt - Date.now() + 5000;
 console.log(`armed; waiting ${Math.round(waitMs / 1000)}s for the drop...`);
 await new Promise((r) => setTimeout(r, Math.max(waitMs, 0)));
@@ -99,7 +101,7 @@ const isSaved =
 
 const checks = [
   ["HUD injected on shopee.vn page", hudBefore.length > 0],
-  ["clock calibrated against live Shopee", /ms ±\d+ms/.test(hudBefore), hudBefore.match(/[+-]?\d+ms ±\d+ms|CHUA DONG BO[^\n]*/)?.[0]],
+  ["clock synced with live Shopee", /Đã canh giờ|Synced/i.test(hudBefore), hudBefore.match(/(Đã canh giờ|Dùng giờ máy tính|Synced|Using)[^\n]*/)?.[0]],
   ["decoy voucher never clicked", !log.includes("decoy"), JSON.stringify(log)],
   ["new (re-rendered) target button clicked", log.some((l) => l.startsWith("target@")), JSON.stringify(log)],
   ["first click lands within 300ms of the drop", log.filter((l) => l.startsWith("target@")).map((l) => parseInt(l.slice(7))).every((ms) => ms >= 0 && ms < 300), JSON.stringify(log)],

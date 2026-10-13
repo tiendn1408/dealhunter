@@ -1,176 +1,85 @@
-# Ket Noi Hai Chieu Giua Web App va DealHunter Assistant Extension
+# Kết nối web DealHunter ↔ extension DealHunter Assistant
 
-Tai lieu nay mo ta kien truc, giao thuc truyen tin va quy chuan bao mat ket noi giua ung dung web DealHunter (Next.js Frontend) va tien ich mo rong Chrome (Manifest V3).
+Cập nhật: 2026-10-13
 
-Cap nhat: 2026-10-09
+Tài liệu này mô tả cách web DealHunter (Next.js) trao phiên đăng nhập cho extension, extension dùng phiên đó ở đâu, và các quy tắc an toàn đi kèm.
 
----
+## 1. Mục đích
 
-## 1. Tong Quan Kien Truc Ket Noi
+- **Đăng nhập một lần:** người dùng đăng nhập trên web, extension tự nhận tài khoản (Cài đặt › Tài khoản DealHunter).
+- **Huy hiệu giá trên trang sản phẩm:** với thành viên đã đăng nhập, extension hiện giá DealHunter ghi nhận và deal tốt hơn ở sàn khác ngay trên trang sản phẩm Shopee / Lazada / Tiki / TikTok Shop.
 
-He thong DealHunter ket noi giua nen tang Web va Tien ich trinh duyet nham hai muc tieu chinh:
-1. **Nhan dien tien ich tu Web App**: Trang web nhan biet nguoi dung da cai tien ich de hien thi trang thai ket noi va huong dan su dung.
-2. **Dong bo phien dang nhap va Huy hieu gia in-page**: Tien ich nhan JWT token an toan tu Web App de truy van thong tin lich su gia san pham va so sanh deal tren cac trang thuong mai dien tu (Shopee).
+Không đăng nhập thì extension vẫn săn bình thường, chỉ không có huy hiệu giá.
 
 ```
-┌─────────────────────────────────┐           chrome.runtime.sendMessage
-│    DealHunter Web App           │ ──────────────────────────────────────────┐
-│  (Next.js / localhost / prod)   │                                          │
-└─────────────────────────────────┘                                          ▼
-                                                                ┌───────────────────────────┐
-                                                                │  Background Service Worker│
-                                                                │  (externally_connectable) │
-                                                                └─────────────┬─────────────┘
-                                                                              │
+Web DealHunter ──chrome.runtime.sendMessage(EXTENSION_ID, DH_WEB_SESSION)──▶ Background (onMessageExternal)
+                                                                              │ kiểm origin + apiUrl
                                                                               ▼
-                                                                ┌───────────────────────────┐
-                                                                │  chrome.storage.session   │
-                                                                │  (Luu JWT token an toan)  │
-                                                                └─────────────┬─────────────┘
+                                                                     chrome.storage.session
                                                                               │
-                                                                              ▼
-┌─────────────────────────────────┐   Doc session & API query   ┌───────────────────────────┐
-│     Shopee Product Page         │ ◄───────────────────────────┤   Content Script In-Page  │
-│  (Price History Tracker Badge)  │                             │  (PriceHistoryBadge.tsx)  │
-└─────────────────────────────────┘                             └───────────────────────────┘
+Trang sản phẩm sàn ──GET_PRICE_CONTEXT──▶ Background ──Bearer token──▶ API DealHunter (apiUrl của phiên)
+(PriceHistoryBadge)
 ```
 
----
+## 2. Thông điệp duy nhất: `DH_WEB_SESSION`
 
-## 2. Cau Hinh Quyen va Origin Tin Cay
+Web gửi ở mỗi lần đăng nhập, mỗi lần làm mới token và khi đăng xuất (`dealhunter-web/lib/extension_bridge.ts`):
 
-### 2.1. Khai bao `externally_connectable` trong `manifest.json`
-Extension chi cho phep nhan tin nhan truc tiep tu cac origin web duoc phe duyet truoc:
-
-```json
-"externally_connectable": {
-  "matches": [
-    "http://localhost:3000/*",
-    "https://dealhunter.vn/*",
-    "https://www.dealhunter.vn/*"
-  ]
-}
-```
-
-### 2.2. Hang so `DEALHUNTER_WEB_ORIGINS`
-Trong ma nguon TypeScript [`extension/src/lib/constants.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/lib/constants.ts):
-
-```typescript
-export const DEALHUNTER_WEB_ORIGINS = [
-  "http://localhost:3000",
-  "https://dealhunter.vn",
-  "https://www.dealhunter.vn",
-] as const;
-```
-
-Moi tin nhan tu ben ngoai deu duoc kiem tra `sender.origin` thuoc danh sach nay truoc khi xu ly.
-
----
-
-## 3. Bien Moi Truong He Thong
-
-De Web App co the gui tin nhan den Extension, Web App can biet ID cua Extension da cai dat tren trinh duyet nguoi dung:
-
-### 3.1. Moi truong Frontend Web App (`.env.example`, `.env.local`)
-```bash
-# ID cua DealHunter Assistant Chrome Extension (xem tai chrome://extensions)
-NEXT_PUBLIC_EXTENSION_ID=abcdefghijklmnopqrstuvwxyz123456
-```
-
-### 3.2. Moi truong Docker Compose Production (`docker-compose.prod.yml`)
-```yaml
-environment:
-  - NEXT_PUBLIC_EXTENSION_ID=${EXTENSION_ID}
-```
-
----
-
-## 4. Giao Thuc Truyen Tin (Message Protocol)
-
-Giao tiep giua Web App va Extension duoc thuc hien qua API `chrome.runtime.sendMessage(extensionId, message)`.
-
-### 4.1. Kiem tra su ton tai cua Extension (`PING`)
-Web App gui yeu cau kiem tra xem extension da duoc cai dat hay chua:
-
-- **Payload gui di**:
 ```json
 {
-  "type": "PING"
+  "type": "DH_WEB_SESSION",
+  "accessToken": "eyJ... hoặc null khi đăng xuất / khách",
+  "expiresAt": 1797000000000,
+  "email": "user@example.com",
+  "name": "Tên",
+  "apiUrl": "https://dealhunter.vn/api/v1",
+  "webUrl": "https://dealhunter.vn"
 }
 ```
 
-- **Phan hoi tu Extension**:
-```json
-{
-  "success": true,
-  "version": "1.0.0",
-  "name": "DealHunter Assistant"
-}
-```
+Extension (`extension/src/background/web_session.ts`) trả về `{ "accepted": true | false }`:
 
-### 4.2. Dong bo xac thuc nguoi dung (`SYNC_AUTH`)
-Khi nguoi dung dang nhap tren DealHunter Web App, Web App gui thong tin xac thuc den Extension de kich hoat tinh nang theo doi gia:
+| Điều kiện | Xử lý |
+|---|---|
+| Origin gửi không thuộc `DEALHUNTER_WEB_ORIGINS` | Bỏ qua (`accepted: false`) |
+| Không có token, token hết hạn, hoặc `apiUrl` không hợp lệ | Xoá phiên đang lưu (= đăng xuất) |
+| Hợp lệ | Lưu `{ accessToken, expiresAt, email, name, apiUrl, webUrl }` trong **một** lần ghi vào `chrome.storage.session` |
 
-- **Payload gui di**:
-```json
-{
-  "type": "SYNC_AUTH",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": "usr_12345",
-    "email": "user@example.com"
-  }
-}
-```
+Ghi chú:
+- Extension **không bao giờ tự làm mới token** (refresh token xoay vòng chặt, tự làm mới song song với web sẽ thu hồi mọi phiên). Web đẩy token mới mỗi lần làm mới.
+- Token lưu trong `chrome.storage.session` (mất khi đóng trình duyệt), content script của các trang không đọc được.
+- `webUrl` hợp lệ còn được nhớ riêng (`dh_last_web_url`) để link "Mở DealHunter" vẫn dùng được sau khi đăng xuất.
+- Không có `PING`, `SYNC_AUTH`, `CLEAR_AUTH` (mô tả cũ đã bỏ).
 
-- **Xu ly phia Extension**:
-  - Background Service Worker kiem tra tinh hop le cua origin gui den.
-  - Luu JWT token va thong tin nguoi dung vao `chrome.storage.session`.
-  - Luu y: Khong su dung `chrome.storage.local` de luu token nham dam bao content script cua cac website khac khong the doc duoc token qua API storage thong thuong. Token se tu dong bi huy khi trinh duyet dong.
+## 3. Origin và URL được tin cậy (theo bản build)
 
-- **Phan hoi tu Extension**:
-```json
-{
-  "success": true,
-  "message": "Auth session synchronized"
-}
-```
+| | Bản phát hành (`npm run build`) | Bản dev (`npm run build:dev` / `npm run dev`) |
+|---|---|---|
+| Web được gửi phiên (`externally_connectable`, `DEALHUNTER_WEB_ORIGINS`) | `https://dealhunter.vn`, `https://www.dealhunter.vn` | thêm `http://localhost:3000`, `http://localhost:3100` |
+| `apiUrl` hợp lệ | `https` trên `dealhunter.vn` / `*.dealhunter.vn` | thêm `http://localhost:*` / `127.0.0.1:*` |
+| API mặc định (khi chưa có phiên) | `https://dealhunter.vn/api/v1` | `http://localhost:8080/api/v1` |
 
-### 4.3. Dang xuat hoac xoa phien (`CLEAR_AUTH`)
-Khi nguoi dung dang xuat tren Web App:
+Bản phát hành được lọc tự động lúc build: `manifest.json` trong `dist/` không còn dòng localhost nào (`extension/src/build/manifest_env.ts`), mã nguồn dùng cờ `__DH_DEV__` (`extension/src/lib/build_env.ts`).
 
-- **Payload gui di**:
-```json
-{
-  "type": "CLEAR_AUTH"
-}
-```
+## 4. Biến môi trường phía web
 
-- **Phan hoi tu Extension**:
-```json
-{
-  "success": true
-}
-```
+- `NEXT_PUBLIC_EXTENSION_ID`: ID của extension (xem tại `chrome://extensions`). Trống thì web không gửi gì, web vẫn chạy bình thường.
+  - Dev: `dealhunter-web/.env.local` (mẫu trong `.env.example`).
+  - Production: build arg trong `docker-compose.prod.yml` (`NEXT_PUBLIC_EXTENSION_ID: ${EXTENSION_ID:-}`), nên phải có lúc **build** image web.
+- `NEXT_PUBLIC_API_URL`: gửi kèm phiên làm `apiUrl`, extension gọi đúng API của bản triển khai đó.
 
----
+ID của bản "Load unpacked" phụ thuộc thư mục cài; bản phát hành qua Chrome Web Store có ID cố định.
 
-## 5. Hoat Dong Cua Content Script va Price History Badge
+## 5. Huy hiệu giá trên trang sản phẩm
 
-1. **Nhan dien trang san pham**:
-   - Content script chi tu dong khoi chay `PriceHistoryBadge` tren cac trang san pham Shopee hop le (`shopee.vn/product/...` hoac `shopee.vn/*-i.*.*`).
-2. **Truy van du lieu gia**:
-   - Component `PriceHistoryBadge` doc token tu session va gui yeu cau den Backend REST API qua [`api_client.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/lib/api_client.ts):
-     - `GET /api/v1/tracked-products?source_url=...`
-     - `GET /api/v1/products/{id}/comparison`
-3. **Hien thi tren giao dien**:
-   - Badge duoc neo doc lap tai `top: 90px; right: 24px` (z-index 2147483646) de khong de len giao dien Floating HUD o goc duoi `bottom: 24px`.
-   - Hien thi gia thap nhat ghi nhan, muc chenh lech voi deal tot nhat tren cac san khac, va nut bam mo xem chi tiet tren DealHunter Web App.
+1. Content script chỉ hiện huy hiệu trên **trang sản phẩm** của Shopee / Lazada / Tiki / TikTok Shop (nhận theo tên miền thật, không theo chuỗi trong URL).
+2. Huy hiệu hỏi background (`GET_PRICE_CONTEXT`). Background **tự kiểm lại** URL thuộc tên miền thật của các sàn trên rồi mới gửi token (`isPriceContextUrl`), nên trang ngoài các sàn này không thể xin được token.
+3. Background gọi API bằng `apiUrl` của phiên: `GET /tracked-products` (tìm sản phẩm đang theo dõi khớp URL), rồi `GET /tracked-products/{id}/comparison` (không bắt buộc).
+4. API trả 401 thì extension xoá phiên (người dùng cần đăng nhập lại trên web).
 
----
+## 6. Quy tắc an toàn
 
-## 6. Nguyen Tac An Toan va Bao Mat
-
-1. **Khong tin tuong `window.postMessage`**: Toan bo luong lien lac di qua kenh `chrome.runtime.sendMessage` cua trinh duyet voi danh sach origin co dinh trong manifest. Khong su dung `window.postMessage` de tranh bi script doc hai tren trang can thiep.
-2. **Loai bo quyen thua (P3)**: Extension khong yeu cau quyen `"tabs"` khong can thiet, gioi han `web_accessible_resources` chi mo cho cac web origin cua DealHunter de chong ky thuat nhan dang tien ich trai phep (extension fingerprinting).
-3. **Kiem tra ID tin nhan (P4)**: Service Worker background luon kiem tra `sender.id` va bat loi `catch` cho moi async listener, dam bao he thong khong bao gio bi crash boi cac tin nhan khong hop le.
+- Chỉ dùng kênh `chrome.runtime.sendMessage` với danh sách origin cố định; không nghe `window.postMessage` của trang.
+- `onMessage` nội bộ bỏ qua tin nhắn không đến từ chính extension; `onMessageExternal` có bắt lỗi.
+- Không có `web_accessible_resources`, không có quyền `tabs`: website không dò được extension qua file của nó.
+- Token chỉ được gửi tới `apiUrl` đi kèm chính token đó, và chỉ khi yêu cầu đến từ trang của các sàn được hỗ trợ.

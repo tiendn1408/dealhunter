@@ -1,6 +1,9 @@
 # DealHunter — Ke Hoach & Thiet Ke Ky Thuat Chrome Extension Assistant
 # (Universal Fast Clicker, Multi-Platform Voucher Sniper & Price Intelligence)
 
+> **Tai lieu lich su (2026-10-13):** day la ke hoach ban dau, nhieu chi tiet (Pro Gamer pacing, NTP, form hen gio cu, reload T+250ms, badge chi Shopee) khong con dung voi ma nguon hien tai. Hanh vi hien tai xem:
+> [huong-dan-su-dung.md](../extension/huong-dan-su-dung.md) · [kien-truc-universal-sniper-va-state-machine.md](../extension/kien-truc-universal-sniper-va-state-machine.md) · [ket-noi-web-extension.md](../extension/ket-noi-web-extension.md) · [extension/README.md](../../extension/README.md)
+
 > **Muc tieu tai lieu**: Dac ta vi tri kien truc, mo hinh du lieu, co che tuong tac API giua **Backend DealHunter** va **DealHunter Chrome Extension (Client-Side Assistant)**; mo ta toan dien nang luc **Universal Fast Clicker & Sniper tren moi trang web**, co che san voucher va bao toan hoa hong Affiliate da san TMDT.
 >
 > Cap nhat: 2026-10-09 · Ap dung cho ma nguon hoan thien trong `extension/src` va ban build `extension/dist`.

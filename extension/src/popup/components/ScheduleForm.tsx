@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Repeat, CheckCircle2, Crosshair, RefreshCw } from "lucide-react";
+import { CalendarClock, Repeat, CheckCircle2, Crosshair, RefreshCw, Plus, Link2 } from "lucide-react";
 import { ScheduledTask, SavedPageTarget } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { nextExactDropAt, parseTimeString, formatTimeLeft } from "../../lib/drop_time";
 import { scheduleTaskViaBackground, updateTaskViaBackground, openAndPickViaBackground } from "../../lib/scheduler_client";
-import { isSamePageUrl } from "../../lib/url";
+import { isSamePageUrl, isValidHttpUrl } from "../../lib/url";
 import { Language, getTranslation } from "../../lib/i18n";
 
 interface ScheduleFormProps {
@@ -24,6 +24,68 @@ const hostOf = (url: string) => {
   } catch {
     return url;
   }
+};
+
+/**
+ * Adds a new button to hunt: on the page that is open, or on another page by its link. The extension
+ * opens / focuses that page in "pick a button" mode; once picked, it is remembered for the page and
+ * can be scheduled from the hunt panel ("Hẹn giờ") or from this form.
+ */
+const NewButtonPicker: React.FC<{ t: ReturnType<typeof getTranslation>; activeUrl?: string; showCurrent: boolean }> = ({
+  t,
+  activeUrl,
+  showCurrent,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [link, setLink] = useState("");
+  const valid = isValidHttpUrl(link.trim());
+  const go = async (url: string) => {
+    await openAndPickViaBackground(url).catch(() => {});
+    window.close();
+  };
+  return (
+    <div className="space-y-1.5">
+      {showCurrent && activeUrl && (
+        <button
+          type="button"
+          onClick={() => go(activeUrl)}
+          className="flex w-full items-center gap-2 rounded-xl border border-dashed border-emerald-500/40 px-3 py-2 text-left text-[12px] font-semibold text-emerald-300 transition hover:bg-emerald-500/10"
+        >
+          <Crosshair className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{t.scheduleNewOnCurrent(hostOf(activeUrl))}</span>
+        </button>
+      )}
+      {open ? (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="url"
+            autoFocus
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            placeholder={t.scheduleNewLinkPlaceholder}
+            className="min-w-0 flex-1 rounded-xl bg-black/40 px-3 py-2 text-[12px] text-slate-100 outline-none ring-1 ring-white/10 placeholder:text-slate-500 focus:ring-emerald-400"
+          />
+          <button
+            type="button"
+            disabled={!valid}
+            onClick={() => go(link.trim())}
+            className="shrink-0 rounded-xl bg-emerald-500 px-3 py-2 text-[12px] font-bold text-slate-950 transition hover:brightness-110 disabled:opacity-40"
+          >
+            {t.scheduleNewLinkGo}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="flex w-full items-center gap-2 rounded-xl border border-dashed border-white/15 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 transition hover:bg-white/[0.04]"
+        >
+          <Link2 className="h-3.5 w-3.5 shrink-0" />
+          {t.scheduleNewOnOtherPage}
+        </button>
+      )}
+    </div>
+  );
 };
 
 /** Common drop times in Vietnam. */
@@ -107,10 +169,18 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
     }
   };
 
+  const activeIsWeb = Boolean(activeUrl && isValidHttpUrl(activeUrl) && !activeUrl.startsWith("https://chromewebstore"));
+  const activeHasButton = Boolean(activeUrl && targets.some((x) => isSamePageUrl(x.url, activeUrl)));
+
   if (targets.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-4 text-center text-[12px] leading-relaxed text-slate-400">
-        {t.scheduleNoSavedButtons}
+      <div className="space-y-3 rounded-2xl p-3.5">
+        <h2 className="flex items-center gap-1.5 text-[13px] font-bold text-white">
+          <CalendarClock className="h-4 w-4 text-emerald-400" />
+          {t.scheduleTitle}
+        </h2>
+        <p className="text-[12px] leading-relaxed text-slate-400">{t.scheduleNoSavedButtons}</p>
+        <NewButtonPicker t={t} activeUrl={activeUrl} showCurrent={activeIsWeb} />
       </div>
     );
   }
@@ -164,6 +234,15 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
             <Crosshair className="h-3 w-3" />
             {t.scheduleRepick}
           </button>
+        )}
+        {!editing && (
+          <div className="mt-2.5">
+            <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold text-slate-400">
+              <Plus className="h-3 w-3" />
+              {t.scheduleNewButton}
+            </p>
+            <NewButtonPicker t={t} activeUrl={activeUrl} showCurrent={activeIsWeb && !activeHasButton} />
+          </div>
         )}
       </div>
 
