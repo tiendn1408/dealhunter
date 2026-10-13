@@ -89,19 +89,24 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
               </div>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px] font-semibold text-slate-100">{taskButtonName(task, t.targetButtonDefault)}</div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    chrome.tabs.create({ url: task.targetUrl });
-                  }}
-                  title={t.openTargetUrlTooltip(task.targetUrl)}
-                  className="mt-0.5 flex max-w-full items-center gap-1 text-[11px] text-slate-400 hover:text-emerald-300"
-                >
-                  <span className="truncate">{hostOf(task.targetUrl)}</span>
-                  <ExternalLink className="h-2.5 w-2.5 shrink-0" />
-                </button>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-slate-400">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      chrome.tabs.create({ url: task.targetUrl });
+                    }}
+                    title={t.openTargetUrlTooltip(task.targetUrl)}
+                    className="flex min-w-0 items-center gap-1 hover:text-emerald-300"
+                  >
+                    <span className="truncate">{hostOf(task.targetUrl)}</span>
+                    <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                  </button>
+                  {upcoming && task.targetAt && (
+                    <span className="shrink-0 whitespace-nowrap text-slate-500">· {t.homeTimeLeft(formatTimeLeft(task.targetAt - now, t))}</span>
+                  )}
+                </div>
+                <div className="mt-1.5 flex items-center gap-1.5">
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${STATUS_STYLE[task.status]}`}>
                     {t.status[task.status]}
                   </span>
@@ -110,9 +115,6 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
                       <Repeat className="h-2.5 w-2.5" />
                       {t.dailyScheduleBadge}
                     </span>
-                  )}
-                  {upcoming && task.targetAt && (
-                    <span className="text-[10px] text-slate-400">{t.homeTimeLeft(formatTimeLeft(task.targetAt - now, t))}</span>
                   )}
                 </div>
                 {task.lastResult && (

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Repeat, CheckCircle2, Crosshair, RefreshCw, Plus, Link2 } from "lucide-react";
+import { CalendarClock, Repeat, CheckCircle2, Crosshair, RefreshCw, Plus, Link2, ChevronLeft, ChevronRight } from "lucide-react";
 import { ScheduledTask, SavedPageTarget } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { nextExactDropAt, parseTimeString, formatTimeLeft } from "../../lib/drop_time";
@@ -171,164 +171,185 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
 
   const activeIsWeb = Boolean(activeUrl && isValidHttpUrl(activeUrl) && !activeUrl.startsWith("https://chromewebstore"));
   const activeHasButton = Boolean(activeUrl && targets.some((x) => isSamePageUrl(x.url, activeUrl)));
+  const [choosing, setChoosing] = useState(false);
 
-  if (targets.length === 0) {
+  // Button chooser: a page of its own inside the sheet (saved buttons + add a new one), so the
+  // schedule page stays short and its submit button never needs scrolling.
+  if (choosing || targets.length === 0) {
     return (
-      <div className="space-y-3 rounded-2xl p-3.5">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-bold text-white">
-          <CalendarClock className="h-4 w-4 text-emerald-400" />
-          {t.scheduleTitle}
+      <div className="space-y-3 p-3.5">
+        <h2 className="flex items-center gap-1.5 pr-8 text-[13px] font-bold text-white">
+          {targets.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setChoosing(false)}
+              aria-label={t.scheduleBack}
+              className="-ml-1 rounded-md p-0.5 text-slate-400 hover:bg-white/10 hover:text-white"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          ) : (
+            <CalendarClock className="h-4 w-4 text-emerald-400" />
+          )}
+          {targets.length > 0 ? t.scheduleChooseButton : t.scheduleTitle}
         </h2>
-        <p className="text-[12px] leading-relaxed text-slate-400">{t.scheduleNoSavedButtons}</p>
-        <NewButtonPicker t={t} activeUrl={activeUrl} showCurrent={activeIsWeb} />
-      </div>
-    );
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-3 rounded-2xl p-3.5">
-      <div>
-        <h2 className="flex items-center gap-1.5 text-[13px] font-bold text-white">
-          <CalendarClock className="h-4 w-4 text-emerald-400" />
-          {editing ? t.scheduleEditTitle : t.scheduleTitle}
-        </h2>
-        <p className="mt-1 text-[11px] leading-snug text-slate-400">{t.scheduleSubtitle}</p>
-      </div>
-
-      <div>
-        <p className="mb-1.5 text-[11px] font-semibold text-slate-300">{t.scheduleChooseButton}</p>
-        <div className="max-h-[132px] space-y-1.5 overflow-y-auto pr-0.5" role="radiogroup" aria-label={t.scheduleChooseButton}>
-          {targets.map((target) => {
-            const active = target.id === selectedId;
-            return (
-              <button
-                key={target.id}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setSelectedId(target.id)}
-                className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition ${
-                  active ? "bg-emerald-500/15 ring-1 ring-emerald-500/40" : "bg-black/30 ring-1 ring-white/10 hover:bg-white/[0.06]"
-                }`}
-              >
-                <span
-                  className={`h-3.5 w-3.5 shrink-0 rounded-full ring-2 ${active ? "bg-emerald-400 ring-emerald-400/40" : "ring-white/20"}`}
-                />
-                <span className="min-w-0">
-                  <span className="block truncate text-[12px] font-semibold text-slate-100">{target.name}</span>
-                  <span className="block truncate text-[10px] text-slate-500">{hostOf(target.url)}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {selected && (
-          <button
-            type="button"
-            onClick={async () => {
-              await openAndPickViaBackground(selected.url).catch(() => {});
-              window.close();
-            }}
-            className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:underline"
-          >
-            <Crosshair className="h-3 w-3" />
-            {t.scheduleRepick}
-          </button>
+        {targets.length === 0 ? (
+          <p className="text-[12px] leading-relaxed text-slate-400">{t.scheduleNoSavedButtons}</p>
+        ) : (
+          <div className="-m-0.5 max-h-[230px] space-y-1 overflow-y-auto p-0.5" role="radiogroup" aria-label={t.scheduleChooseButton}>
+            {targets.map((target) => {
+              const active = target.id === selectedId;
+              return (
+                <button
+                  key={target.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    setSelectedId(target.id);
+                    setChoosing(false);
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left transition ${
+                    active ? "bg-emerald-500/15 ring-1 ring-emerald-500/40" : "hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <span className={`h-3 w-3 shrink-0 rounded-full ring-2 ${active ? "bg-emerald-400 ring-emerald-400/40" : "ring-white/20"}`} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-[12px] font-semibold text-slate-100">{target.name}</span>
+                    <span className="block truncate text-[10px] text-slate-500">{hostOf(target.url)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         )}
         {!editing && (
-          <div className="mt-2.5">
-            <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold text-slate-400">
-              <Plus className="h-3 w-3" />
-              {t.scheduleNewButton}
-            </p>
+          <div className={targets.length > 0 ? "border-t border-white/10 pt-3" : ""}>
+            {targets.length > 0 && (
+              <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold text-slate-400">
+                <Plus className="h-3 w-3" />
+                {t.scheduleNewButton}
+              </p>
+            )}
             <NewButtonPicker t={t} activeUrl={activeUrl} showCurrent={activeIsWeb && !activeHasButton} />
           </div>
         )}
       </div>
+    );
+  }
 
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label htmlFor="dh-schedule-time" className="text-[11px] font-semibold text-slate-300">
-            {t.exactTimePrompt}
-          </label>
-          {leftText && <span className="text-[11px] text-slate-400">{leftText}</span>}
+  const toggleRow = (on: boolean, onClick: () => void, Icon: typeof Repeat, label: string) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onClick}
+      className="flex w-full items-center justify-between px-3 py-2.5 text-left transition hover:bg-white/[0.04]"
+    >
+      <span className="flex items-center gap-2">
+        <Icon className={`h-3.5 w-3.5 ${on ? "text-emerald-300" : "text-slate-400"}`} />
+        <span className="text-[12px] font-semibold text-slate-200">{label}</span>
+      </span>
+      <span className={`relative h-4 w-7 shrink-0 rounded-full transition ${on ? "bg-emerald-500" : "bg-white/15"}`}>
+        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${on ? "left-3.5" : "left-0.5"}`} />
+      </span>
+    </button>
+  );
+
+  return (
+    <form onSubmit={submit} className="flex flex-col">
+      <div className="space-y-3.5 p-3.5 pb-2">
+        <h2 className="flex items-center gap-1.5 pr-8 text-[13px] font-bold text-white">
+          <CalendarClock className="h-4 w-4 text-emerald-400" />
+          {editing ? t.scheduleEditTitle : t.scheduleTitle}
+        </h2>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-[11px] font-semibold text-slate-300">{t.scheduleButtonLabel}</p>
+            {selected && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await openAndPickViaBackground(selected.url).catch(() => {});
+                  window.close();
+                }}
+                className="flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:underline"
+              >
+                <Crosshair className="h-3 w-3" />
+                {t.scheduleRepickShort}
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setChoosing(true)}
+            className="flex w-full items-center gap-2 rounded-xl bg-black/30 px-3 py-2 text-left ring-1 ring-white/10 transition hover:bg-white/[0.06]"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[12px] font-semibold text-slate-100">{selected?.name ?? t.scheduleChooseButton}</span>
+              {selected && <span className="block truncate text-[10px] text-slate-500">{hostOf(selected.url)}</span>}
+            </span>
+            <span className="flex shrink-0 items-center text-[11px] font-semibold text-slate-400">
+              {t.scheduleChange}
+              <ChevronRight className="h-3.5 w-3.5" />
+            </span>
+          </button>
         </div>
-        <div className="flex items-center gap-1.5">
-          <input
-            id="dh-schedule-time"
-            type="text"
-            inputMode="numeric"
-            value={timeInput}
-            onChange={(e) => setTimeInput(e.target.value)}
-            placeholder="00:00:00"
-            className={`w-[92px] shrink-0 rounded-xl bg-black/40 px-2 py-2 text-center font-mono text-[14px] font-bold outline-none ring-1 focus:ring-2 ${
-              parsed.valid ? "text-emerald-300 ring-white/10 focus:ring-emerald-400" : "text-rose-300 ring-rose-500/50"
-            }`}
-          />
-          {QUICK_TIMES.map((time) => (
-            <button
-              key={time}
-              type="button"
-              onClick={() => setTimeInput(time)}
-              className={`flex-1 rounded-xl py-2 text-[12px] font-semibold transition ${
-                timeInput === time
-                  ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
-                  : "bg-white/5 text-slate-300 ring-1 ring-white/10 hover:bg-white/10"
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label htmlFor="dh-schedule-time" className="text-[11px] font-semibold text-slate-300">
+              {t.exactTimePrompt}
+            </label>
+            {leftText && <span className="text-[11px] text-slate-400">{leftText}</span>}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              id="dh-schedule-time"
+              type="text"
+              inputMode="numeric"
+              value={timeInput}
+              onChange={(e) => setTimeInput(e.target.value)}
+              placeholder="00:00:00"
+              className={`w-[92px] shrink-0 rounded-xl bg-black/40 px-2 py-2 text-center font-mono text-[14px] font-bold outline-none ring-1 focus:ring-2 ${
+                parsed.valid ? "text-emerald-300 ring-white/10 focus:ring-emerald-400" : "text-rose-300 ring-rose-500/50"
               }`}
-            >
-              {time.slice(0, 5)}
-            </button>
-          ))}
+            />
+            {QUICK_TIMES.map((time) => (
+              <button
+                key={time}
+                type="button"
+                onClick={() => setTimeInput(time)}
+                className={`flex-1 rounded-xl py-2 text-[12px] font-semibold transition ${
+                  timeInput === time
+                    ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+                    : "bg-white/5 text-slate-300 ring-1 ring-white/10 hover:bg-white/10"
+                }`}
+              >
+                {time.slice(0, 5)}
+              </button>
+            ))}
+          </div>
+          {!parsed.valid && <p className="mt-1 text-[11px] font-semibold text-rose-400">{t.invalidTimeFormat}</p>}
         </div>
-        {!parsed.valid && <p className="mt-1 text-[11px] font-semibold text-rose-400">{t.invalidTimeFormat}</p>}
+
+        <div className="divide-y divide-white/10 overflow-hidden rounded-xl bg-black/30 ring-1 ring-white/10">
+          {toggleRow(isDaily, () => setIsDaily(!isDaily), Repeat, t.dailyScheduleCheckbox)}
+          {toggleRow(reloadOn, () => setReload(!reloadOn), RefreshCw, t.preReloadToggle)}
+        </div>
       </div>
 
-      <button
-        type="button"
-        role="switch"
-        aria-checked={isDaily}
-        onClick={() => setIsDaily(!isDaily)}
-        className="flex w-full items-center justify-between rounded-xl bg-black/30 px-3 py-2 text-left ring-1 ring-white/10 transition hover:bg-white/[0.04]"
-      >
-        <span className="flex items-center gap-2">
-          <Repeat className={`h-3.5 w-3.5 ${isDaily ? "text-emerald-300" : "text-slate-400"}`} />
-          <span>
-            <span className="block text-[12px] font-semibold text-slate-200">{t.dailyScheduleCheckbox}</span>
-            <span className="block text-[10px] text-slate-500">{t.dailyScheduleHint}</span>
-          </span>
-        </span>
-        <span className={`relative h-4 w-7 shrink-0 rounded-full transition ${isDaily ? "bg-emerald-500" : "bg-white/15"}`}>
-          <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${isDaily ? "left-3.5" : "left-0.5"}`} />
-        </span>
-      </button>
-
-      <button
-        type="button"
-        role="switch"
-        aria-checked={reloadOn}
-        onClick={() => setReload(!reloadOn)}
-        className="flex w-full items-center justify-between rounded-xl bg-black/30 px-3 py-2 text-left ring-1 ring-white/10 transition hover:bg-white/[0.04]"
-      >
-        <span className="flex items-center gap-2">
-          <RefreshCw className={`h-3.5 w-3.5 ${reloadOn ? "text-emerald-300" : "text-slate-400"}`} />
-          <span>
-            <span className="block text-[12px] font-semibold text-slate-200">{t.preReloadToggle}</span>
-            <span className="block text-[10px] text-slate-500">{reloadOn ? t.scheduleReloadHint : t.preReloadOffHint}</span>
-          </span>
-        </span>
-        <span className={`relative h-4 w-7 shrink-0 rounded-full transition ${reloadOn ? "bg-emerald-500" : "bg-white/15"}`}>
-          <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${reloadOn ? "left-3.5" : "left-0.5"}`} />
-        </span>
-      </button>
-
-      <button
-        type="submit"
-        disabled={submitting || !parsed.valid || !selected}
-        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-2.5 text-[13px] font-bold text-slate-950 shadow-lg shadow-emerald-950/50 transition hover:brightness-110 disabled:opacity-50"
-      >
-        {done ? <CheckCircle2 className="h-4 w-4" /> : <CalendarClock className="h-4 w-4" />}
-        {done ? t.quickScheduleSuccess : editing ? t.scheduleSaveChanges : t.scheduleSubmitBtn(parsed.formatted)}
-      </button>
+      <div className="sticky bottom-0 bg-[#0d1220] px-3.5 pb-3 pt-2">
+        <button
+          type="submit"
+          disabled={submitting || !parsed.valid || !selected}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 py-2.5 text-[13px] font-bold text-slate-950 shadow-lg shadow-emerald-950/50 transition hover:brightness-110 disabled:opacity-50"
+        >
+          {done ? <CheckCircle2 className="h-4 w-4" /> : <CalendarClock className="h-4 w-4" />}
+          {done ? t.quickScheduleSuccess : editing ? t.scheduleSaveChanges : t.scheduleSubmitBtn(parsed.formatted)}
+        </button>
+      </div>
     </form>
   );
 };

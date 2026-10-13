@@ -143,17 +143,16 @@ Hẹn giờ phù hợp khi bạn không muốn ngồi chờ, hoặc muốn săn 
 
 **Cách 1 — từ bảng săn trên trang:** chọn nút, chọn giờ, bật «Mỗi ngày» nếu cần, rồi bấm **«Hẹn giờ»**.
 
-**Cách 2 — từ cửa sổ DealHunter:** vào tab «Lịch săn», bấm **«+ Hẹn giờ cho nút đã lưu»**. Một khung trượt lên từ dưới:
+**Cách 2 — từ cửa sổ DealHunter:** vào tab «Lịch săn», bấm **«+ Hẹn giờ mới»**. Một khung trượt lên từ dưới:
 
 | Mục | Tác dụng |
 | --- | --- |
-| **«Nút cần săn»** | Chọn một nút đã lưu (mỗi nút gắn với một trang). |
-| **«Chọn lại nút trên trang»** | DealHunter mở trang đó và bật chế độ chọn để bạn chọn lại nút. |
-| **«Hoặc thêm nút mới»** | **«Chọn nút trên trang đang mở»** (khi trang đang mở chưa có nút) hoặc **«Nút ở trang khác (dán link trang)»** → dán link → **«Mở & chọn»**. DealHunter mở trang ở chế độ chọn nút; chọn xong, bấm «Hẹn giờ» trên bảng săn (hoặc mở lại khung này). Chưa có nút nào thì khung chỉ hiện hai lựa chọn này. |
+| **«Nút cần săn»** | Thẻ hiện nút đang chọn. Bấm **«Đổi»** để mở trang «Chọn nút cần săn»: chọn một nút đã lưu (mỗi nút gắn với một trang), hoặc ở phần **«Hoặc thêm nút mới»** chọn **«Chọn nút trên trang đang mở»** (khi trang đang mở chưa có nút) hay **«Nút ở trang khác (dán link trang)»** → dán link → **«Mở & chọn»**. DealHunter mở trang ở chế độ chọn nút; chọn xong, bấm «Hẹn giờ» trên bảng săn (hoặc mở lại khung này). Chưa có nút nào thì khung mở thẳng phần thêm nút mới. |
+| **«Chọn lại trên trang»** | DealHunter mở trang của nút đang chọn và bật chế độ chọn để bạn chọn lại nút. |
 | **«Giờ săn»** | Gõ giờ dạng giờ:phút:giây, hoặc bấm nhanh `00:00`, `12:00`, `20:00`. Bên cạnh ghi «còn ...». |
 | **«Lặp lại mỗi ngày»** | Săn lại vào giờ này mỗi ngày. |
 | **«Tải lại trang trước giờ»** | Như trong bảng săn: tự canh theo tốc độ tải trang. |
-| **«Hẹn săn lúc ...»** | Lưu lịch. |
+| **«Hẹn săn lúc ...»** | Lưu lịch. Nút này luôn nằm ở đáy khung, không cần cuộn. |
 
 **Sửa lịch:** trong tab «Lịch săn», bấm vào một lịch. Khung hiện ra với tiêu đề «Sửa lịch săn». Đổi xong bấm **«Lưu thay đổi»**.
 
@@ -233,7 +232,7 @@ Bạn không cần hiểu hết các con số này. Nhật ký giúp người h�
 | **Bảng ghi «Dùng giờ máy tính (trang không báo giờ)»** | Trang không cho biết giờ. Bấm «Thử lại». Nếu vẫn vậy, DealHunter vẫn săn bình thường theo đồng hồ máy tính. Hãy đảm bảo giờ máy tính đúng (bật tự động đặt giờ trong cài đặt của máy). |
 | **Trang hiện ô xác minh (Cloudflare, «Verify you are human»)** | Tick vào ô xác minh và đăng nhập trước giờ săn. DealHunter không tự vượt qua bước xác minh. |
 | **Lịch ghi «Đã lỡ (máy tắt)»** | Đến giờ mà máy tắt, ngủ hoặc Chrome đóng. Lần sau giữ máy bật và Chrome mở. Lịch «Mỗi ngày» tự chuyển sang ngày mai. |
-| **«Tới giờ không thấy nút»** | Trang đã đổi giao diện. Mở trang, bấm «Đổi nút» (hoặc «Chọn lại nút trên trang» trong lịch) và chọn lại. |
+| **«Tới giờ không thấy nút»** | Trang đã đổi giao diện. Mở trang, bấm «Đổi nút» (hoặc «Chọn lại trên trang» trong khung Hẹn giờ) và chọn lại. |
 | **«Đã bấm, trang chưa xác nhận»** | Tự xem trên trang đã được chưa (ví dụ trong ví voucher). |
 | **«Gợi ý giúp tôi» không gợi ý được** | Hãy tự bấm «Chọn nút» và chọn. |
 | **Vừa cập nhật hoặc tải lại DealHunter** | Tải lại (F5) các trang đang mở mà bạn muốn săn. Bảng săn cũ trên trang sẽ được thay bằng bảng mới. Lịch đã hẹn vẫn còn, không cần hẹn lại. |

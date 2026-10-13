@@ -1,6 +1,10 @@
 export type Language = "en" | "vi";
 
 const en = {
+  scheduleButtonLabel: "Button to hunt",
+  scheduleChange: "Change",
+  scheduleRepickShort: "Re-pick on the page",
+  scheduleBack: "Back",
   scheduleNewButton: "Or a new button",
   scheduleNewOnCurrent: (host: string) => `Pick a button on the open page (${host})`,
   scheduleNewOnOtherPage: "A button on another page (paste its link)",
@@ -20,7 +24,6 @@ const en = {
   scheduleEditTitle: "Edit hunt",
   scheduleSaveChanges: "Save changes",
   scheduleRepick: "Pick the button again on its page",
-  scheduleReloadHint: "Auto-timed to the page's load speed",
   taskEditHint: "Tap to edit",
   testClickDone: "Pressed",
   settingsShowGuide: "Show the 3-step guide again",
@@ -43,8 +46,8 @@ const en = {
   step1Title: "Button to grab",
   taskLastResult: "Last time:",
   scheduleNoSavedButtons: "No button yet. Pick one on its page; it is remembered and can be scheduled.",
-  scheduleChooseButton: "Button to grab",
-  newScheduleCta: "Schedule a saved button",
+  scheduleChooseButton: "Choose the button",
+  newScheduleCta: "New schedule",
   clockRetry: "Try again",
   clockFailed: "Using your computer's clock (this site gives no time)",
   clockChecking: "Syncing the time...",
@@ -139,7 +142,6 @@ const en = {
 
   // Schedule Form
   scheduleTitle: "Schedule a hunt",
-  scheduleSubtitle: "At that time DealHunter opens the page and presses for you.",
   fullyAutomatic: "Fully auto",
   semiAuto: "Semi-Auto",
   today: "Today",
@@ -290,6 +292,10 @@ type DeepStringify<T> = {
 type TranslationCatalog = DeepStringify<typeof en>;
 
 const vi: TranslationCatalog = {
+  scheduleButtonLabel: "Nút cần săn",
+  scheduleChange: "Đổi",
+  scheduleRepickShort: "Chọn lại trên trang",
+  scheduleBack: "Quay lại",
   scheduleNewButton: "Hoặc thêm nút mới",
   scheduleNewOnCurrent: (host: string) => `Chọn nút trên trang đang mở (${host})`,
   scheduleNewOnOtherPage: "Nút ở trang khác (dán link trang)",
@@ -309,7 +315,6 @@ const vi: TranslationCatalog = {
   scheduleEditTitle: "Sửa lịch săn",
   scheduleSaveChanges: "Lưu thay đổi",
   scheduleRepick: "Chọn lại nút trên trang",
-  scheduleReloadHint: "Tự canh theo tốc độ tải trang",
   taskEditHint: "Bấm để sửa",
   testClickDone: "Đã bấm",
   settingsShowGuide: "Xem lại hướng dẫn 3 bước",
@@ -332,8 +337,8 @@ const vi: TranslationCatalog = {
   step1Title: "Nút muốn săn",
   taskLastResult: "Lần trước:",
   scheduleNoSavedButtons: "Chưa có nút nào. Chọn nút trên trang muốn săn, nút sẽ được nhớ để hẹn giờ.",
-  scheduleChooseButton: "Nút cần săn",
-  newScheduleCta: "Hẹn giờ cho nút đã lưu",
+  scheduleChooseButton: "Chọn nút cần săn",
+  newScheduleCta: "Hẹn giờ mới",
   clockRetry: "Thử lại",
   clockFailed: "Dùng giờ máy tính (trang không báo giờ)",
   clockChecking: "Đang canh giờ...",
@@ -428,7 +433,6 @@ const vi: TranslationCatalog = {
 
   // Schedule Form
   scheduleTitle: "Hẹn giờ săn",
-  scheduleSubtitle: "Tới giờ, DealHunter tự mở trang và bấm giúp.",
   fullyAutomatic: "Tự động",
   semiAuto: "Bán tự động",
   today: "Hôm nay",

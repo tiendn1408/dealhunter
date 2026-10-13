@@ -177,7 +177,7 @@ export const App: React.FC = () => {
       {view === "hunts" && showScheduleForm && (
         <>
           <div className="absolute inset-0 z-20 bg-black/60" aria-hidden="true" onClick={() => setShowScheduleForm(false)} />
-          <div role="dialog" aria-modal="true" aria-label={t.scheduleTitle} className="absolute inset-x-0 bottom-0 z-30 max-h-[88%] overflow-y-auto rounded-t-2xl bg-[#0d1220] px-1 pb-1 pt-1.5 shadow-2xl ring-1 ring-white/10">
+          <div role="dialog" aria-modal="true" aria-label={t.scheduleTitle} className="absolute inset-x-0 bottom-0 z-30 max-h-[88%] overflow-y-auto rounded-t-2xl bg-[#0d1220] pt-1.5 shadow-2xl ring-1 ring-white/10">
             <div className="relative">
               <button
                 type="button"

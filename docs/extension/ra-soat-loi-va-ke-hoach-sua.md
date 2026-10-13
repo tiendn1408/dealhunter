@@ -242,7 +242,7 @@ Một số mục ở trên được đánh dấu `[x]` sớm hơn thực tế, h
 | M1, L11 | Hàng đợi ghi task | Mọi ghi task đi qua background (`storage.mutateTasks`, đọc–sửa–ghi tuần tự); content script chỉ gửi `TASK_STATUS_UPDATE`. |
 | H2, H3, E5, E6 | Lịch hẹn | `targetAt` khoá cho từng task; alarm trễ → "Đã lỡ (máy tắt)"; lịch mỗi ngày tự sang lần kế tiếp sau mọi kết quả; kiểm tra định kỳ mỗi 5 phút khôi phục alarm, gộp lịch trùng (cùng trang, cùng giờ, cùng kiểu lặp). |
 | L3 | Mốc giờ flash sale | Form hẹn giờ có mốc nhanh 00:00 / 12:00 / 20:00 (cộng ô giờ tự do). |
-| Popup | "Form Schedule 3 chế độ", "My Hunts" | Popup 2 tab «Trang này» / «Lịch săn», khung Hẹn giờ trượt lên: chọn nút đã lưu, «Chọn lại nút trên trang», «Hoặc thêm nút mới» (trang đang mở hoặc dán link); sửa lịch đã hẹn; trang Cài đặt có nút bánh răng. |
+| Popup | "Form Schedule 3 chế độ", "My Hunts" | Popup 2 tab «Trang này» / «Lịch săn», khung Hẹn giờ trượt lên: chọn nút đã lưu, «Chọn lại trên trang», «Hoặc thêm nút mới» (trang đang mở hoặc dán link); sửa lịch đã hẹn; trang Cài đặt có nút bánh răng. |
 | L7, L8 | Adaptive pacing / micro-pause | Vẫn có trong `human_biometrics.ts`, nhưng không còn là điểm nhấn: an toàn (bấm đúng nút, không bấm trước giờ trên sàn lớn, tối đa 1 cú trước T ở trang `speed_priority`) được ưu tiên. |
 | Caffiliate | (không có trong bài cũ) | Điểm danh 3 tầng (hàm của trang `app.checkIn()` → API của trang → bấm nút), ≥5 lần gửi theo lịch tính từ lịch sử, dừng ngay khi có kết quả; nhật ký trong Cài đặt. Không lấy trước / giữ token Turnstile, không giả header. |
 | Bản build | (không có trong bài cũ) | `npm run build` chỉ tin `dealhunter.vn`; `npm run build:dev` thêm localhost và trình mô phỏng Caffiliate. Cờ `__DH_DEV__`. |

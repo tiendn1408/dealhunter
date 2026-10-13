@@ -104,7 +104,7 @@ Message dùng trường `action` (hằng `MESSAGE_ACTIONS` trong `src/lib/consta
 | `SCHEDULE_TASK` | Tạo lịch (cùng trang + cùng giờ thì cập nhật task đang chờ, không tạo trùng). |
 | `UPDATE_TASK` | Sửa lịch (giờ, nút/trang, mỗi ngày, tải lại trước giờ). |
 | `CANCEL_TASK` | Xoá lịch. |
-| `OPEN_AND_PICK` | Mở/focus trang và bật chế độ chọn nút («Chọn lại nút trên trang», «Hoặc thêm nút mới» trong khung Hẹn giờ). |
+| `OPEN_AND_PICK` | Mở/focus trang và bật chế độ chọn nút («Chọn lại trên trang», «Hoặc thêm nút mới» trong khung Hẹn giờ). |
 | `GET_PRICE_CONTEXT` | Ngữ cảnh giá cho badge (chỉ URL trang sản phẩm của sàn). |
 | `GET_WEB_SESSION` | Phiên đăng nhập DealHunter hiện tại. |
 
