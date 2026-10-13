@@ -2,55 +2,22 @@ import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
 import { Language, getTranslation } from "../../lib/i18n";
 import { timeSyncClient } from "../core/time_sync_client";
-
-/** Timings of one check-in attempt, reported by the main-world helper (epoch ms of this machine). */
-export interface CheckInTiming {
-  clickAt: number;
-  trusted?: boolean;
-  tokenStartAt?: number;
-  tokenEndAt?: number;
-  tokenError?: boolean;
-  requestStartAt?: number;
-  responseAt?: number;
-  status?: number;
-  /** Date header of the check-in response (1 s resolution). */
-  serverDate?: string;
-}
+import { CheckInRun, appendCheckInLog, describeAttempt, toCheckInLogEntry } from "../../lib/checkin_log";
 
 const isCaffiliateHost = (host: string) => host === "caffiliate.vn" || host.endsWith(".caffiliate.vn");
 
-/** Server clock reading of a local epoch timestamp, as HH:mm:ss.SSS. */
-function serverClock(localMs: number): string {
-  const d = new Date(localMs + timeSyncClient.getOffset());
-  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
-}
-
-/** One-line summary: where the time went between the click and the server's answer. */
-export function summarizeCheckInTiming(t: CheckInTiming): string {
-  const parts = [`click ${serverClock(t.clickAt)}`];
-  if (t.tokenStartAt !== undefined && t.tokenEndAt !== undefined) {
-    parts.push(`Turnstile ${Math.round(t.tokenEndAt - t.tokenStartAt)}ms${t.tokenError ? " (error)" : ""}`);
-  }
-  if (t.requestStartAt !== undefined) {
-    parts.push(`sent ${serverClock(t.requestStartAt)} (+${Math.round(t.requestStartAt - t.clickAt)}ms)`);
-  }
-  if (t.requestStartAt !== undefined && t.responseAt !== undefined) {
-    parts.push(`server ${Math.round(t.responseAt - t.requestStartAt)}ms · HTTP ${t.status ?? "?"}`);
-  }
-  return parts.join(" · ");
-}
-
 /**
- * Caffiliate daily check-in. Clicks only the button the user picked, like a person would: no page
- * state is altered and the Turnstile check runs exactly as the site intends. The main-world helper
- * (public/caffiliate_bridge.js) only measures the timings of each attempt.
+ * Caffiliate daily check-in. At the drop the main-world helper (public/caffiliate_bridge.js) runs up
+ * to 4 attempts, each walking page function -> API -> button click. Every run's timings are logged to
+ * the console and stored for the popup's Log tab.
  */
 export class CaffiliateAdapter implements MarketplaceAdapter {
   platformName = "caffiliate";
   maxClicks = 1;
   windowMs = 8000;
-  lastTiming: CheckInTiming | null = null;
+  lastRun: CheckInRun | null = null;
+  /** Set when the main-world helper saw the site confirm today's check-in. */
+  confirmed = false;
   private listening = false;
 
   isMatchUrl(url: string): boolean {
@@ -61,17 +28,34 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     }
   }
 
-  /** Starts receiving timings from the main-world helper; each attempt is logged to the console. */
+  /** Starts receiving runs from the main-world helper: console + popup Log tab. */
   listenForTimings(): void {
     if (this.listening || typeof window === "undefined") return;
     this.listening = true;
     window.addEventListener("dh-checkin-timing", (ev) => {
       try {
         const detail = (ev as CustomEvent).detail;
-        const timing = JSON.parse(typeof detail === "string" ? detail : "") as CheckInTiming;
-        if (typeof timing?.clickAt !== "number") return;
-        this.lastTiming = timing;
-        console.info(`[DealHunter] Check-in timing: ${summarizeCheckInTiming(timing)}`, timing);
+        const run = JSON.parse(typeof detail === "string" ? detail : "") as CheckInRun;
+        if (typeof run?.startAt !== "number" || !Array.isArray(run.attempts)) return;
+        this.lastRun = run;
+        const entry = toCheckInLogEntry(run, timeSyncClient.getOffset(), window.location.hostname);
+        console.info(
+          `[DealHunter] Check-in ${entry.ok ? "OK" : "FAILED"}${entry.method ? ` (${entry.method})` : ""}` +
+            entry.attempts.map((a) => `\n  ${describeAttempt(a)}`).join(""),
+          run
+        );
+        if (typeof chrome !== "undefined" && chrome.storage?.local) {
+          appendCheckInLog(entry).catch(() => {});
+        }
+      } catch {
+        // ignore malformed events
+      }
+    });
+    window.addEventListener("dh-checkin-result", (ev) => {
+      try {
+        const detail = (ev as CustomEvent).detail;
+        const result = JSON.parse(typeof detail === "string" ? detail : "") as { ok?: boolean };
+        if (result?.ok === true) this.confirmed = true;
       } catch {
         // ignore malformed events
       }
@@ -119,6 +103,7 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
   }
 
   isButtonFinished(button: HTMLElement): boolean {
+    if (this.confirmed) return true;
     if (!button || !button.isConnected) return false;
     // Only the site's own confirmation counts: the check-in button turns into "Đã điểm danh #N".
     // Any popup (including errors such as "Chưa tới giờ") is not a success.
@@ -166,7 +151,8 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
    */
   preWarmStrike(): void {
     this.listenForTimings();
-    this.lastTiming = null;
+    this.lastRun = null;
+    this.confirmed = false;
     if (typeof document === "undefined") return;
     if (!document.querySelector('link[rel="preconnect"][href="https://challenges.cloudflare.com"]')) {
       const link = document.createElement("link");
@@ -177,10 +163,17 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     }
   }
 
-  /** Result detail for the HUD and task list: the measured timings of the attempt, if any. */
-  getResultDetail(): string | null {
-    return this.lastTiming ? summarizeCheckInTiming(this.lastTiming) : null;
+  /**
+   * Check-in through the page itself: asks the main-world helper to run its attempts
+   * (page function -> API -> button). No F5 and no waiting for the button to re-enable.
+   */
+  executeDirectStrike(): boolean {
+    if (typeof window === "undefined") return false;
+    this.listenForTimings();
+    window.dispatchEvent(new CustomEvent("dh-caffiliate-strike"));
+    return true;
   }
+
 }
 
 export const caffiliateAdapter = new CaffiliateAdapter();

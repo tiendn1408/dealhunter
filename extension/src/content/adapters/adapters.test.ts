@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { getAdapterForUrl, ADAPTERS, CaffiliateAdapter, summarizeCheckInTiming } from "./index";
+import { getAdapterForUrl, ADAPTERS, CaffiliateAdapter } from "./index";
 import { isECommerceVoucherOrDealPage, isECommerceProductPage, detectPlatformAuthOrCaptchaBlock } from "../index";
 
 describe("Marketplace Adapters & Multi-Platform Registry", () => {
@@ -151,31 +151,66 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     expect(document.querySelectorAll('link[rel="preconnect"][href="https://challenges.cloudflare.com"]').length).toBe(1);
   });
 
-  it("collects check-in timings from the main-world helper and summarizes them", () => {
+  it("stores each check-in run for the popup Log tab, newest first", async () => {
+    const store: Record<string, any> = {};
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: vi.fn(async (key: string) => ({ [key]: store[key] })),
+          set: vi.fn(async (items: Record<string, any>) => Object.assign(store, items)),
+        },
+      },
+    });
     const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards") as CaffiliateAdapter;
     adapter.listenForTimings();
-    adapter.preWarmStrike();
-    expect(adapter.getResultDetail()).toBeNull();
-
-    const timing = {
-      clickAt: 1_000,
-      tokenStartAt: 1_004,
-      tokenEndAt: 1_824,
-      requestStartAt: 1_830,
-      responseAt: 1_925,
-      status: 200,
+    const run = {
+      startAt: 1_000,
+      source: "strike",
+      ok: true,
+      method: "page confirmed",
+      attempts: [
+        {
+          n: 1,
+          startAt: 1_000,
+          tiers: [{ tier: 1, ok: true, name: "checkIn()" }],
+          tokenStartAt: 1_004,
+          tokenEndAt: 1_824,
+          requestStartAt: 1_830,
+          responseAt: 1_925,
+          status: 200,
+        },
+      ],
     };
-    window.dispatchEvent(new CustomEvent("dh-checkin-timing", { detail: JSON.stringify(timing) }));
+    window.dispatchEvent(new CustomEvent("dh-checkin-timing", { detail: JSON.stringify(run) }));
+    window.dispatchEvent(new CustomEvent("dh-checkin-timing", { detail: "{oops" })); // ignored
+    await vi.waitFor(() => expect(store.dh_checkin_logs?.length).toBe(1));
 
-    const detail = adapter.getResultDetail() ?? "";
-    expect(detail).toContain("Turnstile 820ms");
-    expect(detail).toContain("(+830ms)");
-    expect(detail).toContain("server 95ms · HTTP 200");
+    const [entry] = store.dh_checkin_logs;
+    expect(entry).toMatchObject({ ok: true, host: window.location.hostname, source: "strike" });
+    expect(entry.attempts[0]).toMatchObject({ n: 1, tokenMs: 820, sentAfterMs: 830, serverMs: 95, status: 200 });
+    expect(entry.attempts[0].start).toMatch(/^\d\d:\d\d:\d\d\.\d{3}$/);
+    vi.unstubAllGlobals();
+  });
 
-    // Malformed events are ignored
-    window.dispatchEvent(new CustomEvent("dh-checkin-timing", { detail: "{oops" }));
-    expect(adapter.getResultDetail()).toBe(detail);
-    expect(summarizeCheckInTiming({ clickAt: 1_000 })).toMatch(/^click \d\d:\d\d:\d\d\.\d{3}$/);
+  it("strikes through the page helper and finishes only on its confirmed result", () => {
+    const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards") as CaffiliateAdapter;
+    document.body.innerHTML = `<button id="btnCheckIn" disabled><span>Điểm danh</span></button>`;
+    const btn = document.getElementById("btnCheckIn") as HTMLButtonElement;
+    adapter.preWarmStrike();
+
+    const strikes = vi.fn();
+    window.addEventListener("dh-caffiliate-strike", strikes);
+    expect(adapter.executeDirectStrike()).toBe(true);
+    window.removeEventListener("dh-caffiliate-strike", strikes);
+    expect(strikes).toHaveBeenCalledTimes(1);
+    expect(btn.disabled).toBe(true); // the button is not touched
+
+    window.dispatchEvent(new CustomEvent("dh-checkin-result", { detail: JSON.stringify({ ok: false }) }));
+    expect(adapter.isButtonFinished(btn)).toBe(false);
+    window.dispatchEvent(new CustomEvent("dh-checkin-result", { detail: JSON.stringify({ ok: true, method: "checkIn" }) }));
+    expect(adapter.isButtonFinished(btn)).toBe(true);
+    adapter.preWarmStrike(); // next hunt starts unconfirmed
+    expect(adapter.isButtonFinished(btn)).toBe(false);
   });
 
   it("returns null for non-marketplace domains", () => {

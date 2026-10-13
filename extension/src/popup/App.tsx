@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { TimeOffsetCard } from "./components/TimeOffsetCard";
 import { ScheduleForm } from "./components/ScheduleForm";
 import { TaskList } from "./components/TaskList";
+import { CheckInLog } from "./components/CheckInLog";
 import { storage } from "../lib/storage";
 import {
   DEFAULT_SETTINGS,
@@ -23,9 +24,10 @@ import {
   ShieldCheck,
   Languages,
   Timer,
+  ScrollText,
 } from "lucide-react";
 
-type TabMode = "live" | "schedule" | "tasks";
+type TabMode = "live" | "schedule" | "tasks" | "log";
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabMode>("live");
@@ -219,7 +221,7 @@ export const App: React.FC = () => {
       </header>
 
       {/* 2. Navigation Tabs */}
-      <nav className="shrink-0 grid grid-cols-3 border-b border-white/[0.06] bg-black/20 p-1.5 gap-1 text-[11px] font-semibold">
+      <nav className="shrink-0 grid grid-cols-4 border-b border-white/[0.06] bg-black/20 p-1.5 gap-1 text-[11px] font-semibold">
         <button
           type="button"
           onClick={() => setActiveTab("live")}
@@ -258,12 +260,29 @@ export const App: React.FC = () => {
           <ListTodo className="h-3.5 w-3.5" />
           <span>{t.tabTasks(tasks.length)}</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("log")}
+          className={`flex items-center justify-center gap-1.5 rounded-xl py-2 transition ${
+            activeTab === "log"
+              ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm"
+              : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]"
+          }`}
+        >
+          <ScrollText className="h-3.5 w-3.5" />
+          <span>{t.tabLog}</span>
+        </button>
       </nav>
 
       {/* 3. Tab Body Content */}
       {activeTab === "tasks" ? (
         <main className="flex-1 min-h-0 flex flex-col px-3.5 pt-3 pb-2">
           <TaskList tasks={tasks} onTasksChanged={loadTasks} lang={lang} />
+        </main>
+      ) : activeTab === "log" ? (
+        <main className="flex-1 min-h-0 flex flex-col px-3.5 pt-3 pb-2">
+          <CheckInLog lang={lang} />
         </main>
       ) : (
         <main className="flex-1 min-h-0 overflow-y-auto px-3.5 py-3 space-y-3">

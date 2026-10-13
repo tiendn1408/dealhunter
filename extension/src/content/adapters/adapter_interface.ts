@@ -7,6 +7,11 @@ export interface MarketplaceAdapter {
   isButtonFinished(button: HTMLElement): boolean;
   extractProductInfo?(): { title: string; price: number; itemId?: string; shopId?: string } | null;
   /**
+   * Optional platform strike used instead of the first click (e.g. Caffiliate: the page's own
+   * app.checkIn()). Returns true when the strike was dispatched.
+   */
+  executeDirectStrike?(target?: HTMLElement | null): Promise<boolean> | boolean;
+  /**
    * Optional hook a few seconds before the drop (e.g. start timing collection, warm connections).
    */
   preWarmStrike?(): Promise<void> | void;
@@ -26,10 +31,6 @@ export interface MarketplaceAdapter {
    * Optional platform directive: dynamic status text override for HUD (return null/undefined to use default)
    */
   getStatusOverride?(lang?: Language): string | null;
-  /**
-   * Optional platform detail appended to the hunt result (e.g. measured check-in timings)
-   */
-  getResultDetail?(): string | null;
 }
 
 

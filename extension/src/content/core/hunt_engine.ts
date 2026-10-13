@@ -231,12 +231,6 @@ export function startHunt(opts: HuntOptions): () => void {
     }
   };
 
-  // Appends what the platform measured (e.g. Caffiliate check-in timings) to a result detail.
-  const withAdapterDetail = (detail: string): string => {
-    const extra = adapter?.getResultDetail?.();
-    return extra ? `${detail} · ${extra}` : detail;
-  };
-
   let spinArmed = false;
 
   const step = () => {
@@ -389,7 +383,7 @@ export function startHunt(opts: HuntOptions): () => void {
             effectiveTier === "speed_priority"
               ? `Hyper burst dispatched (${clicks} clicks), but page never confirmed completion`
               : `Clicked ${clicks} times but target completion was not confirmed`;
-          finish("timeout", withAdapterDetail(detail));
+          finish("timeout", detail);
         }
         return;
       }
@@ -464,7 +458,7 @@ export function startHunt(opts: HuntOptions): () => void {
         if (
           adapter?.isButtonFinished && el && adapter.isButtonFinished(el)
         ) {
-          return finish("saved", withAdapterDetail("The site confirmed completion"));
+          return finish("saved", "The site confirmed completion");
         }
 
         const activeBaseline = baselineTextAtDrop ?? initialText;
@@ -563,14 +557,24 @@ export function startHunt(opts: HuntOptions): () => void {
           }
         }
         const isFirstClick = clicks === 0;
+        let directStrikeHandled = false;
         if (isFirstClick) {
           // C1-a: Capture the true baseline text right before click 1 at drop moment
           // (after countdown has transitioned to the actionable label)
           baselineTextAtDrop = elementResolver.text(el);
+          // Platform strike (e.g. Caffiliate app.checkIn()) replaces the DOM click when available
+          if (adapter?.executeDirectStrike) {
+            try {
+              directStrikeHandled = Boolean(adapter.executeDirectStrike(el));
+            } catch {
+              // fall back to the click
+            }
+          }
         }
         const shouldSkipApproach = effectiveTier === "speed_priority" || profileMode === "hyper";
         const clickDispatched = isFirstClick
-          ? humanClicker.dispatchPreWarmedStrike(el, {
+          ? directStrikeHandled ||
+            humanClicker.dispatchPreWarmedStrike(el, {
               profileMode,
               approach: isFirstClick && !shouldSkipApproach,
               skipApproach: shouldSkipApproach,
@@ -595,7 +599,7 @@ export function startHunt(opts: HuntOptions): () => void {
           if (
             adapter?.isButtonFinished && el && adapter.isButtonFinished(el)
           ) {
-            return finish("saved", withAdapterDetail("The site confirmed completion"));
+            return finish("saved", "The site confirmed completion");
           }
 
           const activeBaseline = baselineTextAtDrop ?? initialText;

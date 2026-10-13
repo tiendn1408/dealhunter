@@ -14,6 +14,16 @@ const en = {
   tabLiveSniper: "Live Sniper",
   tabSchedule: "Schedule",
   tabTasks: (count: number) => `My Hunts (${count})`,
+  tabLog: "Log",
+  checkInLogTitle: "Check-in timing log",
+  checkInLogHint: "Each attempt: tier tried, Turnstile time, request sent and server response (server clock).",
+  checkInLogEmpty: "No check-in recorded yet. Logs appear here after a Caffiliate check-in.",
+  checkInLogClear: "Clear",
+  checkInLogOk: "Checked in",
+  checkInLogFailed: "Not confirmed",
+  checkInLogManual: "Manual click",
+  checkInLogAttempt: (n: number) => `Attempt ${n}`,
+  checkInLogTier: (tier: number) => (tier === 1 ? "Function" : tier === 2 ? "API" : "Click"),
 
   // Live Sniper Tab
   startOnActiveTab: "START SNIPER ON THIS PAGE",
@@ -185,6 +195,16 @@ const vi: TranslationCatalog = {
   tabLiveSniper: "Săn trực tiếp",
   tabSchedule: "Đặt lịch",
   tabTasks: (count: number) => `Lịch hẹn (${count})`,
+  tabLog: "Log",
+  checkInLogTitle: "Log thời gian điểm danh",
+  checkInLogHint: "Mỗi lần thử: tầng đã dùng, thời gian Turnstile, lúc gửi và lúc server trả lời (giờ server).",
+  checkInLogEmpty: "Chưa có lần điểm danh nào. Log sẽ hiện ở đây sau khi điểm danh Caffiliate.",
+  checkInLogClear: "Xoá",
+  checkInLogOk: "Đã điểm danh",
+  checkInLogFailed: "Chưa xác nhận",
+  checkInLogManual: "Bấm tay",
+  checkInLogAttempt: (n: number) => `Lần ${n}`,
+  checkInLogTier: (tier: number) => (tier === 1 ? "Hàm" : tier === 2 ? "API" : "Bấm nút"),
 
   // Live Sniper Tab
   startOnActiveTab: "BẮT ĐẦU SĂN TRÊN TRANG NÀY",
