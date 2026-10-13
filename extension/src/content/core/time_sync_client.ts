@@ -9,12 +9,19 @@ export class TimeSyncClient {
   private serverHost: string = "";
   private isCalibrating: boolean = false;
   private listeners: Set<(cal: ClockCalibration) => void> = new Set();
+  /**
+   * Set by the first init(): a hunt, a scheduled task or the open HUD needs this page's clock.
+   * Until then focus / tab switches do nothing, so ordinary pages are never probed (decision 2).
+   */
+  private inUse = false;
 
   constructor() {
     if (typeof window !== "undefined") {
-      window.addEventListener("focus", () => this.checkAndRevalidate());
+      window.addEventListener("focus", () => {
+        if (this.inUse) this.checkAndRevalidate();
+      });
       document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") {
+        if (this.inUse && document.visibilityState === "visible") {
           this.checkAndRevalidate();
         }
       });
@@ -50,6 +57,7 @@ export class TimeSyncClient {
   }
 
   async init(): Promise<void> {
+    this.inUse = true;
     const currentDomain = this.getCurrentDomain();
     try {
       const res = await chrome.runtime.sendMessage({

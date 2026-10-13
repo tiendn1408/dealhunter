@@ -44,23 +44,18 @@ export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({
     }
   };
 
+  // Shows what was measured for this site. Opening the popup never probes the site: measuring
+  // happens with the refresh button or when a hunt needs it (decision 2).
   useEffect(() => {
-    storage.getCalibration(cleanDomain).then((cal) => {
-      const isDomainMatch = !!(
-        cal &&
-        cal.serverHost &&
-        cal.serverHost.replace(/^www\./, "").toLowerCase() === cleanDomain
-      );
-      if (cal && (!cleanDomain || isDomainMatch)) {
-        setCalibration(cal);
-      } else if (activeUrl && (activeUrl.startsWith("http://") || activeUrl.startsWith("https://"))) {
-        // Auto-calibrate for active tab domain if missing or mismatched
-        handleRefresh();
-      } else {
-        setCalibration(cal);
-      }
-    });
-  }, [cleanDomain, activeUrl]);
+    if (!cleanDomain) {
+      setCalibration(null);
+      return;
+    }
+    storage
+      .getCalibration(cleanDomain)
+      .then((cal) => setCalibration(cal))
+      .catch(() => setCalibration(null));
+  }, [cleanDomain]);
 
   const synced = !!calibration?.calibrated;
   const offset = calibration?.offsetMs ?? 0;

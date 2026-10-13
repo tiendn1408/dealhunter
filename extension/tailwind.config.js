@@ -1,9 +1,8 @@
 /** @type {import('tailwindcss').Config} */
+/** Popup CSS (popup.html). The content script uses tailwind.content.config.js. */
 export default {
-  important: ":is(#root, #dealhunter-hud-root, #dealhunter-badge-root, .dh-root)",
-  content: [
-    "./src/**/*.{html,ts,tsx}",
-  ],
+  important: "#root",
+  content: ["./popup.html", "./src/popup/**/*.{ts,tsx}", "./src/lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {

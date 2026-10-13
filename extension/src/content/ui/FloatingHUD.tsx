@@ -13,6 +13,10 @@ import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TargetDiagnosticsSummary } from "../../lib/types";
 import { isSamePageUrl } from "../../lib/url";
 import { reloadTiming } from "../../lib/reload_timing";
+import { IS_DEV_BUILD } from "../../lib/build_env";
+import { hudBus } from "./hud_bus";
+import { translateEngineStatus, platformBlockMessage } from "./status_text";
+import { detectPlatformBlock } from "../platform_block";
 import { getAdapterForUrl } from "../adapters";
 import { DEALHUNTER_LOGO_DATA_URI } from "./logo_data";
 import {
@@ -117,16 +121,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     typeof window !== "undefined" && Boolean(getAdapterForUrl(window.location.href)?.shouldDisableReload?.());
   const armedTargetTimestampRef = useRef<number | null>(null);
   const [countdownStr, setCountdownStr] = useState("--:--:--.-");
-  const [targetLabel, setTargetLabel] = useState("--:--:--");
   const [targetWallClock, setTargetWallClock] = useState("--:--:--");
   const [targetSummary, setTargetSummary] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [isTargetSaved, setIsTargetSaved] = useState(false);
   const [isDailySchedule, setIsDailySchedule] = useState(false);
+  const [suggestion, setSuggestion] = useState<{ list: HTMLElement[]; index: number } | null>(null);
   const [diagnostics, setDiagnostics] = useState<TargetDiagnosticsSummary | null>(null);
-
-  // Dragging state
-  const dragStartRef = useRef<{ mouseX: number; mouseY: number; startX: number; startY: number } | null>(null);
 
   const targetElementRef = useRef<HTMLElement | null>(null);
   const universalDescRef = useRef<UniversalTargetDescriptor | null>(null);
@@ -227,7 +228,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
 
       setIsArmed(true);
       setStatusMsg({
-        text: "Đã phục hồi tiến trình sau reload · Đang khóa mục tiêu và đếm ngược...",
+        render: (trans) => trans.sessionRestoredAfterReload,
         tone: "armed",
       });
       return;
@@ -374,59 +375,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           tone: view.tone,
         });
       } else if (coordState.statusText) {
-        if (coordState.statusText === "Disarmed") {
-          setStatusMsg({ render: (trans) => trans.disarmedStatus, tone: "idle" });
-        } else if (coordState.statusText.startsWith("Armed · ")) {
-          const summary = coordState.statusText.slice("Armed · ".length);
-          setStatusMsg({
-            render: (_trans, currentLang) =>
-              currentLang === "vi" ? `Đã đặt mục tiêu · ${summary}` : `Armed · ${summary}`,
-            tone: coordState.tone,
-          });
-        } else if (coordState.statusText.startsWith("Target active · ")) {
-          const countNum =
-            parseInt(coordState.statusText.replace("Target active · ", "").replace(/[^0-9]/g, ""), 10) || 0;
-          setStatusMsg({
-            render: (trans, currentLang) =>
-              currentLang === "vi"
-                ? `Đang săn · ${trans.clicksLabel(countNum)}`
-                : `Target active · ${trans.clicksLabel(countNum)}`,
-            tone: coordState.tone,
-          });
-        } else if (coordState.statusText === "Waiting for target button...") {
-          setStatusMsg({
-            render: (_trans, currentLang) =>
-              currentLang === "vi" ? "Đang chờ nút xuất hiện..." : "Waiting for target button...",
-            tone: coordState.tone,
-          });
-        } else if (coordState.statusText.startsWith("Waiting for the drop: ")) {
-          const secs = coordState.statusText.replace("Waiting for the drop: ", "");
-          setStatusMsg({
-            render: (_trans, currentLang) =>
-              currentLang === "vi" ? `Đang chờ đến giờ săn: ${secs}` : `Waiting for the drop: ${secs}`,
-            tone: coordState.tone,
-          });
-        } else if (
-          coordState.statusText.includes("Cloudflare") ||
-          coordState.statusText.includes("Verify you are human")
-        ) {
-          setStatusMsg({
-            render: (trans) => trans.turnstileChallengePrompt,
-            tone: coordState.tone,
-          });
-        } else if (coordState.statusText.startsWith("Burst complete")) {
-          const countNum =
-            parseInt(coordState.statusText.replace(/[^0-9]/g, ""), 10) || 0;
-          setStatusMsg({
-            render: (trans, currentLang) =>
-              currentLang === "vi"
-                ? `Đã xong đợt bấm (${trans.clicksLabel(countNum)}) · Đang chờ xác nhận...`
-                : `Burst complete (${trans.clicksLabel(countNum)}) · Awaiting server update...`,
-            tone: coordState.tone,
-          });
-        } else {
-          setStatusMsg({ text: coordState.statusText, tone: coordState.tone });
-        }
+        const text = coordState.statusText;
+        setStatusMsg({
+          render: (trans, currentLang) => translateEngineStatus(text, trans, currentLang),
+          tone: coordState.tone,
+        });
       }
     });
   }, []);
@@ -504,8 +457,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       const host = timeSyncClient.getServerHost();
       if (host) setServerDomain(host.replace(/^www\./, ""));
 
-      const { timestamp, label } = computeTargetTimestamp(now, targetSlot);
-      setTargetLabel(label);
+      const { timestamp } = computeTargetTimestamp(now, targetSlot);
 
       let effectiveTimestamp = timestamp;
       if (isArmed && armedTargetTimestampRef.current) {
@@ -564,6 +516,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const isOwnEvent = (e: Event) => !!hostElement && e.composedPath().includes(hostElement);
 
   const lockTarget = (el: HTMLElement) => {
+    document.querySelectorAll(".dh-target-suggest").forEach((n) => n.classList.remove("dh-target-suggest"));
+    setSuggestion(null);
     targetElementRef.current?.classList.remove("dh-target-highlight");
     el.classList.add("dh-target-highlight");
     targetElementRef.current = el;
@@ -649,7 +603,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const handleScheduleFromHUD = async () => {
     if (!universalDescRef.current || typeof window === "undefined") return;
     const now = timeSyncClient.getServerTime();
-    const { timestamp, label: timeLabel } = computeTargetTimestamp(now, targetSlot);
+    const { timestamp } = computeTargetTimestamp(now, targetSlot);
+    // The task stores a clock time (a daily task repeats it), so the label is that time, not "+10s"
+    const timeLabel = formatVN(timestamp).slice(0, 8);
     const date = new Date(timestamp + 7 * 3600 * 1000); // VN time
     const h = date.getUTCHours();
     const m = date.getUTCMinutes();
@@ -872,12 +828,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         handleSelectTarget();
       }
     };
-    window.addEventListener("dealhunter:activate-pick", onActivatePick);
-    return () => window.removeEventListener("dealhunter:activate-pick", onActivatePick);
+    return hudBus.onPickRequest(onActivatePick);
   }, [minimized]);
 
-  // Synchronize target time from external events (e.g. simulator benchmark tool)
+  // Development builds only: the Caffiliate Bench simulator sets the drop time through a page event.
+  // A production build ignores it (any page could send it).
   useEffect(() => {
+    if (!IS_DEV_BUILD) return;
     const onSetTargetTime = (e: Event) => {
       const customEvent = e as CustomEvent<{ timeStr?: string; timestamp?: number }>;
       if (customEvent.detail?.timeStr && !huntCoordinator.getState().isArmed) {
@@ -885,7 +842,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         setCustomTime(customEvent.detail.timeStr);
         armedTargetTimestampRef.current = null;
         setStatusMsg({
-          text: `Đã đồng bộ giờ G: ${customEvent.detail.timeStr}`,
+          render: (trans) => trans.targetTimeSynced(customEvent.detail!.timeStr!),
           tone: "idle",
         });
       }
@@ -894,7 +851,27 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     return () => window.removeEventListener("dealhunter:set-target-time", onSetTargetTime);
   }, []);
 
-  // Auto-detect collect buttons
+  // Auto-detect only SUGGESTS a button (decision 1): it is outlined and the user confirms it (or looks
+  // at the next one). Nothing is locked, armed or clicked without that confirmation.
+  const clearSuggestion = () => {
+    suggestion?.list[suggestion.index]?.classList.remove("dh-target-suggest");
+    setSuggestion(null);
+  };
+
+  const showSuggestion = (list: HTMLElement[], index: number) => {
+    suggestion?.list[suggestion.index]?.classList.remove("dh-target-suggest");
+    const el = list[index];
+    el.classList.add("dh-target-suggest");
+    try {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    } catch {
+      // ignore
+    }
+    setSuggestion({ list, index });
+    const label = elementResolver.text(el).slice(0, 40) || "?";
+    setStatusMsg({ render: (trans) => trans.autoDetectSuggest(label, index + 1, list.length), tone: "idle" });
+  };
+
   const handleAutoDetect = () => {
     if (picking) {
       cleanupPickerRef.current?.();
@@ -902,15 +879,20 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     const adapter = typeof window !== "undefined" ? getAdapterForUrl(window.location.href) : null;
     const buttons = adapter?.findVoucherButtons ? adapter.findVoucherButtons() : elementResolver.findCollectButtons();
     if (buttons.length > 0) {
-      lockTarget(buttons[0]);
-      setStatusMsg({
-        render: (trans) => trans.foundButtonsCount(buttons.length),
-        tone: "idle",
-      });
+      showSuggestion(buttons, 0);
     } else {
+      clearSuggestion();
       setStatusMsg({ render: (trans) => trans.noButtonFound, tone: "error" });
     }
   };
+
+  const acceptSuggestion = () => {
+    if (!suggestion) return;
+    const el = suggestion.list[suggestion.index];
+    clearSuggestion();
+    if (el?.isConnected) lockTarget(el);
+  };
+
   const armHunt = (overrideTimestamp?: number) => {
     if (!targetElementRef.current && !universalDescRef.current) {
       setStatusMsg({ render: (trans) => trans.noTargetSelected, tone: "error" });
@@ -925,43 +907,10 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       }
     }
 
-    if (typeof window !== "undefined") {
-      const host = window.location.hostname.toLowerCase();
-      const path = window.location.pathname.toLowerCase();
-      if (host.includes("shopee.") && (path.startsWith("/verify/") || path.startsWith("/buyer/login"))) {
-        setStatusMsg({
-          text: path.startsWith("/verify/")
-            ? "Shopee requires verification. Please verify and sign in first."
-            : "Please sign in to Shopee first.",
-          tone: "error",
-        });
-        return;
-      }
-      if (host.includes("lazada.") && (path.includes("/verification/") || path.includes("/punish") || path.includes("/user/login") || path.includes("/member/login"))) {
-        setStatusMsg({
-          text: (path.includes("/verification/") || path.includes("/punish"))
-            ? "Lazada requires verification. Please verify and sign in first."
-            : "Please sign in to Lazada first.",
-          tone: "error",
-        });
-        return;
-      }
-      if (host.includes("tiki.vn") && (path.includes("/customer/account/login") || path.includes("/account/login"))) {
-        setStatusMsg({
-          text: "Please sign in to Tiki first.",
-          tone: "error",
-        });
-        return;
-      }
-      if (host.includes("tiktok.com") && (path.includes("/verify") || path.includes("/login"))) {
-        setStatusMsg({
-          text: path.includes("/verify")
-            ? "TikTok Shop requires verification. Please verify and sign in first."
-            : "Please sign in to TikTok Shop first.",
-          tone: "error",
-        });
-        return;
-      }
+    const block = detectPlatformBlock();
+    if (block) {
+      setStatusMsg({ render: (trans) => platformBlockMessage(block, trans), tone: "error" });
+      return;
     }
 
     const now = timeSyncClient.getServerTime();
@@ -1002,12 +951,13 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   };
 
   const handleManualTestClick = () => {
-    if (targetElementRef.current) {
-      humanClicker.dispatchClick(targetElementRef.current, { profileMode: clickProfile, approach: true });
-      setStatusMsg({ render: (trans) => trans.testClickSuccess, tone: "idle" });
-    } else {
-      handleAutoDetect();
+    // Only the picked button is ever clicked, test clicks included
+    if (!targetElementRef.current) {
+      setStatusMsg({ render: (trans) => trans.noTargetSelected, tone: "error" });
+      return;
     }
+    humanClicker.dispatchClick(targetElementRef.current, { profileMode: clickProfile, approach: true });
+    setStatusMsg({ render: (trans) => trans.testClickSuccess, tone: "idle" });
   };
 
   const handleRecalibrate = async () => {
@@ -1124,6 +1074,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             onClick={handleToggleLang}
             className="dh-header-btn dh-header-btn-lang"
             title={t.toggleLanguageTooltip(lang === "en" ? "vi" : "en")}
+            aria-label={t.toggleLanguageTooltip(lang === "en" ? "vi" : "en")}
           >
             <Languages className="h-3.5 w-3.5 shrink-0" />
             <span>{lang.toUpperCase()}</span>
@@ -1171,6 +1122,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                   : "dh-uncalibrated ring-1 ring-amber-500/30"
               }`}
               title={t.resyncClockTooltip}
+              aria-label={t.resyncClockTooltip}
             >
               <RefreshCw className={`h-2.5 w-2.5 ${syncing ? "animate-spin" : ""}`} />
               {syncing
@@ -1336,6 +1288,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                 disabled={isArmed}
                 className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-white/10 hover:text-rose-400 disabled:opacity-40"
                 title={t.forgetTarget}
+                aria-label={t.forgetTarget}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -1373,6 +1326,35 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
               <span>{t.autoDetect}</span>
             </button>
           </div>
+          {suggestion && !isArmed && (
+            <div className="mt-2 grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={acceptSuggestion}
+                className="dh-sub-btn col-span-1 rounded-lg py-1.5 text-[10px] font-semibold text-emerald-300"
+              >
+                {t.useSuggestedButton}
+              </button>
+              <button
+                type="button"
+                onClick={() => showSuggestion(suggestion.list, (suggestion.index + 1) % suggestion.list.length)}
+                disabled={suggestion.list.length < 2}
+                className="dh-sub-btn rounded-lg py-1.5 text-[10px] font-semibold text-slate-300 disabled:opacity-40"
+              >
+                {t.nextSuggestion}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearSuggestion();
+                  setStatusMsg({ text: "", tone: "idle" });
+                }}
+                className="dh-sub-btn rounded-lg py-1.5 text-[10px] font-semibold text-slate-400"
+              >
+                {t.dismissSuggestion}
+              </button>
+            </div>
+          )}
           {targetSummary && (
             <div className="mt-2.5 grid grid-cols-2 gap-2 border-t border-white/5 pt-2">
               {isTargetSaved ? (
@@ -1449,7 +1431,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
           <button
             type="button"
             onClick={handleManualTestClick}
-            disabled={isArmed}
+            disabled={isArmed || !hasTarget}
             className="dh-test-click-btn flex w-full items-center justify-center gap-1.5 rounded-xl text-[11px] font-medium transition disabled:opacity-40"
             title={t.testClickTooltip}
           >

@@ -646,6 +646,12 @@
   transition: all 0.2s ease-in-out !important;
 }
 
+/* Auto-detect suggestion: waiting for the user to confirm it */
+.dh-target-suggest {
+  outline: 3px dashed #f59e0b !important;
+  outline-offset: 2px !important;
+}
+
 /* Picking mode cursor across the page */
 body.dh-picking-active,
 body.dh-picking-active * {

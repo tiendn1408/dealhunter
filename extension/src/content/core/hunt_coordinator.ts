@@ -9,6 +9,7 @@ import { ScheduledTask, TaskStatus, TargetDiagnosticsSummary } from "../../lib/t
 import { nextExactDropAt } from "../../lib/drop_time";
 import { isSamePageUrl } from "../../lib/url";
 import { reloadTiming } from "../../lib/reload_timing";
+import { newSessionToken, sessionVault } from "./session_vault";
 import { getAdapterForUrl } from "../adapters";
 
 export const ARMED_SESSION_KEY = "dh_armed_session";
@@ -28,6 +29,8 @@ export interface ArmedSession {
   diagnostics?: TargetDiagnosticsSummary;
   url: string;
   armedAt: number;
+  /** Random id: sessionStorage carries only this across a reload; the session is in the vault. */
+  token: string;
 }
 
 export type CoordinatorTone = "idle" | "armed" | "firing" | "success" | "warning" | "error";
@@ -107,6 +110,8 @@ export class HuntCoordinator {
     dualDefenseReload?: boolean;
     preReloadLeadMs?: number;
     diagnostics?: TargetDiagnosticsSummary;
+    /** Resuming after a reload: keep the session's token. */
+    token?: string;
   }): void {
     if (this.state.isArmed && this.currentSession) {
       if (params.taskId && this.currentSession.taskId === params.taskId) {
@@ -121,20 +126,13 @@ export class HuntCoordinator {
       ) {
         this.currentSession.taskId = params.taskId;
         this.setState({ taskId: params.taskId });
-        if (typeof window !== "undefined") {
-          try {
-            sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify(this.currentSession));
-          } catch {
-            // ignore
-          }
-        }
+        this.persistSession(this.currentSession);
         return;
       }
     }
 
     this.disarm(false); // cancel any existing active hunt first
 
-    const now = timeSyncClient.getServerTime();
     let desc = params.descriptor || null;
     let targetEl = params.targetElement || null;
 
@@ -187,16 +185,11 @@ export class HuntCoordinator {
       diagnostics: diag || params.diagnostics,
       url: typeof window !== "undefined" ? window.location.href : "",
       armedAt: Date.now(),
+      token: params.token ?? newSessionToken(),
     };
     this.currentSession = session;
 
-    if (typeof sessionStorage !== "undefined") {
-      try {
-        sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify(session));
-      } catch {
-        // ignore
-      }
-    }
+    this.persistSession(session);
 
     const summary =
       params.label?.split("·")[1]?.trim() ||
@@ -308,43 +301,66 @@ export class HuntCoordinator {
   }
 
   /**
-   * Resumes an armed session preserved in sessionStorage across manual F5 or emergency reload.
+   * Resumes an armed session across a manual F5 or an emergency reload. sessionStorage (which the
+   * page can write) only gives the token; the session itself comes from the extension's vault, so
+   * a session forged or edited by the page is never resumed.
    */
-  checkAndResumeArmedSession(): boolean {
+  async checkAndResumeArmedSession(): Promise<boolean> {
     if (typeof sessionStorage === "undefined" || typeof window === "undefined") return false;
+    let token = "";
     try {
       const raw = sessionStorage.getItem(ARMED_SESSION_KEY);
       if (!raw) return false;
-      const session: ArmedSession = JSON.parse(raw);
-      const now = timeSyncClient.getServerTime();
+      token = String(JSON.parse(raw)?.token || "");
+    } catch {
+      // unreadable: treated as no session
+    }
+    const session = await sessionVault.load<ArmedSession>(token);
+    const now = timeSyncClient.getServerTime();
+    if (!session || !isSamePageUrl(session.url, window.location.href) || now >= session.targetTimestamp + 15_000) {
+      this.clearPersisted(token);
+      return false;
+    }
+    const targetEl = session.descriptor ? elementResolver.relocateUniversal(session.descriptor) : null;
+    this.arm({
+      targetTimestamp: session.targetTimestamp,
+      targetElement: targetEl,
+      descriptor: session.descriptor,
+      taskId: session.taskId,
+      label: session.label,
+      targetSlot: session.targetSlot,
+      customTime: session.customTime,
+      keyword: session.keyword,
+      clickProfileMode: session.clickProfileMode,
+      dualDefenseReload: session.reloadSwitch ?? session.dualDefenseReload,
+      preReloadLeadMs: session.preReloadLeadMs,
+      diagnostics: session.diagnostics,
+      token: session.token,
+    });
+    return true;
+  }
 
-      if (isSamePageUrl(session.url, window.location.href) && now < session.targetTimestamp + 15_000) {
-        let targetEl: HTMLElement | null = null;
-        if (session.descriptor) {
-          targetEl = elementResolver.relocateUniversal(session.descriptor);
-        }
-        this.arm({
-          targetTimestamp: session.targetTimestamp,
-          targetElement: targetEl,
-          descriptor: session.descriptor,
-          taskId: session.taskId,
-          label: session.label,
-          targetSlot: session.targetSlot,
-          customTime: session.customTime,
-          keyword: session.keyword,
-          clickProfileMode: session.clickProfileMode,
-          dualDefenseReload: session.dualDefenseReload,
-          preReloadLeadMs: session.preReloadLeadMs,
-          diagnostics: session.diagnostics,
-        });
-        return true;
-      } else {
-        sessionStorage.removeItem(ARMED_SESSION_KEY);
-      }
+  /** Saves the session: the token (and a display copy) in sessionStorage, the session in the vault. */
+  private persistSession(session: ArmedSession): void {
+    try {
+      sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify(session));
     } catch {
       // ignore
     }
-    return false;
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      sessionVault.save(session.token, session).catch(() => {});
+    }
+  }
+
+  private clearPersisted(token?: string): void {
+    try {
+      sessionStorage.removeItem(ARMED_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+    if (token && typeof chrome !== "undefined" && chrome.storage?.local) {
+      sessionVault.remove(token).catch(() => {});
+    }
   }
 
   /**
@@ -352,6 +368,7 @@ export class HuntCoordinator {
    */
   disarm(updateStorage = true): void {
     const taskId = this.currentSession?.taskId;
+    const token = this.currentSession?.token;
     // A running engine reports the cancel itself (handleDone -> TASK_STATUS_UPDATE "cancelled")
     const reportedByEngine = Boolean(this.activeCancel);
     if (this.activeCancel) {
@@ -360,13 +377,7 @@ export class HuntCoordinator {
     }
     this.currentSession = null;
 
-    if (typeof sessionStorage !== "undefined") {
-      try {
-        sessionStorage.removeItem(ARMED_SESSION_KEY);
-      } catch {
-        // ignore
-      }
-    }
+    this.clearPersisted(token);
 
     // Disarming a scheduled run cancels this run only (a daily task continues tomorrow); deleting the
     // task is done from the task list. The background owns the task list.
@@ -396,6 +407,7 @@ export class HuntCoordinator {
    * Cancels active hunt, removes sessionStorage and notifies listeners.
    */
   clearTargetAndOutcome(): void {
+    const token = this.currentSession?.token;
     if (this.activeCancel) {
       this.activeCancel();
       this.activeCancel = null;
@@ -406,13 +418,7 @@ export class HuntCoordinator {
       document.documentElement.removeAttribute("data-dh-turnstile-challenge");
     }
 
-    if (typeof sessionStorage !== "undefined") {
-      try {
-        sessionStorage.removeItem(ARMED_SESSION_KEY);
-      } catch {
-        // ignore
-      }
-    }
+    this.clearPersisted(token);
 
     this.setState({
       isArmed: false,
@@ -446,15 +452,9 @@ export class HuntCoordinator {
   private handleDone(outcome: HuntOutcome): void {
     this.activeCancel = null;
     const taskId = this.currentSession?.taskId;
+    const token = this.currentSession?.token;
     this.currentSession = null;
-
-    if (typeof sessionStorage !== "undefined") {
-      try {
-        sessionStorage.removeItem(ARMED_SESSION_KEY);
-      } catch {
-        // ignore
-      }
-    }
+    this.clearPersisted(token);
 
     const tone: CoordinatorTone =
       outcome.result === "saved"

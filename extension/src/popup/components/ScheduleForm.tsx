@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Plus, Bookmark, Globe, Crosshair, Sparkles, CheckCircle2, ChevronDown, Repeat } from "lucide-react";
+import { CalendarClock, Plus, Bookmark, Globe, Crosshair, CheckCircle2, ChevronDown, Repeat } from "lucide-react";
 import { ScheduledTask, SavedPageTarget, ClickProfileMode } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { nextExactDropAt, formatVN, parseTimeString } from "../../lib/drop_time";
@@ -57,6 +57,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
   const [isDaily, setIsDaily] = useState<boolean>(false);
   const [clickProfileMode, setClickProfileMode] = useState<ClickProfileMode>("adaptive");
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string>("");
   const t = getTranslation(lang);
 
   useEffect(() => {
@@ -167,6 +168,8 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
     } else {
       finalUrl = customUrl.trim();
       if (!isValidHttpUrl(finalUrl)) return;
+      // Only a button the user picked is ever clicked (decision 1): the page needs a saved target
+      targetSnapshot = (await storage.getSavedTargetForUrl(finalUrl)) || undefined;
       let host = "Web";
       try {
         host = new URL(finalUrl).hostname.replace(/^www\./, "");
@@ -175,6 +178,12 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
       }
       finalLabel = `${parsedTime.formatted} · ${host}`;
     }
+
+    if (!targetSnapshot?.descriptor) {
+      setFormError(t.scheduleNeedsTarget);
+      return;
+    }
+    setFormError("");
 
     setSubmitting(true);
     try {
@@ -499,7 +508,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         disabled={
           submitting ||
           !parsedTime.valid ||
-          (targetMode === "current" && !currentTabUrl) ||
+          (targetMode === "current" && (!currentTabUrl || !currentTabTarget)) ||
           (targetMode === "saved" && savedTargets.length === 0) ||
           (targetMode === "custom" && (!customUrl.trim() || !isValidHttpUrl(customUrl.trim())))
         }
@@ -508,6 +517,11 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         <Plus className="h-4 w-4" />
         {t.scheduleSubmitBtn(parsedTime.formatted)}
       </button>
+      {formError && (
+        <p role="alert" className="text-center text-[10px] font-semibold text-rose-400">
+          {formError}
+        </p>
+      )}
     </form>
   );
 };

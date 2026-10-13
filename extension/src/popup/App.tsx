@@ -7,7 +7,6 @@ import { storage } from "../lib/storage";
 import {
   DEFAULT_SETTINGS,
   MESSAGE_ACTIONS,
-  POPULAR_FLASH_HOURS,
   POPULAR_SHOPPING_HUBS,
   SHOPEE_FLASH_HOURS,
   SHOPEE_URLS,
@@ -65,9 +64,8 @@ export const App: React.FC = () => {
               try {
                 const domain = new URL(url).hostname.replace(/^www\./, "");
                 setActiveTabDomain(domain);
-                storage.getCalibration(domain).then((cal) => {
-                  if (cal) setClockOffsetMs(cal.offsetMs);
-                });
+                // M17: the countdown follows this site's clock; another site's offset would be wrong
+                storage.getCalibration(domain).then((cal) => setClockOffsetMs(cal?.offsetMs ?? 0));
               } catch {
                 setActiveTabDomain("web");
               }
@@ -108,9 +106,6 @@ export const App: React.FC = () => {
     storage.getEndpoints().then((e) => setWebUrl(e.webUrl));
     storage.getSettings().then((s) => {
       if (s.language) setLang(s.language);
-    });
-    storage.getCalibration().then((cal) => {
-      if (cal && !clockOffsetMs) setClockOffsetMs(cal.offsetMs);
     });
     chrome.runtime
       .sendMessage({ action: MESSAGE_ACTIONS.GET_WEB_SESSION })

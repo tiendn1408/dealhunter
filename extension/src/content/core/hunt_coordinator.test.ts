@@ -3,6 +3,16 @@ import { HuntCoordinator, ARMED_SESSION_KEY } from "./hunt_coordinator";
 import { timeSyncClient } from "./time_sync_client";
 import { storage } from "../../lib/storage";
 import { ScheduledTask } from "../../lib/types";
+import { sessionVault } from "./session_vault";
+
+let vaultStore: Record<string, unknown> = {};
+
+/** A session the extension itself armed before a reload: in its vault, with the token in sessionStorage. */
+async function storeArmedSession(session: Record<string, unknown>) {
+  const token = "token-" + Math.random().toString(36).slice(2);
+  await sessionVault.save(token, { ...session, token });
+  sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify({ token }));
+}
 
 describe("HuntCoordinator", () => {
   let coordinator: HuntCoordinator;
@@ -19,9 +29,16 @@ describe("HuntCoordinator", () => {
     vi.spyOn(timeSyncClient, "getServerTime").mockReturnValue(1_000_000);
     vi.spyOn(timeSyncClient, "init").mockResolvedValue(undefined as any);
 
+    vaultStore = {};
     vi.stubGlobal("chrome", {
       runtime: {
         sendMessage: vi.fn().mockResolvedValue({ success: true }),
+      },
+      storage: {
+        local: {
+          get: async (key: string) => ({ [key]: structuredClone(vaultStore[key]) }),
+          set: async (items: Record<string, unknown>) => Object.assign(vaultStore, structuredClone(items)),
+        },
       },
     });
   });
@@ -168,8 +185,8 @@ describe("HuntCoordinator", () => {
     vi.restoreAllMocks();
   });
 
-  it("checkAndResumeArmedSession restores session from sessionStorage and re-arms coordinator", () => {
-    sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify({
+  it("checkAndResumeArmedSession restores the extension's stored session and re-arms coordinator", async () => {
+    await storeArmedSession({
       targetTimestamp: 1_050_000,
       label: "Restored Session",
       url: window.location.href,
@@ -180,16 +197,16 @@ describe("HuntCoordinator", () => {
         tagName: "BUTTON",
         initialText: "Lưu",
       },
-    }));
+    });
 
-    const restored = coordinator.checkAndResumeArmedSession();
+    const restored = await coordinator.checkAndResumeArmedSession();
     expect(restored).toBe(true);
     expect(coordinator.isArmed()).toBe(true);
     expect(coordinator.getState().targetTimestamp).toBe(1_050_000);
   });
 
-  it("checkAndResumeArmedSession rejects session if URL does not match", () => {
-    sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify({
+  it("checkAndResumeArmedSession rejects session if URL does not match", async () => {
+    await storeArmedSession({
       targetTimestamp: 1_050_000,
       label: "Restored Session",
       url: "https://example.com/other-page",
@@ -200,9 +217,9 @@ describe("HuntCoordinator", () => {
         tagName: "BUTTON",
         initialText: "Lưu",
       },
-    }));
+    });
 
-    const restored = coordinator.checkAndResumeArmedSession();
+    const restored = await coordinator.checkAndResumeArmedSession();
     expect(restored).toBe(false);
     expect(coordinator.isArmed()).toBe(false);
     expect(sessionStorage.getItem(ARMED_SESSION_KEY)).toBeNull();
@@ -246,8 +263,8 @@ describe("HuntCoordinator", () => {
     expect(session.diagnostics?.strategy).toBe("reactive_no_reload");
   });
 
-  it("checkAndResumeArmedSession preserves dualDefenseReload and diagnostics across reload", () => {
-    sessionStorage.setItem(ARMED_SESSION_KEY, JSON.stringify({
+  it("checkAndResumeArmedSession preserves dualDefenseReload and diagnostics across reload", async () => {
+    await storeArmedSession({
       targetTimestamp: 1_050_000,
       label: "Restored Session",
       url: window.location.href,
@@ -267,9 +284,9 @@ describe("HuntCoordinator", () => {
         tagName: "BUTTON",
         initialText: "Lưu",
       },
-    }));
+    });
 
-    const restored = coordinator.checkAndResumeArmedSession();
+    const restored = await coordinator.checkAndResumeArmedSession();
     expect(restored).toBe(true);
     expect(coordinator.isArmed()).toBe(true);
     const session = JSON.parse(sessionStorage.getItem(ARMED_SESSION_KEY) || "{}");

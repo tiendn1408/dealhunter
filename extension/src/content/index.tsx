@@ -1,18 +1,19 @@
-import React from "react";
 import ReactDOM from "react-dom/client";
 import { FloatingHUD } from "./ui/FloatingHUD";
 import { PriceHistoryBadge } from "./ui/PriceHistoryBadge";
-import { timeSyncClient } from "./core/time_sync_client";
 import { huntCoordinator, ARMED_SESSION_KEY } from "./core/hunt_coordinator";
-import { startHunt } from "./core/hunt_engine";
 import { elementResolver } from "./core/element_resolver";
-import { nextDropAt, nextExactDropAt } from "../lib/drop_time";
+import { nextExactDropAt } from "../lib/drop_time";
 import { ScheduledTask } from "../lib/types";
 import { MESSAGE_ACTIONS } from "../lib/constants";
 import { storage } from "../lib/storage";
-import { isSamePageUrl } from "../lib/url";
+import { isSamePageUrl, isSiteHost } from "../lib/url";
 import { caffiliateAdapter } from "./adapters/caffiliate_adapter";
 import { reloadTiming } from "../lib/reload_timing";
+import { hudBus } from "./ui/hud_bus";
+import { detectPlatformBlock } from "./platform_block";
+import { platformBlockMessage } from "./ui/status_text";
+import { getTranslation } from "../lib/i18n";
 import type { UniversalTargetDescriptor } from "./core/element_resolver";
 import "./ui/style.css";
 
@@ -44,34 +45,17 @@ let badgeRoot: ReactDOM.Root | null = null;
 export function isECommerceVoucherOrDealPage(urlStr: string): boolean {
   try {
     const url = new URL(urlStr);
-    const host = url.hostname.toLowerCase();
-    const path = url.pathname.toLowerCase();
-    const hash = url.hash.toLowerCase();
-    const full = (path + hash).toLowerCase();
+    // Decision 3: only shopping sites; a voucher path on an unknown site is not enough
+    const isECommerceDomain = ["shopee.", "lazada.", "tiki.vn", "tiktok.com", "sendo.vn", "aliexpress.", "taobao.com"].some(
+      (site) => isSiteHost(urlStr, site)
+    );
+    if (!isECommerceDomain) return false;
 
-    // 1. Core e-commerce and shopping platforms
-    const isECommerceDomain =
-      host.includes("shopee.") ||
-      host.includes("lazada.") ||
-      host.includes("tiki.vn") ||
-      host.includes("tiktok.com") ||
-      host.includes("sendo.vn") ||
-      host.includes("amazon.") ||
-      host.includes("aliexpress.") ||
-      host.includes("taobao.com");
-
-    // 2. Hub / deal paths across all e-commerce platforms
-    const isDealPath =
-      /\/(m|voucher|vouchers|coupon|coupons|ma-giam-gia|khuyen-mai|uu-dai|giam-gia|flash-sale|flashsale|deal|deals|campaign|super-sale|cart|checkout|gio-hang|wow|promotion)/i.test(
-        full
-      );
-
-    if (isECommerceDomain && isDealPath) return true;
-
-    // 3. Generic site with voucher or coupon path
-    if (/\/(ma-giam-gia|voucher|vouchers|coupon|coupons|flash-sale|flashsale)/i.test(full)) return true;
-
-    return false;
+    // Hub / deal paths: a whole path segment ("/m/..." yes, "/me" or "/messages" no)
+    const full = (url.pathname + url.hash).toLowerCase();
+    return /(?:^|[/#])(m|voucher|vouchers|coupon|coupons|ma-giam-gia|khuyen-mai|uu-dai|giam-gia|flash-sale|flashsale|deal|deals|campaign|super-sale|cart|checkout|gio-hang|wow|promotion)(?:[/?#]|$)/.test(
+      full
+    );
   } catch {
     return false;
   }
@@ -121,7 +105,7 @@ async function injectFloatingHUD(force = false, autoPick = false) {
   if (!force && !isVoucherPage && !hasSavedTarget && !hasScheduledTask && !hasArmedSession) return;
   if (document.getElementById("dealhunter-hud-root")) {
     if (autoPick) {
-      window.dispatchEvent(new CustomEvent("dealhunter:activate-pick"));
+      hudBus.requestPick();
     }
     return;
   }
@@ -152,21 +136,13 @@ async function injectFloatingHUD(force = false, autoPick = false) {
 export function isECommerceProductPage(urlStr: string): boolean {
   try {
     const url = new URL(urlStr);
-    const host = url.hostname.toLowerCase();
     const path = url.pathname.toLowerCase();
+    const on = (site: string) => isSiteHost(urlStr, site);
 
-    // Shopee product
-    if (host.includes("shopee.") && (path.includes("-i.") || path.includes("/product/"))) return true;
-
-    // Lazada product
-    if (host.includes("lazada.") && (path.includes("/products/") || path.includes("-i") || path.endsWith(".html"))) return true;
-
-    // Tiki product
-    if (host.includes("tiki.vn") && (path.includes("-p") || path.endsWith(".html"))) return true;
-
-    // TikTok Shop product
-    if (host.includes("tiktok.com") && (path.includes("/product/") || path.includes("/view/product"))) return true;
-
+    if (on("shopee.") && (path.includes("-i.") || path.includes("/product/"))) return true;
+    if (on("lazada.") && (path.includes("/products/") || path.includes("-i") || path.endsWith(".html"))) return true;
+    if (on("tiki.vn") && (path.includes("-p") || path.endsWith(".html"))) return true;
+    if (on("tiktok.com") && (path.includes("/product/") || path.includes("/view/product"))) return true;
     return false;
   } catch {
     return false;
@@ -229,8 +205,8 @@ async function measurePageReadyTime() {
 function initContentScript() {
   console.log("[DealHunter Assistant] Content script injected on", window.location.href);
 
-  // 1. Initialize clock calibration
-  timeSyncClient.init();
+  // 1. Clock calibration starts only where it is needed: the HUD, an armed hunt or a scheduled
+  // task call timeSyncClient.init() (decision 2: ordinary pages are never probed).
   // Caffiliate: log where the time goes on every check-in attempt, manual or hunted.
   if (caffiliateAdapter.isMatchUrl(window.location.href)) caffiliateAdapter.listenForTimings();
 
@@ -254,42 +230,6 @@ if (isTopWindow() && !isTestEnv) {
   initContentScript();
 }
 
-/** Detects whether platform redirected away to verification, captcha, or login */
-export function detectPlatformAuthOrCaptchaBlock(): string | null {
-  if (typeof window === "undefined") return null;
-  const host = window.location.hostname.toLowerCase();
-  const path = window.location.pathname.toLowerCase();
-
-  // Shopee
-  if (host.includes("shopee.")) {
-    if (path.startsWith("/verify/")) return "Shopee redirected to a verification (captcha) page - please verify and sign in before the drop";
-    if (path.startsWith("/buyer/login")) return "Not signed in to Shopee in this browser";
-  }
-
-  // Lazada
-  if (host.includes("lazada.")) {
-    if (path.includes("/verification/") || path.includes("/punish")) return "Lazada redirected to a verification (captcha) page - please verify and sign in before the drop";
-    if (path.includes("/user/login") || path.includes("/member/login")) return "Not signed in to Lazada in this browser";
-  }
-
-  // Tiki
-  if (host.includes("tiki.vn")) {
-    if (path.includes("/customer/account/login") || path.includes("/account/login")) return "Not signed in to Tiki in this browser";
-  }
-
-  // TikTok Shop
-  if (host.includes("tiktok.com")) {
-    if (path.includes("/verify") || path.includes("/security")) return "TikTok Shop requires verification - please verify and sign in before the drop";
-    if (path.includes("/login")) return "Not signed in to TikTok Shop in this browser";
-  }
-
-  // Generic Captcha / Security Check
-  if (path.includes("/captcha") || path.includes("/security-check")) {
-    return "The website requires captcha verification - please verify and sign in first";
-  }
-
-  return null;
-}
 
 async function executeFullAutoTask(task: ScheduledTask) {
   console.log("[DealHunter] Executing Full-Auto hunt for task:", task);
@@ -298,13 +238,15 @@ async function executeFullAutoTask(task: ScheduledTask) {
   injectFloatingHUD(true);
 
   // 2. Check platform verification block
-  const blocked = detectPlatformAuthOrCaptchaBlock();
-  if (blocked) {
+  const block = detectPlatformBlock();
+  if (block) {
+    // Shown later in the task list: in the user's language
+    const t = getTranslation(await storage.getLanguage().catch(() => "en" as const));
     chrome.runtime.sendMessage({
       action: MESSAGE_ACTIONS.TASK_STATUS_UPDATE,
       taskId: task.id,
       status: "failed",
-      result: { result: "not_found", clicks: 0, detail: blocked },
+      result: { result: "not_found", clicks: 0, detail: platformBlockMessage(block, t) },
     });
     return;
   }
@@ -336,7 +278,7 @@ async function checkAndResumeScheduledTasks() {
       executeFullAutoTask(activeTask);
     } else {
       // If no scheduled task, check if there was a manual Armed sniper session to resume across reload
-      const resumed = huntCoordinator.checkAndResumeArmedSession();
+      const resumed = await huntCoordinator.checkAndResumeArmedSession();
       if (resumed) {
         injectFloatingHUD(true);
       }

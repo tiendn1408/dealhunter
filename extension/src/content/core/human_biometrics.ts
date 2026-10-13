@@ -260,8 +260,6 @@ export function generateBezierTrajectory(
   if (dist < 4) return [target];
 
   // Control points with perpendicular tremor / natural hand curve
-  const midX = (start.x + target.x) / 2;
-  const midY = (start.y + target.y) / 2;
   const perpX = -dy / dist;
   const perpY = dx / dist;
 

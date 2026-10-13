@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { isDevBuild } from "./vite.config";
+import tailwindcss from "tailwindcss";
+import autoprefixer from "autoprefixer";
 
 // Post-build plugin that converts all rem units in content.css to fixed pixels (1rem = 16px)
 // This guarantees that host websites (Shopee, Caffiliate, Tiki, etc.) with custom root font sizes
@@ -29,6 +31,12 @@ export default defineConfig(({ mode }) => ({
   // public/ (manifest, icons, bridge) is copied by the main build, which also adapts the manifest to
   // the build mode; copying it again here would overwrite that.
   publicDir: false,
+  // content.css is scoped to DealHunter's containers (tailwind.content.config.js)
+  css: {
+    postcss: {
+      plugins: [tailwindcss({ config: path.resolve(__dirname, "tailwind.content.config.js") }), autoprefixer()],
+    },
+  },
   plugins: [react(), remToPxPlugin()],
   resolve: {
     alias: {

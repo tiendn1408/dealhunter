@@ -5,7 +5,7 @@ import { storage } from "../lib/storage";
 import { webSession } from "./web_session";
 import { apiClient, SessionRejectedError } from "../lib/api_client";
 import { PriceContextResponse } from "../lib/types";
-import { isValidHttpUrl } from "../lib/url";
+import { isPriceContextUrl, isValidHttpUrl } from "../lib/url";
 
 /**
  * Periodic task check: the service worker can be stopped mid-hunt, losing the result message, and
@@ -136,6 +136,8 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 
 /** Price context for the product page, only for a member signed in to DealHunter web. */
 async function getPriceContext(url: string): Promise<PriceContextResponse> {
+  // The member's token goes to the API only for a marketplace product page
+  if (!isPriceContextUrl(url)) return { signedIn: false };
   const session = await webSession.get();
   if (!session) return { signedIn: false };
   try {

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { getAdapterForUrl, ADAPTERS, CaffiliateAdapter } from "./index";
-import { isECommerceVoucherOrDealPage, isECommerceProductPage, detectPlatformAuthOrCaptchaBlock } from "../index";
+import { isECommerceVoucherOrDealPage, isECommerceProductPage } from "../index";
+import { detectPlatformBlock } from "../platform_block";
 
 describe("Marketplace Adapters & Multi-Platform Registry", () => {
   beforeEach(() => {
@@ -242,9 +243,9 @@ describe("Multi-Platform Page Detection", () => {
     expect(isECommerceVoucherOrDealPage("https://shop.tiktok.com/campaign/super-deal")).toBe(true);
     expect(isECommerceVoucherOrDealPage("https://shop.tiktok.com/cart")).toBe(true);
 
-    // General website
-    expect(isECommerceVoucherOrDealPage("https://retailer.com/flash-sale")).toBe(true);
-    expect(isECommerceVoucherOrDealPage("https://retailer.com/ma-giam-gia")).toBe(true);
+    // Other sites: the HUD opens only from the popup there (decision 3)
+    expect(isECommerceVoucherOrDealPage("https://retailer.com/flash-sale")).toBe(false);
+    expect(isECommerceVoucherOrDealPage("https://retailer.com/ma-giam-gia")).toBe(false);
     expect(isECommerceVoucherOrDealPage("https://retailer.com/about-us")).toBe(false);
   });
 
@@ -269,45 +270,28 @@ describe("Multi-Platform Page Detection", () => {
   });
 });
 
-describe("detectPlatformAuthOrCaptchaBlock", () => {
-  beforeEach(() => {
-    delete (window as any).location;
-  });
-
+describe("detectPlatformBlock", () => {
   it("identifies Shopee verification and login redirect", () => {
-    window.location = new URL("https://shopee.vn/verify/traffic") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toContain("Shopee redirected to a verification");
-
-    window.location = new URL("https://shopee.vn/buyer/login") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toContain("Not signed in to Shopee");
+    expect(detectPlatformBlock("https://shopee.vn/verify/traffic")).toEqual({ site: "Shopee", kind: "verify" });
+    expect(detectPlatformBlock("https://shopee.vn/buyer/login")).toEqual({ site: "Shopee", kind: "signin" });
   });
 
   it("identifies Lazada verification and login redirect", () => {
-    window.location = new URL("https://member.lazada.vn/user/login") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toContain("Not signed in to Lazada");
-
-    window.location = new URL("https://www.lazada.vn/verification/punish") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toContain("Lazada redirected to a verification");
+    expect(detectPlatformBlock("https://member.lazada.vn/user/login")).toEqual({ site: "Lazada", kind: "signin" });
+    expect(detectPlatformBlock("https://www.lazada.vn/verification/punish")).toEqual({ site: "Lazada", kind: "verify" });
   });
 
   it("identifies Tiki login redirect", () => {
-    window.location = new URL("https://tiki.vn/customer/account/login") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toContain("Not signed in to Tiki");
+    expect(detectPlatformBlock("https://tiki.vn/customer/account/login")).toEqual({ site: "Tiki", kind: "signin" });
   });
 
   it("identifies TikTok Shop verification and login redirect", () => {
-    window.location = new URL("https://shop.tiktok.com/login") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toContain("Not signed in to TikTok Shop");
-
-    window.location = new URL("https://shop.tiktok.com/verify") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toContain("TikTok Shop requires verification");
+    expect(detectPlatformBlock("https://shop.tiktok.com/login")).toEqual({ site: "TikTok Shop", kind: "signin" });
+    expect(detectPlatformBlock("https://shop.tiktok.com/verify")).toEqual({ site: "TikTok Shop", kind: "verify" });
   });
 
   it("returns null for normal campaign and voucher pages", () => {
-    window.location = new URL("https://shopee.vn/m/ma-giam-gia") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toBeNull();
-
-    window.location = new URL("https://www.lazada.vn/voucher") as any;
-    expect(detectPlatformAuthOrCaptchaBlock()).toBeNull();
+    expect(detectPlatformBlock("https://shopee.vn/m/ma-giam-gia")).toBeNull();
+    expect(detectPlatformBlock("https://www.lazada.vn/voucher")).toBeNull();
   });
 });

@@ -32,20 +32,29 @@ describe("Batch 1.2: DOM Isolation & Security", () => {
     overlayEl.remove();
   });
 
-  it("C5: content.css utility classes are strictly scoped to DealHunter containers", () => {
-    const cssPath = path.resolve(__dirname, "../../../dist/content.css");
-    if (!fs.existsSync(cssPath)) {
-      // In case build hasn't run yet in dev, skip or check dist
-      return;
-    }
-    const css = fs.readFileSync(cssPath, "utf-8");
+  it("C5: content.css cannot affect the page: every rule is scoped to DealHunter's own UI", async () => {
+    // Built from source with the content Tailwind config (same as vite.content.config.ts)
+    const { default: postcss } = await import("postcss");
+    const { default: tailwindcss } = await import("tailwindcss");
+    const root = path.resolve(__dirname, "../../..");
+    const source = fs.readFileSync(path.resolve(__dirname, "style.css"), "utf-8");
+    const result = await postcss([tailwindcss({ config: path.join(root, "tailwind.content.config.js") })]).process(source, {
+      from: path.resolve(__dirname, "style.css"),
+    });
 
-    // Must not have global unscoped .hidden { display: none !important; }
-    expect(css).not.toMatch(/^\.hidden\s*\{/m);
-    expect(css).not.toMatch(/\}\s*\.hidden\s*\{/);
+    const ownUi = /#dealhunter-hud-root|#dealhunter-badge-root|\.dh-|#dh-|^body\.dh-picking-active/;
+    const unscoped: string[] = [];
+    result.root.walkRules((rule) => {
+      if (rule.parent?.type === "atrule" && /keyframes/.test((rule.parent as any).name)) return;
+      for (const sel of rule.selectors) if (!ownUi.test(sel.trim())) unscoped.push(sel);
+    });
+    expect(unscoped).toEqual([]);
 
-    // Must have scoped selector prefix
-    expect(css).toContain(":is(#root,#dealhunter-hud-root,#dealhunter-badge-root,.dh-root) .hidden");
-    expect(css).toContain(":is(#root,#dealhunter-hud-root,#dealhunter-badge-root,.dh-root) .flex");
-  });
+    const css = result.css;
+    expect(css).not.toMatch(/#root/); // the mount point of most React sites
+    expect(css).not.toMatch(/\.container\b/);
+    expect(css).toContain(":is(#dealhunter-hud-root, #dealhunter-badge-root, .dh-root) .hidden");
+    // keyframes cannot clash with a page's "spin" / "pulse"
+    for (const m of css.matchAll(/@keyframes\s+([\w-]+)/g)) expect(m[1]).toMatch(/^dh-/);
+  }, 30_000);
 });

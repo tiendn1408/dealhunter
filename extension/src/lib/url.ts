@@ -85,3 +85,14 @@ export function isSiteHost(rawUrl: string, site: string): boolean {
   }
   return host === site || host.endsWith("." + site);
 }
+
+/** Marketplaces DealHunter tracks prices for. */
+const PRICE_SITES = ["shopee.", "lazada.", "tiki.vn", "tiktok.com"];
+
+/**
+ * Whether a page may ask DealHunter for its price context (an API call with the member's token):
+ * only product pages of the marketplaces DealHunter tracks.
+ */
+export function isPriceContextUrl(rawUrl: string): boolean {
+  return isValidHttpUrl(rawUrl) && PRICE_SITES.some((site) => isSiteHost(rawUrl, site));
+}
