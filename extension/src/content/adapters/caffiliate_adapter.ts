@@ -2,6 +2,7 @@ import { MarketplaceAdapter } from "./adapter_interface";
 import { elementResolver } from "../core/element_resolver";
 import { Language, getTranslation } from "../../lib/i18n";
 import { timeSyncClient } from "../core/time_sync_client";
+import { IS_DEV_BUILD } from "../../lib/build_env";
 import {
   CheckInRun,
   appendCheckInLog,
@@ -13,9 +14,12 @@ import {
 import { StrikePlan, planStrike } from "../../lib/strike_plan";
 
 const isCaffiliateHost = (host: string) => host === "caffiliate.vn" || host.endsWith(".caffiliate.vn");
-/** Local Caffiliate Bench simulator (deal-hunter/simulator, `npm run dev`). */
+/** Local Caffiliate Bench simulator (deal-hunter/simulator, `npm run dev`): development builds only. */
 const isSimulatorOrigin = (u: URL) =>
-  u.protocol === "http:" && u.port === "3100" && (u.hostname === "localhost" || u.hostname === "127.0.0.1");
+  IS_DEV_BUILD &&
+  u.protocol === "http:" &&
+  u.port === "3100" &&
+  (u.hostname === "localhost" || u.hostname === "127.0.0.1");
 
 /**
  * Caffiliate daily check-in. Around the drop the main-world helper (public/caffiliate_bridge.js) runs

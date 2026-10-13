@@ -1,3 +1,5 @@
+import { IS_DEV_BUILD } from "./build_env";
+
 export const STORAGE_KEYS = {
   SCHEDULED_TASKS: "dh_scheduled_tasks",
   CLOCK_CALIBRATION: "dh_clock_calibration",
@@ -12,10 +14,10 @@ export const STORAGE_KEYS = {
 
 /** DealHunter web origins allowed to hand their sign-in session to the extension (externally_connectable). */
 export const DEALHUNTER_WEB_ORIGINS = [
-  "http://localhost:3000",
-  "http://localhost:3100",
   "https://dealhunter.vn",
   "https://www.dealhunter.vn",
+  // Local web servers: development builds only (src/lib/build_env.ts)
+  ...(IS_DEV_BUILD ? ["http://localhost:3000", "http://localhost:3100"] : []),
 ];
 
 export const DEFAULT_SETTINGS = {
@@ -26,8 +28,9 @@ export const DEFAULT_SETTINGS = {
   preWarmSeconds: 60, // Open tab 60s in advance
   soundEnabled: true,
   autoCheckoutReady: true,
-  dealHunterApiUrl: "http://localhost:8080/api/v1",
-  dealHunterWebUrl: "http://localhost:3000",
+  // Until the web app sends its own URLs with the session (web_session.ts)
+  dealHunterApiUrl: IS_DEV_BUILD ? "http://localhost:8080/api/v1" : "https://dealhunter.vn/api/v1",
+  dealHunterWebUrl: IS_DEV_BUILD ? "http://localhost:3000" : "https://dealhunter.vn",
 };
 
 export const POPULAR_FLASH_HOURS = [0, 9, 12, 15, 18, 21];

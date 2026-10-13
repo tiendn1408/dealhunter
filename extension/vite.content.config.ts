@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { isDevBuild } from "./vite.config";
 
 // Post-build plugin that converts all rem units in content.css to fixed pixels (1rem = 16px)
 // This guarantees that host websites (Shopee, Caffiliate, Tiki, etc.) with custom root font sizes
@@ -24,7 +25,10 @@ function remToPxPlugin() {
 }
 
 // Config specifically for content script to output a self-contained IIFE bundle
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // public/ (manifest, icons, bridge) is copied by the main build, which also adapts the manifest to
+  // the build mode; copying it again here would overwrite that.
+  publicDir: false,
   plugins: [react(), remToPxPlugin()],
   resolve: {
     alias: {
@@ -33,6 +37,7 @@ export default defineConfig({
   },
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
+    __DH_DEV__: JSON.stringify(isDevBuild(mode)),
   },
   build: {
     outDir: "dist",
@@ -54,4 +59,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

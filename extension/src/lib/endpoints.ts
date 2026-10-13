@@ -1,7 +1,9 @@
 import { DEALHUNTER_WEB_ORIGINS, DEFAULT_SETTINGS } from "./constants";
+import { IS_DEV_BUILD } from "./build_env";
 
 /**
- * DealHunter API / web URLs. Defaults are the local dev servers; in production the DealHunter web app
+ * DealHunter API / web URLs. Defaults are the local dev servers in a development build and dealhunter.vn
+ * in a production build (build_env.ts); the DealHunter web app
  * sends its own URLs with the session message (see web_session.ts). Every URL is validated before use:
  * the access token is only ever sent to a DealHunter API host.
  */
@@ -25,8 +27,9 @@ function parseHttpUrl(value: unknown): URL | null {
   return url;
 }
 
+/** A local API server: accepted by development builds only. */
 function isLocalHost(hostname: string): boolean {
-  return LOCAL_HOSTS.includes(hostname);
+  return IS_DEV_BUILD && LOCAL_HOSTS.includes(hostname);
 }
 
 function isDealHunterHost(hostname: string): boolean {
@@ -35,7 +38,8 @@ function isDealHunterHost(hostname: string): boolean {
 
 /**
  * The API base URL (e.g. "https://api.dealhunter.vn/api/v1") normalized without a trailing slash, or null
- * when it is not http(s) on an allowed host: localhost (dev), or dealhunter.vn / *.dealhunter.vn over https.
+ * when it is not http(s) on an allowed host: localhost (development builds only), or dealhunter.vn /
+ * *.dealhunter.vn over https.
  * Query strings and fragments are rejected (they would corrupt every request path).
  */
 export function validateApiUrl(value: unknown): string | null {
@@ -60,7 +64,7 @@ export function validateWebUrl(value: unknown, senderOrigin?: string): string | 
   return origin;
 }
 
-/** Stored URLs re-validated on every read; anything invalid falls back to the dev defaults. */
+/** Stored URLs re-validated on every read; anything invalid falls back to the build's defaults. */
 export function resolveEndpoints(stored: { dealHunterApiUrl?: unknown; dealHunterWebUrl?: unknown }): DealHunterEndpoints {
   return {
     apiUrl: validateApiUrl(stored.dealHunterApiUrl) ?? DEFAULT_SETTINGS.dealHunterApiUrl,
