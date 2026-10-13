@@ -1,6 +1,7 @@
 export type Language = "en" | "vi";
 
 const en = {
+  homeNextHunt: (time: string, name: string) => `Next hunt ${time} · ${name}`,
   scheduleEditTitle: "Edit hunt",
   scheduleSaveChanges: "Save changes",
   scheduleRepick: "Pick the button again on its page",
@@ -30,7 +31,7 @@ const en = {
   scheduleChooseButton: "Button to grab",
   newScheduleCta: "Schedule a saved button",
   clockRetry: "Try again",
-  clockFailed: "Using your computer's time",
+  clockFailed: "Using your computer's clock (this site gives no time)",
   clockChecking: "Syncing the time...",
   clockReady: (domain: string) => `Time synced with ${domain}`,
   onboardingDismiss: "Got it",
@@ -274,6 +275,7 @@ type DeepStringify<T> = {
 type TranslationCatalog = DeepStringify<typeof en>;
 
 const vi: TranslationCatalog = {
+  homeNextHunt: (time: string, name: string) => `Lịch kế tiếp ${time} · ${name}`,
   scheduleEditTitle: "Sửa lịch săn",
   scheduleSaveChanges: "Lưu thay đổi",
   scheduleRepick: "Chọn lại nút trên trang",
@@ -303,7 +305,7 @@ const vi: TranslationCatalog = {
   scheduleChooseButton: "Nút cần săn",
   newScheduleCta: "Hẹn giờ cho nút đã lưu",
   clockRetry: "Thử lại",
-  clockFailed: "Đang dùng giờ máy tính",
+  clockFailed: "Dùng giờ máy tính (trang không báo giờ)",
   clockChecking: "Đang canh giờ...",
   clockReady: (domain: string) => `Đã canh giờ theo ${domain}`,
   onboardingDismiss: "Đã hiểu",

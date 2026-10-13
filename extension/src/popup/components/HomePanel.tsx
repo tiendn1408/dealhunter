@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Crosshair, PanelRightOpen, ExternalLink, Sparkles, X, CalendarClock, Repeat, ChevronRight, Globe } from "lucide-react";
+import { Crosshair, PanelRightOpen, ExternalLink, Sparkles, X, CalendarClock, ChevronRight, Globe } from "lucide-react";
 import { ScheduledTask, SavedPageTarget } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { POPULAR_SHOPPING_HUBS, STORAGE_KEYS } from "../../lib/constants";
@@ -98,7 +98,7 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
     .filter(isUpcoming)
     .sort((a, b) => (a.targetAt ?? Infinity) - (b.targetAt ?? Infinity));
   const pageTask = onWeb ? upcoming.find((task) => isSamePageUrl(task.targetUrl, activeUrl)) : undefined;
-  const others = upcoming.filter((task) => task !== pageTask).slice(0, 3);
+  const others = upcoming.filter((task) => task !== pageTask);
 
   return (
     <div className="space-y-3">
@@ -233,44 +233,22 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
 
       {onWeb && <ClockStatus lang={lang} activeUrl={activeUrl} activeDomain={activeDomain} />}
 
-      {others.length > 0 && (
-        <section>
-          <div className="mb-1.5 flex items-center justify-between px-1">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{t.homeUpcoming}</h3>
-            <button type="button" onClick={onSeeAllHunts} className="flex items-center gap-0.5 text-[11px] font-semibold text-emerald-300 hover:underline">
-              {t.homeSeeAll}
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-          <ul className="space-y-1.5">
-            {others.map((task) => (
-              <li key={task.id} className="flex items-center gap-2.5 rounded-xl bg-white/[0.03] px-3 py-2 ring-1 ring-white/[0.06]">
-                <span className="font-mono text-[12px] font-bold text-emerald-300">{taskTime(task).slice(0, 5)}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] text-slate-200">{taskButtonName(task, t.targetButtonDefault)}</span>
-                  <span className="block truncate text-[10px] text-slate-500">
-                    {(() => {
-                      try {
-                        return new URL(task.targetUrl).hostname.replace(/^www\./, "");
-                      } catch {
-                        return "";
-                      }
-                    })()}
-                    {task.isDaily && (
-                      <span className="ml-1 inline-flex items-center gap-0.5 text-emerald-400/80">
-                        <Repeat className="h-2.5 w-2.5" />
-                        {t.dailyScheduleBadge}
-                      </span>
-                    )}
-                  </span>
-                </span>
-                {task.targetAt && (
-                  <span className="shrink-0 text-[11px] text-slate-400">{t.homeTimeLeft(formatTimeLeft(task.targetAt - now, t))}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
+      {/* The next hunt elsewhere, in one line (the full list is the "My hunts" tab) */}
+      {others[0] && (
+        <button
+          type="button"
+          onClick={onSeeAllHunts}
+          className="flex w-full items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-2.5 text-left ring-1 ring-white/[0.06] transition hover:bg-white/[0.06]"
+        >
+          <CalendarClock className="h-4 w-4 shrink-0 text-emerald-400" />
+          <span className="min-w-0 flex-1 truncate text-[12px] text-slate-300">
+            {t.homeNextHunt(taskTime(others[0]).slice(0, 5), taskButtonName(others[0], t.targetButtonDefault))}
+          </span>
+          {others[0].targetAt && (
+            <span className="shrink-0 text-[11px] text-slate-500">{t.homeTimeLeft(formatTimeLeft(others[0].targetAt - now, t))}</span>
+          )}
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+        </button>
       )}
     </div>
   );

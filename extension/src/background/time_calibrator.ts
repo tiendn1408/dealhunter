@@ -38,6 +38,19 @@ export function estimateOffsetFromProbes(probes: ClockProbe[]): { offsetMs: numb
   return { offsetMs: Math.round(median.offset), errorMs: Math.round(median.error) };
 }
 
+/** Time a stale cached response cannot have: the server second stopped moving or is far off. */
+const STALE_OFFSET_MS = 10 * 60 * 1000;
+
+/**
+ * The Date header does not follow the clock: far from this computer's time (more than 10 minutes:
+ * a computer is never that wrong in practice), or still the same second after more than 2 seconds.
+ */
+export function isStaleServerTime(previous: ClockProbe[], next: ClockProbe): boolean {
+  if (Math.abs(next.serverSecondMs - next.receivedAt) > STALE_OFFSET_MS) return true;
+  const first = previous[0];
+  return Boolean(first && next.serverSecondMs === first.serverSecondMs && next.receivedAt - first.receivedAt > 2000);
+}
+
 export class TimeCalibrator {
   /** One calibration per site at a time: concurrent callers (tab focus, popup, alarm) share it. */
   private inFlight = new Map<string, Promise<ClockCalibration>>();
@@ -80,11 +93,22 @@ export class TimeCalibrator {
     let seen = 0;
     let consecutiveFailures = 0;
 
+    let switchedToPage = false;
+
     while (Date.now() < deadline && seen < boundaries) {
       try {
         const p = await this.probe(activeUrl);
         if (p) {
           consecutiveFailures = 0;
+          // A file served from a CDN cache carries the time it was cached, not the current time
+          // (e.g. Google's favicon). Then ask the site's own home page (same site, never another).
+          if (!switchedToPage && isStaleServerTime(probes, p)) {
+            switchedToPage = true;
+            activeUrl = `${new URL(activeUrl).origin}/`;
+            probes.length = 0;
+            seen = 0;
+            continue;
+          }
           const last = probes[probes.length - 1];
           if (last && p.serverSecondMs === last.serverSecondMs + 1000) seen++;
           probes.push(p);

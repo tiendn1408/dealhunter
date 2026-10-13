@@ -50,3 +50,37 @@ describe("TimeCalibrator.calibrate", () => {
     expect(result.errorMs).toBe(1000);
   });
 });
+
+describe("a site whose favicon comes from a CDN cache", () => {
+  beforeEach(() => {
+    (globalThis as any).chrome = {
+      storage: { local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) } },
+    };
+  });
+
+  it("is measured with its home page when the favicon's time is days old", async () => {
+    const stale = new Date("2026-10-07T05:25:47Z").toUTCString(); // cached copy
+    const urls: string[] = [];
+    globalThis.fetch = vi.fn(async (url: string) => {
+      urls.push(url);
+      const date = url.endsWith("/favicon.ico") ? stale : new Date().toUTCString();
+      return { headers: { get: (h: string) => (h === "Date" ? date : null) } };
+    }) as any;
+
+    const result = await new TimeCalibrator().calibrate(1, 3000, "https://www.google.com/favicon.ico");
+    expect(urls[0]).toBe("https://www.google.com/favicon.ico");
+    expect(urls.some((u) => u === "https://www.google.com/")).toBe(true);
+    expect(urls.every((u) => u.startsWith("https://www.google.com/"))).toBe(true); // never another site
+    expect(result.calibrated).toBe(true);
+  }, 10_000);
+
+  it("recognises a frozen or far-off server time", async () => {
+    const { isStaleServerTime } = await import("./time_calibrator");
+    const now = Date.now();
+    const sec = Math.floor(now / 1000) * 1000;
+    expect(isStaleServerTime([], { sentAt: now, receivedAt: now, serverSecondMs: sec - 4 * 86400e3 })).toBe(true);
+    const first = { sentAt: now, receivedAt: now, serverSecondMs: sec };
+    expect(isStaleServerTime([first], { sentAt: now + 2500, receivedAt: now + 2500, serverSecondMs: sec })).toBe(true);
+    expect(isStaleServerTime([first], { sentAt: now + 900, receivedAt: now + 900, serverSecondMs: sec })).toBe(false);
+  });
+});

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { CircleCheck, Loader2, CircleAlert } from "lucide-react";
+import { CircleCheck, Loader2, Clock } from "lucide-react";
 import { ClockCalibration } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
@@ -85,9 +85,9 @@ export const ClockStatus: React.FC<ClockStatusProps> = ({ lang, activeUrl, activ
       )}
       {state === "failed" && (
         <>
-          <CircleAlert className="h-3.5 w-3.5 text-amber-400" />
-          <span className="flex-1 text-slate-400">{t.clockFailed}</span>
-          <button type="button" onClick={measure} className="shrink-0 font-semibold text-emerald-300 hover:underline">
+          <Clock className="h-3.5 w-3.5 text-slate-500" />
+          <span className="flex-1 truncate text-slate-400">{t.clockFailed}</span>
+          <button type="button" onClick={measure} className="shrink-0 text-slate-400 hover:text-emerald-300 hover:underline">
             {t.clockRetry}
           </button>
         </>

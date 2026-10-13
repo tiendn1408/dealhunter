@@ -3,7 +3,7 @@ import { storage } from "../lib/storage";
 import { timeCalibrator } from "./time_calibrator";
 import { MESSAGE_ACTIONS } from "../lib/constants";
 import { nextExactDropAt } from "../lib/drop_time";
-import { isSamePageUrl } from "../lib/url";
+import { isSamePageUrl, normalizePageUrl } from "../lib/url";
 
 /** Outcomes after which a daily task moves on to its next drop. */
 const ROLL_OVER_STATUSES = new Set<ScheduledTask["status"]>(["completed", "failed", "missed", "cancelled"]);
@@ -148,7 +148,22 @@ export class TaskScheduler {
    */
   async restorePendingAlarms(): Promise<void> {
     const now = Date.now();
+    const removed: string[] = [];
     const toAlarm = await storage.mutateTasks((tasks) => {
+      // Waiting hunts of the same page at the same time are one hunt: keep the oldest
+      const seenKeys = new Set<string>();
+      for (let i = 0; i < tasks.length; i++) {
+        const x = tasks[i];
+        if (x.status !== "pending") continue;
+        // Only true copies (a daily and a one-off hunt at the same time are both kept)
+        const key = `${normalizePageUrl(x.targetUrl)}|${x.targetHour}:${x.targetMinute}:${x.targetSecond ?? 0}|${x.isDaily ? "daily" : "once"}`;
+        if (seenKeys.has(key)) {
+          removed.push(x.id);
+          tasks.splice(i--, 1);
+        } else {
+          seenKeys.add(key);
+        }
+      }
       const out: ScheduledTask[] = [];
       for (const task of tasks) {
         if (task.status !== "pending" && task.status !== "running") continue;
@@ -175,6 +190,7 @@ export class TaskScheduler {
       return out;
     });
 
+    for (const id of removed) await chrome.alarms.clear(`dh_task_${id}`);
     for (const task of toAlarm) {
       const name = `dh_task_${task.id}`;
       const existing = typeof chrome.alarms.get === "function" ? await chrome.alarms.get(name) : undefined;

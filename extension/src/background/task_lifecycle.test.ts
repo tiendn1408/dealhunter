@@ -213,3 +213,20 @@ describe("scheduling the same hunt again / editing a hunt", () => {
     expect(alarms["dh_task_E"]?.when).toBeLessThanOrEqual(after.targetAt!);
   });
 });
+
+describe("hunts scheduled twice before the duplicate guard", () => {
+  it("are merged into one on the next check", async () => {
+    const base = task("D1", { targetHour: 0, targetMinute: 0, targetSecond: 0, targetAt: Date.now() + HOUR });
+    localStore[STORAGE_KEYS.SCHEDULED_TASKS] = [
+      base,
+      { ...base, id: "D2" },
+      { ...base, id: "D3", targetUrl: base.targetUrl + "?utm_source=fb" },
+      { ...base, id: "OTHER", targetHour: 12 },
+      { ...base, id: "DONE", status: "completed" },
+    ];
+    alarms["dh_task_D2"] = { when: 1 };
+    await taskScheduler.restorePendingAlarms();
+    expect(tasks().map((x) => x.id).sort()).toEqual(["D1", "DONE", "OTHER"]);
+    expect(alarms["dh_task_D2"]).toBeUndefined();
+  });
+});
