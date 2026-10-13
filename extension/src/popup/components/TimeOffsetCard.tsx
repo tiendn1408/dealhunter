@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Clock, RefreshCw } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { CircleCheck, Loader2, CircleAlert } from "lucide-react";
 import { ClockCalibration } from "../../lib/types";
 import { storage } from "../../lib/storage";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
@@ -20,134 +20,77 @@ export async function isHuntedPage(url: string): Promise<boolean> {
   return tasks.some((t) => (t.status === "pending" || t.status === "running") && isSamePageUrl(t.targetUrl, url));
 }
 
-interface TimeOffsetCardProps {
-  lang?: Language;
-  activeDomain?: string;
-  activeUrl?: string;
+interface ClockStatusProps {
+  lang: Language;
+  activeUrl: string;
+  activeDomain: string;
 }
 
-export const TimeOffsetCard: React.FC<TimeOffsetCardProps> = ({
-  lang = "en",
-  activeDomain,
-  activeUrl,
-}) => {
-  const [calibration, setCalibration] = useState<ClockCalibration | null>(null);
-  const [loading, setLoading] = useState(false);
+/**
+ * One plain-language line about the clock, only on a page that is hunted (decision 2: other pages
+ * are never probed and need no clock talk). Offsets and round trips are internal details.
+ */
+export const ClockStatus: React.FC<ClockStatusProps> = ({ lang, activeUrl, activeDomain }) => {
   const t = getTranslation(lang);
+  const [state, setState] = useState<"hidden" | "checking" | "ready" | "failed">("hidden");
+  const domain = activeDomain.replace(/^www\./, "").toLowerCase();
 
-  const cleanDomain = (activeDomain || "").replace(/^www\./, "").toLowerCase();
-
-  const handleRefresh = async () => {
-    setLoading(true);
+  const measure = async () => {
+    setState("checking");
     try {
-      let pingUrl: string | undefined;
-      if (activeUrl && (activeUrl.startsWith("http://") || activeUrl.startsWith("https://"))) {
-        try {
-          pingUrl = `${new URL(activeUrl).origin}/favicon.ico`;
-        } catch {
-          // ignore
-        }
-      }
       const res = await chrome.runtime.sendMessage({
         action: MESSAGE_ACTIONS.CALIBRATE_TIME,
-        samples: 5,
-        targetUrl: pingUrl,
+        samples: 3,
+        targetUrl: `${new URL(activeUrl).origin}/favicon.ico`,
       });
-      if (res?.calibration) setCalibration(res.calibration);
-    } finally {
-      setLoading(false);
+      setState(res?.calibration?.calibrated ? "ready" : "failed");
+    } catch {
+      setState("failed");
     }
   };
 
-  // Decision 2: the clock is measured only for a page that is hunted. Opening the popup on such a
-  // page (saved button or scheduled task) measures it when needed; on any other page nothing is
-  // probed and the card just says it will be measured when hunting there.
-  const [pageIsHunted, setPageIsHunted] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    setPageIsHunted(false);
-    if (!cleanDomain) {
-      setCalibration(null);
-      return;
-    }
+    setState("hidden");
+    if (!domain || !activeUrl) return;
     (async () => {
       const [cal, hunted] = await Promise.all([
-        storage.getCalibration(cleanDomain).catch(() => null),
-        activeUrl ? isHuntedPage(activeUrl).catch(() => false) : Promise.resolve(false),
+        storage.getCalibration(domain).catch(() => null),
+        isHuntedPage(activeUrl).catch(() => false),
       ]);
-      if (cancelled) return;
-      setCalibration(cal);
-      setPageIsHunted(hunted);
-      if (hunted && shouldAutoSync(cal, Date.now())) handleRefresh();
+      if (cancelled || !hunted) return;
+      if (shouldAutoSync(cal, Date.now())) measure();
+      else setState("ready");
     })();
     return () => {
       cancelled = true;
     };
-  }, [cleanDomain, activeUrl]);
+  }, [domain, activeUrl]);
 
-  const synced = !!calibration?.calibrated;
-  const offset = calibration?.offsetMs ?? 0;
-  const ageMin = calibration ? Math.round((Date.now() - calibration.lastCalibratedAt) / 60000) : null;
-  // Never measured and not hunted here: nothing is wrong, it is simply not needed yet
-  const idle = !calibration && !pageIsHunted && !loading;
-  const syncAgeText = idle
-    ? t.syncWhenHunting
-    : ageMin === null
-      ? t.neverSynced
-      : ageMin === 0
-      ? t.syncedJustNow
-      : t.syncedMinAgo(ageMin);
-
-  const targetHostName = activeDomain || calibration?.serverHost || "";
-  const offsetLabel = t.offsetVsDomain ? t.offsetVsDomain(targetHostName) : t.offsetVsShopee;
-
+  if (state === "hidden") return null;
   return (
-    <section className="rounded-2xl bg-white/[0.03] p-3.5 ring-1 ring-white/10">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20">
-            <Clock className="h-3.5 w-3.5" />
-          </div>
-          <div className="leading-tight">
-            <h2 className="text-[13px] font-semibold text-slate-100">{t.clockSyncTitle}</h2>
-            <p className="text-[10px] text-slate-400">{syncAgeText}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={handleRefresh}
-          disabled={loading}
-          className="flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-slate-200 ring-1 ring-white/15 transition hover:bg-white/15 disabled:opacity-60"
-        >
-          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-          {loading ? t.syncing : t.resync}
-        </button>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="rounded-xl bg-black/40 px-3 py-2 ring-1 ring-white/5">
-          <span className="block truncate text-[10px] font-medium text-slate-400" title={offsetLabel}>
-            {offsetLabel}
-          </span>
-          {synced ? (
-            <span className="font-mono text-sm font-bold tabular-nums text-emerald-400">
-              {offset >= 0 ? "+" : ""}
-              {offset} ms
-              <span className="ml-1 text-[10px] font-semibold text-slate-400">±{calibration!.errorMs}</span>
-            </span>
-          ) : idle ? (
-            <span className="text-[12px] font-semibold text-slate-400">{t.notNeededYet}</span>
-          ) : (
-            <span className="text-[12px] font-semibold text-rose-400">{t.notSynced}</span>
-          )}
-        </div>
-        <div className="rounded-xl bg-black/40 px-3 py-2 ring-1 ring-white/5">
-          <span className="block text-[10px] font-medium text-slate-400">{t.roundTrip}</span>
-          <span className="font-mono text-sm font-bold tabular-nums text-slate-200">
-            {calibration ? `${calibration.rttMs} ms` : "—"}
-          </span>
-        </div>
-      </div>
-    </section>
+    <div className="flex items-center gap-1.5 px-1 text-[11px]">
+      {state === "checking" && (
+        <>
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+          <span className="text-slate-400">{t.clockChecking}</span>
+        </>
+      )}
+      {state === "ready" && (
+        <>
+          <CircleCheck className="h-3.5 w-3.5 text-emerald-400" />
+          <span className="text-slate-300">{t.clockReady(domain)}</span>
+        </>
+      )}
+      {state === "failed" && (
+        <>
+          <CircleAlert className="h-3.5 w-3.5 text-amber-400" />
+          <span className="flex-1 text-slate-400">{t.clockFailed}</span>
+          <button type="button" onClick={measure} className="shrink-0 font-semibold text-emerald-300 hover:underline">
+            {t.clockRetry}
+          </button>
+        </>
+      )}
+    </div>
   );
 };

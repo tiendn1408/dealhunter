@@ -1,8 +1,10 @@
-import React from "react";
-import { Trash2, Repeat, Globe, Crosshair, ExternalLink, CheckCircle2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Trash2, Repeat, ExternalLink } from "lucide-react";
 import { ScheduledTask } from "../../lib/types";
 import { cancelTaskViaBackground } from "../../lib/scheduler_client";
+import { formatTimeLeft } from "../../lib/drop_time";
 import { Language, getTranslation } from "../../lib/i18n";
+import { taskButtonName } from "./HomePanel";
 
 interface TaskListProps {
   tasks: ScheduledTask[];
@@ -10,46 +12,51 @@ interface TaskListProps {
   lang?: Language;
 }
 
-function parseUrlDisplay(rawUrl: string): { host: string; path: string } {
-  if (!rawUrl) return { host: "web", path: "" };
+const pad = (n: number) => String(n).padStart(2, "0");
+
+function hostOf(rawUrl: string): string {
   try {
-    const u = new URL(rawUrl);
-    const host = u.hostname.replace(/^www\./, "");
-    const path = u.pathname === "/" ? "" : u.pathname;
-    return { host, path };
+    return new URL(rawUrl).hostname.replace(/^www\./, "");
   } catch {
-    return { host: rawUrl.slice(0, 30), path: "" };
+    return rawUrl.slice(0, 30);
   }
 }
 
-function extractTargetName(task: ScheduledTask, fallback: string): string {
-  if (task.descriptor?.initialText?.trim()) {
-    return task.descriptor.initialText.trim();
-  }
-  if (task.label) {
-    const stripped = task.label.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*·\s*/, "").trim();
-    if (stripped) return stripped;
-  }
-  return fallback;
+const STATUS_STYLE: Record<ScheduledTask["status"], string> = {
+  pending: "bg-amber-500/10 text-amber-300 ring-amber-500/30",
+  running: "bg-teal-500/10 text-teal-300 ring-teal-500/30",
+  completed: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30",
+  failed: "bg-rose-500/10 text-rose-300 ring-rose-500/30",
+  cancelled: "bg-slate-500/10 text-slate-400 ring-slate-500/20",
+  missed: "bg-slate-500/10 text-slate-400 ring-slate-500/20",
+};
+
+/** Upcoming hunts first (soonest on top), then finished ones (latest first). */
+function ordered(tasks: ScheduledTask[]): ScheduledTask[] {
+  const upcoming = tasks.filter((x) => x.status === "pending" || x.status === "running");
+  const past = tasks.filter((x) => !upcoming.includes(x));
+  upcoming.sort((a, b) => (a.targetAt ?? Infinity) - (b.targetAt ?? Infinity));
+  past.sort((a, b) => (b.lastResult?.finishedAt ?? b.createdAt) - (a.lastResult?.finishedAt ?? a.createdAt));
+  return [...upcoming, ...past];
 }
 
 export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang = "en" }) => {
   const t = getTranslation(lang);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   if (tasks.length === 0) {
     return (
-      <div className="flex flex-col h-full min-h-0">
-        <div className="shrink-0 flex items-center justify-between text-xs font-semibold text-slate-300 px-1 pb-2">
-          <span>{t.scheduledHunts(0)}</span>
-        </div>
-        <div className="flex-1 flex items-center justify-center border border-dashed border-white/10 rounded-2xl bg-white/[0.02] text-slate-500 text-xs py-8">
-          {t.noTasks}
-        </div>
+      <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-5 text-center text-[12px] leading-relaxed text-slate-400">
+        {t.noTasks}
       </div>
     );
   }
 
-  const handleDelete = async (id: string) => {
+  const remove = async (id: string) => {
     try {
       await cancelTaskViaBackground(id);
     } catch {
@@ -58,145 +65,63 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onTasksChanged, lang 
     onTasksChanged();
   };
 
-  const handleOpenUrl = (e: React.MouseEvent, url: string) => {
-    e.stopPropagation();
-    if (!url) return;
-    if (typeof chrome !== "undefined" && chrome.tabs) {
-      chrome.tabs.create({ url });
-    } else {
-      window.open(url, "_blank");
-    }
-  };
-
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {/* Fixed Title Header: NEVER scrolls away */}
-      <div className="shrink-0 flex items-center justify-between text-xs font-semibold text-slate-300 px-1 pb-2">
-        <span>{t.scheduledHunts(tasks.length)}</span>
-      </div>
-
-      {/* Scrollable Tasks List */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-2.5 pr-0.5">
-        {tasks.map((task) => {
-          const urlInfo = parseUrlDisplay(task.targetUrl);
-          const hasLockedTarget = Boolean(task.descriptor || task.savedTargetId);
-          const targetName = hasLockedTarget
-            ? extractTargetName(task, t.targetButtonDefault)
-            : t.noTargetOnCurrentPage;
-          const timeStr = `${String(task.targetHour).padStart(2, "0")}:${String(task.targetMinute).padStart(2, "0")}:${String(task.targetSecond ?? 0).padStart(2, "0")}`;
-
-          const statusBadge =
-            task.status === "completed"
-              ? { text: t.status.completed, badge: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30", dot: "bg-emerald-400" }
-              : task.status === "running"
-              ? { text: t.status.running, badge: "bg-teal-500/10 text-teal-300 ring-teal-500/30 ring-1", dot: "bg-teal-400 animate-ping" }
-              : task.status === "failed"
-              ? { text: t.status.failed, badge: "bg-rose-500/10 text-rose-300 ring-rose-500/30", dot: "bg-rose-400" }
-              : task.status === "cancelled" || task.status === "missed"
-              ? { text: t.status[task.status], badge: "bg-slate-500/10 text-slate-400 ring-slate-500/20", dot: "bg-slate-400" }
-              : { text: t.status.pending, badge: "bg-amber-500/10 text-amber-300 ring-amber-500/30", dot: "bg-amber-400" };
-
-          return (
-            <div
-              key={task.id}
-              className="bg-white/[0.03] border border-white/10 hover:border-white/20 rounded-xl p-2.5 shadow-sm space-y-2 transition"
-            >
-              {/* Row 1: Time, Status, Badges & Delete */}
-              <div className="flex items-center justify-between gap-1.5">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="font-mono text-xs font-bold text-emerald-400 shrink-0">
-                    {timeStr}
+    <ul className="space-y-2">
+      {ordered(tasks).map((task) => {
+        const time = `${pad(task.targetHour)}:${pad(task.targetMinute)}:${pad(task.targetSecond ?? 0)}`;
+        const upcoming = task.status === "pending" || task.status === "running";
+        return (
+          <li key={task.id} className="rounded-xl bg-white/[0.03] p-3 ring-1 ring-white/[0.08]">
+            <div className="flex items-start gap-3">
+              <div className="w-[62px] shrink-0">
+                <div className={`font-mono text-[15px] font-bold ${upcoming ? "text-emerald-300" : "text-slate-400"}`}>{time.slice(0, 5)}</div>
+                {task.targetSecond ? <div className="font-mono text-[10px] text-slate-500">:{pad(task.targetSecond)}</div> : null}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-semibold text-slate-100">{taskButtonName(task, t.targetButtonDefault)}</div>
+                <button
+                  type="button"
+                  onClick={() => chrome.tabs.create({ url: task.targetUrl })}
+                  title={t.openTargetUrlTooltip(task.targetUrl)}
+                  className="mt-0.5 flex max-w-full items-center gap-1 text-[11px] text-slate-400 hover:text-emerald-300"
+                >
+                  <span className="truncate">{hostOf(task.targetUrl)}</span>
+                  <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                </button>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${STATUS_STYLE[task.status]}`}>
+                    {t.status[task.status]}
                   </span>
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ring-1 shrink-0 ${statusBadge.badge}`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${statusBadge.dot}`} />
-                    <span className="truncate">{statusBadge.text}</span>
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
                   {task.isDaily && (
-                    <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                    <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
                       <Repeat className="h-2.5 w-2.5" />
                       {t.dailyScheduleBadge}
                     </span>
                   )}
-                  <span
-                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${
-                      task.mode === "full_auto"
-                        ? "bg-indigo-500/15 text-indigo-300 border border-indigo-500/30"
-                        : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                    }`}
-                  >
-                    {task.mode === "full_auto" ? t.fullyAutomatic : t.semiAuto}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(task.id)}
-                    className="text-slate-500 hover:text-rose-400 p-1 rounded-lg transition-colors hover:bg-white/5 shrink-0"
-                    title={t.deleteTaskTooltip}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Row 2: Target Page / Domain (Clickable to open URL) */}
-              <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-white/5 text-[10px]">
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <Globe className="h-3 w-3 text-emerald-400/80 shrink-0" />
-                  <span className="text-slate-400 shrink-0">{t.taskTargetPage}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => handleOpenUrl(e, task.targetUrl)}
-                    title={t.openTargetUrlTooltip(task.targetUrl)}
-                    className="group flex items-center gap-1 min-w-0 font-mono text-[11px] font-bold text-slate-200 hover:text-emerald-300 transition text-left"
-                  >
-                    <span className="truncate">{urlInfo.host}{urlInfo.path}</span>
-                    <ExternalLink className="h-2.5 w-2.5 text-slate-500 group-hover:text-emerald-300 shrink-0" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Row 3: Target Button / Keyword / Lock Status */}
-              <div className="flex items-center justify-between gap-1.5 text-[10px]">
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <Crosshair className="h-3 w-3 text-teal-400/80 shrink-0" />
-                  <span className="text-slate-400 shrink-0">{t.taskTargetButton}</span>
-                  <span className="font-semibold text-slate-200 truncate" title={targetName}>
-                    {targetName}
-                  </span>
-                  {task.keyword && (
-                    <span className="text-slate-400 truncate">
-                      ({t.filterPrefix} "{task.keyword}")
-                    </span>
+                  {upcoming && task.targetAt && (
+                    <span className="text-[10px] text-slate-400">{t.homeTimeLeft(formatTimeLeft(task.targetAt - now, t))}</span>
                   )}
                 </div>
-
-                {hasLockedTarget ? (
-                  <span className="shrink-0 flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-300 ring-1 ring-emerald-500/30">
-                    <CheckCircle2 className="h-2.5 w-2.5" />
-                    {t.locked}
-                  </span>
-                ) : (
-                  <span className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-300 ring-1 ring-amber-500/30">
-                    {t.opensAtDrop}
-                  </span>
+                {task.lastResult && (
+                  <p className="mt-1.5 text-[11px] leading-snug text-slate-400">
+                    <span className="text-slate-500">{t.taskLastResult} </span>
+                    {t.outcome[task.lastResult.result as keyof typeof t.outcome] ?? task.lastResult.detail}
+                  </p>
                 )}
               </div>
-
-              {/* Row 4: Results (if any) */}
-              {task.lastResult && (
-                <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[9px] font-mono text-slate-400">
-                  <span className="truncate">{task.lastResult.detail}</span>
-                  <span className="shrink-0 text-slate-500">({t.clicksLabel(task.lastResult.clicks)})</span>
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => remove(task.id)}
+                title={t.deleteTaskTooltip}
+                aria-label={t.deleteTaskTooltip}
+                className="shrink-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-white/5 hover:text-rose-400"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             </div>
-          );
-        })}
-      </div>
-    </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 };

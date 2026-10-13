@@ -15,6 +15,11 @@ function enqueueTaskMutation<T>(mutation: () => Promise<T>): Promise<T> {
   return next;
 }
 
+function browserLanguage(): "en" | "vi" {
+  const langs = typeof navigator !== "undefined" ? [navigator.language, ...(navigator.languages || [])] : [];
+  return langs.some((l) => typeof l === "string" && l.toLowerCase().startsWith("vi")) ? "vi" : "en";
+}
+
 export const storage = {
   async getTasks(): Promise<ScheduledTask[]> {
     const data = await chrome.storage.local.get(STORAGE_KEYS.SCHEDULED_TASKS);
@@ -151,9 +156,12 @@ export const storage = {
     await chrome.storage.local.set({ [STORAGE_KEYS.LAST_WEB_URL]: webUrl });
   },
 
+  /** The chosen language; before the user picks one, the browser's (Vietnamese browser -> "vi"). */
   async getLanguage(): Promise<"en" | "vi"> {
-    const settings = await this.getSettings();
-    return settings.language || "en";
+    const data = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
+    const chosen = data[STORAGE_KEYS.SETTINGS]?.language;
+    if (chosen === "en" || chosen === "vi") return chosen;
+    return browserLanguage();
   },
 
   async setLanguage(language: "en" | "vi"): Promise<void> {

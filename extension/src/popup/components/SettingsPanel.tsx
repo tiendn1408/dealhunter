@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, ChevronRight, ExternalLink, Languages, ScrollText, Trash2, UserRound, HardDrive, Info } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, Languages, ScrollText, Trash2, UserRound, HardDrive, Info, Sparkles } from "lucide-react";
 import { Language, getTranslation } from "../../lib/i18n";
 import { STORAGE_KEYS } from "../../lib/constants";
 import { IS_DEV_BUILD } from "../../lib/build_env";
@@ -140,6 +140,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ lang, onLangChange
             <span className="block text-[12px] font-semibold text-slate-100">{t.checkInLogTitle}</span>
             <span className="block text-[10px] text-slate-500">{t.settingsLogCount(logCount)}</span>
           </span>
+        </span>
+        <ChevronRight className="h-4 w-4 text-slate-500" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          chrome.storage.local.remove(STORAGE_KEYS.ONBOARDING_DONE).catch(() => {});
+          onBack();
+        }}
+        className="flex w-full items-center justify-between rounded-2xl bg-white/[0.03] p-3 text-left ring-1 ring-white/10 transition hover:bg-white/[0.06]"
+      >
+        <span className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-emerald-400" />
+          <span className="text-[12px] font-semibold text-slate-100">{t.settingsShowGuide}</span>
         </span>
         <ChevronRight className="h-4 w-4 text-slate-500" />
       </button>

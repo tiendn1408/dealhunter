@@ -93,3 +93,17 @@ export function parseTimeString(timeStr: string): ParsedTimeResult {
   };
 }
 
+
+/** Time left in plain words: "5 giờ 12 phút", "12 phút 30 giây", "30 giây". */
+export function formatTimeLeft(
+  ms: number,
+  t: { leftHours: (h: number, m: number) => string; leftMinutes: (m: number, s: number) => string; leftSeconds: (s: number) => string }
+): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return t.leftHours(h, m);
+  if (m > 0) return t.leftMinutes(m, s);
+  return t.leftSeconds(s);
+}

@@ -481,6 +481,12 @@
   color: #f1f5f9 !important;
 }
 
+/* A secondary button sized to its label (next to other content in a row) */
+#dealhunter-hud-root .dh-sub-btn.dh-sub-btn-auto {
+  width: auto !important;
+  padding: 0 10px !important;
+}
+
 #dealhunter-hud-root .dh-sub-btn-danger {
   border-color: rgba(244, 63, 94, 0.25) !important;
   background-color: rgba(244, 63, 94, 0.08) !important;
@@ -562,6 +568,14 @@
 #dealhunter-hud-root .dh-arm-btn-rose:hover {
   background-color: #fb7185 !important;
   background-image: linear-gradient(to right, #fb7185, #f43f5e) !important;
+}
+
+#dealhunter-hud-root .dh-arm-btn-disabled {
+  background-color: #1e293b !important;
+  background-image: none !important;
+  color: #94a3b8 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
 }
 
 /* Secondary Manual Test Click button: sleek ghost button */

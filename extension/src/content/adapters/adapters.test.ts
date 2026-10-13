@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { getAdapterForUrl, ADAPTERS, CaffiliateAdapter } from "./index";
 import { isECommerceVoucherOrDealPage, isECommerceProductPage } from "../index";
 import { detectPlatformBlock } from "../platform_block";
+import { getTranslation } from "../../lib/i18n";
 
 describe("Marketplace Adapters & Multi-Platform Registry", () => {
   beforeEach(() => {
@@ -65,7 +66,7 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     // Trigger via data-dh-turnstile-challenge attribute
     document.documentElement.setAttribute("data-dh-turnstile-challenge", "active");
     expect(adapter.isTurnstilePending()).toBe(true);
-    expect(adapter.getStatusOverride()).toContain("Cloudflare");
+    expect(adapter.getStatusOverride()).toBe(getTranslation("en").turnstileChallengePrompt);
     document.documentElement.removeAttribute("data-dh-turnstile-challenge");
     expect(adapter.isTurnstilePending()).toBe(false);
 
@@ -76,9 +77,9 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
       return origQuery(sel);
     });
     expect(adapter.isTurnstilePending()).toBe(true);
-    expect(adapter.getStatusOverride()).toContain("Cloudflare");
-    expect(adapter.getStatusOverride("vi")).toContain("Xác minh bảo mật Cloudflare");
-    expect(adapter.getStatusOverride("en")).toContain("Cloudflare Security Verification");
+    expect(adapter.getStatusOverride()).toBe(getTranslation("en").turnstileChallengePrompt);
+    expect(adapter.getStatusOverride("vi")).toBe(getTranslation("vi").turnstileChallengePrompt);
+    expect(adapter.getStatusOverride("en")).toBe(getTranslation("en").turnstileChallengePrompt);
     spy.mockRestore();
     expect(adapter.isTurnstilePending()).toBe(false);
   });

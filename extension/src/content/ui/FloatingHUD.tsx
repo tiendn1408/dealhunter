@@ -6,7 +6,7 @@ import { elementResolver, UniversalTargetDescriptor } from "../core/element_reso
 import { HuntOutcome } from "../core/hunt_engine";
 import { huntCoordinator, ARMED_SESSION_KEY } from "../core/hunt_coordinator";
 import { targetDiagnostics } from "../core/target_diagnostics";
-import { formatVN, nextDropAt, nextExactDropAt, formatCountdown, parseTimeString } from "../../lib/drop_time";
+import { formatVN, nextDropAt, nextExactDropAt, formatCountdown, parseTimeString, formatTimeLeft } from "../../lib/drop_time";
 import { storage } from "../../lib/storage";
 import { Language, getTranslation } from "../../lib/i18n";
 import { MESSAGE_ACTIONS } from "../../lib/constants";
@@ -25,19 +25,18 @@ import {
   X,
   Minus,
   Maximize2,
-  RefreshCw,
   ScanSearch,
   MousePointerClick,
   CircleCheck,
   CircleAlert,
   CircleX,
-  Languages,
-  GripHorizontal,
-  Bookmark,
   BookmarkCheck,
   Trash2,
   CalendarClock,
   Repeat,
+  Check,
+  ChevronDown,
+  Square,
 } from "lucide-react";
 
 interface FloatingHUDProps {
@@ -60,21 +59,12 @@ const TONE_STYLES: Record<Tone, { dot: string; text: string; ring: string }> = {
   error: { dot: "bg-rose-400", text: "text-rose-200", ring: "ring-rose-500/40" },
 };
 
+/** The chosen button as the user sees it: its text (or label); "" when it has none. */
 const formatElementIdentifier = (el: HTMLElement, desc?: UniversalTargetDescriptor | null): string => {
-  const text = (desc?.initialText || el.innerText || el.getAttribute("aria-label") || el.getAttribute("title") || "").trim();
-  if (text) {
-    const clean = text.replace(/\s+/g, " ");
-    return clean.length > 25 ? `"${clean.slice(0, 25)}..."` : `"${clean}"`;
-  }
-  if (desc?.id || el.id) {
-    return `#${desc?.id || el.id}`;
-  }
-  const tag = (desc?.tagName || el.tagName || "button").toLowerCase();
-  const classes = Array.from(el.classList).filter((c) => !c.startsWith("dh-"));
-  if (classes.length > 0) {
-    return `<${tag}.${classes.slice(0, 2).join(".")}>`;
-  }
-  return `<${tag}>`;
+  const text = (desc?.initialText || el.innerText || el.getAttribute("aria-label") || el.getAttribute("title") || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 30 ? `${text.slice(0, 30)}…` : text;
 };
 
 type StatusState = {
@@ -87,9 +77,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const [lang, setLang] = useState<Language>("en");
   const [minimized, setMinimized] = useState(false);
   const [isArmed, setIsArmed] = useState(false);
-  const [serverTimeStr, setServerTimeStr] = useState("--:--:--.--");
-  const [offsetMs, setOffsetMs] = useState(0);
-  const [errorMs, setErrorMs] = useState(1000);
   const [calibrated, setCalibrated] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState<StatusState>({
@@ -109,7 +96,8 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     });
   };
 
-  const [targetSlot, setTargetSlot] = useState<TargetSlot>("quick_10s");
+  const [targetSlot, setTargetSlot] = useState<TargetSlot>("midnight");
+  const [showMore, setShowMore] = useState(false);
   const [customTime, setCustomTime] = useState("00:00:00");
   const [clickProfile, setClickProfile] = useState<ClickProfileMode>("adaptive");
   // Pre-reload before the drop: a plain on/off switch; the lead is measured per page (reload_timing).
@@ -121,6 +109,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     typeof window !== "undefined" && Boolean(getAdapterForUrl(window.location.href)?.shouldDisableReload?.());
   const armedTargetTimestampRef = useRef<number | null>(null);
   const [countdownStr, setCountdownStr] = useState("--:--:--.-");
+  const [msLeft, setMsLeft] = useState(0);
   const [targetWallClock, setTargetWallClock] = useState("--:--:--");
   const [targetSummary, setTargetSummary] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
@@ -146,8 +135,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     }
 
     const unsubscribe = timeSyncClient.onCalibrationChange((cal) => {
-      setOffsetMs(cal.offsetMs);
-      setErrorMs(cal.errorMs ?? 1000);
       setCalibrated(cal.calibrated);
       if (cal.serverHost) {
         setServerDomain(cal.serverHost.replace(/^www\./, ""));
@@ -400,12 +387,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     return () => chrome.storage.onChanged.removeListener(onChange);
   }, []);
 
-  const handleToggleLang = async () => {
-    const nextLang: Language = lang === "en" ? "vi" : "en";
-    setLang(nextLang);
-    await storage.setLanguage(nextLang);
-  };
-
   // Switch target slot & clear any armed timestamp
   const handleSelectSlot = (slot: TargetSlot) => {
     if (isArmed) return;
@@ -450,9 +431,6 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   useEffect(() => {
     const updateClock = () => {
       const now = timeSyncClient.getServerTime();
-      setServerTimeStr(formatVN(now));
-      setOffsetMs(timeSyncClient.getOffset());
-      setErrorMs(timeSyncClient.getErrorMs());
       setCalibrated(timeSyncClient.getIsCalibrated());
       const host = timeSyncClient.getServerHost();
       if (host) setServerDomain(host.replace(/^www\./, ""));
@@ -475,6 +453,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       }
 
       setCountdownStr(formatCountdown(diff));
+      setMsLeft(diff);
 
       // Auto-reconnect target element if disconnected or hydrating after reload / SPA navigation
       if (universalDescRef.current && (!targetElementRef.current || !targetElementRef.current.isConnected)) {
@@ -524,8 +503,10 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     universalDescRef.current = elementResolver.describeUniversal(el);
 
     const desc = universalDescRef.current;
-    setTargetSummary(formatElementIdentifier(el, desc));
-    setIsTargetSaved(false);
+    const name = formatElementIdentifier(el, desc);
+    setTargetSummary(name);
+    // Remembered right away for this page: next visit (and the popup / schedules) know the button
+    void handleSaveTarget(desc, name, true);
 
     // Reset previous hunt outcome in coordinator so old outcome won't linger
     huntCoordinator.resetOutcome();
@@ -540,10 +521,14 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     });
   };
 
-  const handleSaveTarget = async () => {
-    if (!universalDescRef.current || typeof window === "undefined") return;
-    const desc = universalDescRef.current;
-    const name = (targetSummary?.replace(/^\[.*?\]\s*/, "") || desc.initialText || t.targetButtonDefault).trim();
+  const handleSaveTarget = async (
+    descArg?: UniversalTargetDescriptor | null,
+    nameArg?: string,
+    silent = false
+  ) => {
+    const desc = descArg ?? universalDescRef.current;
+    if (!desc || typeof window === "undefined") return;
+    const name = (nameArg || targetSummary || desc.initialText || t.targetButtonDefault).trim() || t.targetButtonDefault;
     const existing = await storage.getSavedTargetForUrl(window.location.href);
     await storage.savePageTarget({
       id: existing ? existing.id : `target_${Date.now()}`,
@@ -558,7 +543,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       updatedAt: Date.now(),
     });
     setIsTargetSaved(true);
-    setStatusMsg({ render: (trans) => trans.targetSavedSuccess, tone: "success" });
+    if (!silent) setStatusMsg({ render: (trans) => trans.targetSavedSuccess, tone: "success" });
   };
 
   const handleForgetSavedTarget = async () => {
@@ -611,12 +596,10 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     const m = date.getUTCMinutes();
     const s = date.getUTCSeconds();
 
-    if (!isTargetSaved) {
-      await handleSaveTarget();
-    }
+    await handleSaveTarget(undefined, undefined, true);
 
     const saved = await storage.getSavedTargetForUrl(window.location.href);
-    const name = (targetSummary?.replace(/^\[.*?\]\s*/, "") || t.targetButtonDefault).trim();
+    const name = (targetSummary || t.targetButtonDefault).trim();
 
     const task: ScheduledTask = {
       id: Math.random().toString(36).substring(2, 9),
@@ -926,6 +909,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
       timestamp = computeTargetTimestamp(now, targetSlot).timestamp;
     }
 
+    void handleSaveTarget(undefined, undefined, true);
     armedTargetTimestampRef.current = timestamp;
     setIsArmed(true);
     setStatusMsg({ render: (trans) => trans.armedWaitingDrop, tone: "armed" });
@@ -1027,58 +1011,65 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   const StatusIcon =
     status.tone === "success" ? CircleCheck : status.tone === "error" ? CircleX : status.tone === "warning" ? CircleAlert : null;
   const hasTarget = Boolean(targetSummary || targetElementRef.current || universalDescRef.current);
+  const timeInvalid = targetSlot === "custom" && !parseTimeString(customTime).valid;
+  const canStart = hasTarget && !timeInvalid;
+  const leftWords = formatTimeLeft(msLeft, t);
+  const buttonName = targetSummary || t.targetButtonDefault;
+  const repeatsTheCards =
+    [t.initialHUDPrompt, t.savedTargetRestored, t.targetLockedInstruction, t.armedWaitingDrop, t.sessionRestoredAfterReload].includes(
+      statusDisplayText
+    ) || (isArmed && status.tone === "armed");
+  const showStatus = Boolean(statusDisplayText) && !repeatsTheCards;
 
   if (minimized) {
     return (
       <button
         type="button"
         onClick={() => setMinimized(false)}
+        aria-label={t.hudExpand}
+        title={t.hudExpand}
         className="dh-minimized-pill flex items-center gap-2.5 rounded-full px-4 py-2 text-white shadow-2xl ring-1 ring-white/10 transition hover:ring-emerald-400/50"
       >
-        <span className={`h-2 w-2 rounded-full ${isArmed ? "bg-amber-400 animate-pulse" : "bg-emerald-400"}`} />
-        <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">{serverTimeStr}</span>
-        {isArmed && <span className="font-mono text-xs tabular-nums text-amber-300">T-{countdownStr}</span>}
+        <img src={DEALHUNTER_LOGO_DATA_URI} alt="" className="h-5 w-5 rounded-md" />
+        {isArmed ? (
+          <>
+            <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+            <span className="text-[12px] font-semibold text-amber-200">{t.homeTimeLeft(leftWords)}</span>
+          </>
+        ) : (
+          <span className="text-[12px] font-semibold text-slate-200">DealHunter</span>
+        )}
         <Maximize2 className="h-3.5 w-3.5 text-slate-400" />
       </button>
     );
   }
 
+  const step = (n: number, done: boolean) => (
+    <span
+      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+        done ? "bg-emerald-500 text-slate-950" : "bg-white/10 text-slate-300"
+      }`}
+    >
+      {done ? <Check className="h-3 w-3" /> : n}
+    </span>
+  );
+
   return (
     <div className="dh-floating-card w-[356px] select-none overflow-hidden rounded-3xl text-slate-100 ring-1 ring-white/10">
-      {/* Draggable Header */}
+      {/* Header: drag to move */}
       <div
         onMouseDown={handleHeaderMouseDown}
+        title={t.dragHudTooltip}
         className="dh-header flex cursor-grab items-center justify-between gap-2 px-3.5 py-2.5 active:cursor-grabbing select-none"
       >
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <img
-            src={DEALHUNTER_LOGO_DATA_URI}
-            alt="DealHunter"
-            className="h-8 w-8 shrink-0 rounded-xl object-cover shadow-lg shadow-emerald-900/50"
-          />
+          <img src={DEALHUNTER_LOGO_DATA_URI} alt="" className="h-8 w-8 shrink-0 rounded-xl object-cover shadow-lg shadow-emerald-900/50" />
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-white">
-              <span className="shrink-0">DealHunter</span>
-              <span title={t.dragHudTooltip} className="cursor-grab">
-                <GripHorizontal className="h-3 w-3 shrink-0 text-slate-500 opacity-60" />
-              </span>
-            </div>
-            <div className="truncate text-[10px] font-medium text-slate-400">
-              {typeof t.hudSubtitle === "function" ? t.hudSubtitle(currentHost) : t.hudSubtitle}
-            </div>
+            <div className="text-[14px] font-bold tracking-tight text-white">DealHunter</div>
+            <div className="truncate text-[11px] font-medium text-slate-400">{t.hudSubtitle(currentHost)}</div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={handleToggleLang}
-            className="dh-header-btn dh-header-btn-lang"
-            title={t.toggleLanguageTooltip(lang === "en" ? "vi" : "en")}
-            aria-label={t.toggleLanguageTooltip(lang === "en" ? "vi" : "en")}
-          >
-            <Languages className="h-3.5 w-3.5 shrink-0" />
-            <span>{lang.toUpperCase()}</span>
-          </button>
           <button
             type="button"
             onClick={() => setMinimized(true)}
@@ -1102,359 +1093,280 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         </div>
       </div>
 
-      <div className="space-y-2.5 px-3.5 pb-3.5 pt-2">
-        {/* Card 1: Universal Server clock */}
-        <div className="dh-inner-card rounded-2xl p-3">
-          <div className="dh-card-header dh-card-header-clock flex items-center justify-between">
-            <div className="flex items-center gap-1.5" title={serverDomain ? `${t.offsetVsDomain(serverDomain)} (${serverDomain})` : t.localDeviceTime}>
-              <span className={`h-1.5 w-1.5 rounded-full ${calibrated ? "bg-emerald-400 shadow-sm shadow-emerald-400/50" : "bg-amber-400 animate-pulse"}`} />
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                {calibrated ? (t.atomicClockLabel || "NTP Server Time") : t.localDeviceTime}
-              </span>
+      <div className="space-y-2.5 px-3.5 pb-3.5 pt-2.5">
+        {isArmed ? (
+          /* Hunting: one clear screen, the only action is to stop */
+          <div className="dh-inner-card rounded-2xl p-4 text-center">
+            <div className="flex items-center justify-center gap-1.5 text-[12px] font-semibold text-amber-300">
+              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+              {t.armedTitle}
             </div>
-            <button
-              type="button"
-              onClick={handleRecalibrate}
-              disabled={syncing}
-              className={`dh-recalibrate-btn flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
-                calibrated
-                  ? "dh-calibrated ring-1 ring-emerald-500/30"
-                  : "dh-uncalibrated ring-1 ring-amber-500/30"
-              }`}
-              title={t.resyncClockTooltip}
-              aria-label={t.resyncClockTooltip}
-            >
-              <RefreshCw className={`h-2.5 w-2.5 ${syncing ? "animate-spin" : ""}`} />
-              {syncing
-                ? t.syncingClock
-                : calibrated
-                ? `${offsetMs >= 0 ? "+" : ""}${offsetMs} ms ±${errorMs}`
-                : t.notSyncedRetry}
-            </button>
+            <div className="mt-2 font-mono text-[34px] font-bold leading-none text-white tabular-nums">
+              {countdownStr.slice(0, 8)}
+            </div>
+            <div className="mt-2 text-[12px] text-slate-300">
+              {t.huntAt(targetWallClock)} · <span className="font-semibold text-emerald-300">«{buttonName}»</span>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-500">{t.armHint}</p>
           </div>
-          <div className="my-1.5 text-center font-mono text-[28px] font-bold tracking-tight text-emerald-400 tabular-nums">
-            {serverTimeStr}
-          </div>
-        </div>
-
-        {/* Card 2: Timing & Countdown */}
-        <div className="dh-inner-card rounded-2xl p-3">
-          {/* Card Header matching Card 1 and Card 3 */}
-          <div className="dh-card-header flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              {t.timingAndCountdown || "Timing & Countdown"}
-            </span>
-            {isArmed && (
-              <span className="dh-card-badge flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300 ring-1 ring-amber-500/30">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-ping" />
-                <span>{t.armedCountdown}</span>
-              </span>
-            )}
-          </div>
-
-          {/* Slot selector grid */}
-          <div className="grid grid-cols-5 gap-1 rounded-xl bg-black/40 p-1 ring-1 ring-white/5">
-            {(
-              [
-                ["quick_10s", "+10s", t.quickTest10s || "+10s"],
-                ["quick_30s", "+30s", t.quickTest30s || "+30s"],
-                ["00:00", "00:00", "00:00:00"],
-                ["next_minute", t.slotNextMinute, t.nextMinute || "Next min"],
-                ["custom", t.slotCustom, t.customTime || "Custom"],
-              ] as const
-            ).map(([slotKey, shortLabel, fullTitle]) => {
-              const actualSlot: TargetSlot =
-                slotKey === "00:00" ? "midnight" : (slotKey as TargetSlot);
-              const isActive = targetSlot === actualSlot;
-              return (
-                <button
-                  key={slotKey}
-                  type="button"
-                  disabled={isArmed}
-                  onClick={() => handleSelectSlot(actualSlot)}
-                  title={fullTitle}
-                  className={`dh-slot-btn ${
-                    isActive
-                      ? "dh-slot-active"
-                      : "dh-slot-inactive"
-                  } disabled:cursor-not-allowed`}
-                >
-                  {shortLabel}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Custom Time input field */}
-          {targetSlot === "custom" && (
-            <div className="mt-2 space-y-1">
-              <div className="flex items-center justify-between gap-2 rounded-xl bg-black/40 px-2.5 py-1.5 ring-1 ring-white/10">
-                <span className="text-[10px] font-medium text-slate-400">{t.customTargetPrompt || "Target time:"}</span>
-                <input
-                  type="text"
-                  disabled={isArmed}
-                  value={customTime}
-                  onChange={(e) => setCustomTime(e.target.value)}
-                  placeholder="HH:mm:ss"
-                  className={`w-24 rounded-lg bg-white/10 px-2 py-0.5 text-center font-mono text-xs font-bold outline-none ring-1 disabled:opacity-50 ${
-                    !parseTimeString(customTime).valid
-                      ? "text-rose-300 ring-rose-500/50 focus:ring-rose-400"
-                      : "text-emerald-300 ring-emerald-500/30 focus:ring-emerald-400"
-                  }`}
-                />
+        ) : (
+          <>
+            {/* Step 1: the button */}
+            <section className="dh-inner-card rounded-2xl p-3">
+              <div className="mb-2 flex items-center gap-2">
+                {step(1, hasTarget)}
+                <h3 className="text-[13px] font-semibold text-slate-100">{t.step1Title}</h3>
               </div>
-              {!parseTimeString(customTime).valid && (
-                <span className="block text-center text-[9px] font-semibold text-rose-400">
-                  {t.invalidTimeFormat}
-                </span>
+
+              {picking ? (
+                <div className="flex flex-col gap-2">
+                  <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-[12px] leading-snug text-amber-200 ring-1 ring-amber-500/30">
+                    {t.pickInstruction}
+                  </p>
+                  <button type="button" onClick={handleSelectTarget} className="dh-action-btn dh-action-btn-cancelling">
+                    <X className="h-3.5 w-3.5" />
+                    <span>{t.cancelPick}</span>
+                  </button>
+                </div>
+              ) : hasTarget ? (
+                <div className="flex items-center justify-between gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 ring-1 ring-emerald-500/25">
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-semibold text-emerald-200" title={buttonName}>
+                      «{buttonName}»
+                    </div>
+                    {isTargetSaved && (
+                      <div className="flex items-center gap-1 text-[10px] text-emerald-400/80">
+                        <BookmarkCheck className="h-2.5 w-2.5" />
+                        {t.savedForPage}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSelectTarget}
+                    className="dh-sub-btn dh-sub-btn-auto shrink-0"
+                  >
+                    <Crosshair className="h-3 w-3" />
+                    <span>{t.changeButton}</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <button type="button" onClick={handleSelectTarget} className="dh-arm-btn dh-arm-btn-emerald">
+                    <Crosshair className="h-4 w-4" />
+                    <span>{t.pickButton}</span>
+                  </button>
+                  {!suggestion && (
+                    <button type="button" onClick={handleAutoDetect} className="dh-sub-btn">
+                      <ScanSearch className="h-3 w-3" />
+                      <span>{t.autoDetect}</span>
+                    </button>
+                  )}
+                </div>
               )}
-            </div>
-          )}
 
-          {/* Balanced 2-Column Info Display (Equal 2 lines on each side) */}
-          <div className="mt-2.5 grid grid-cols-2 gap-2 rounded-xl bg-black/40 p-2.5 ring-1 ring-white/5">
-            <div className="flex flex-col justify-center border-r border-white/10 pr-2">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                {t.dropAtLabel || "Target time"}
-              </span>
-              <div className="mt-0.5 font-mono text-base font-bold text-slate-100 tabular-nums">
-                {targetWallClock}
-              </div>
-            </div>
-            <div className="flex flex-col justify-center pl-2">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                {t.countdownLabel || "Countdown"}
-              </span>
-              <div className={`mt-0.5 font-mono text-base font-bold tabular-nums ${isArmed ? "text-amber-300 animate-pulse" : "text-emerald-400"}`}>
-                {countdownStr}
-              </div>
-            </div>
-          </div>
-        </div>
+              {suggestion && !picking && (
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  <button type="button" onClick={acceptSuggestion} className="dh-sub-btn dh-sub-btn-emerald">
+                    <span>{t.useSuggestedButton}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => showSuggestion(suggestion.list, (suggestion.index + 1) % suggestion.list.length)}
+                    disabled={suggestion.list.length < 2}
+                    className="dh-sub-btn"
+                  >
+                    <span>{t.nextSuggestion}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearSuggestion();
+                      setStatusMsg({ render: (trans) => trans.initialHUDPrompt, tone: "idle" });
+                    }}
+                    className="dh-sub-btn"
+                  >
+                    <span>{t.dismissSuggestion}</span>
+                  </button>
+                </div>
+              )}
+            </section>
 
-        {/* Pre-reload switch: the timing is measured from this page's load speed */}
-        {!pageDisablesReload && (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={preReloadEnabled}
-            disabled={isArmed}
-            onClick={() => setPreReloadEnabled(!preReloadEnabled)}
-            className="dh-sub-btn flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-[10px] transition disabled:opacity-50"
-            title={t.preReloadHint(autoReloadLeadMs)}
-          >
-            <span className="min-w-0">
-              <span className="block font-semibold text-slate-300">{t.preReloadToggle}</span>
-              <span className="block truncate text-[9px] text-slate-500">
-                {preReloadEnabled ? t.preReloadHint(autoReloadLeadMs) : t.preReloadOffHint}
-              </span>
-            </span>
-            <span
-              className={`relative h-4 w-7 shrink-0 rounded-full transition ${
-                preReloadEnabled ? "bg-emerald-500/70" : "bg-white/15"
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${
-                  preReloadEnabled ? "left-3.5" : "left-0.5"
-                }`}
-              />
-            </span>
-          </button>
+            {/* Step 2: the time */}
+            <section className={`dh-inner-card rounded-2xl p-3 ${hasTarget ? "" : "opacity-60"}`}>
+              <div className="mb-2 flex items-center gap-2">
+                {step(2, hasTarget && !timeInvalid)}
+                <h3 className="text-[13px] font-semibold text-slate-100">{t.step2Title}</h3>
+              </div>
+              <div className="grid grid-cols-3 gap-1 rounded-xl bg-black/40 p-1 ring-1 ring-white/5" role="radiogroup" aria-label={t.step2Title}>
+                {(
+                  [
+                    ["midnight", t.slotMidnight],
+                    ["custom", t.slotOther],
+                    ["quick_10s", t.slotTest],
+                  ] as const
+                ).map(([slot, label]) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    role="radio"
+                    aria-checked={targetSlot === slot}
+                    onClick={() => handleSelectSlot(slot)}
+                    className={`dh-slot-btn ${targetSlot === slot ? "dh-slot-active" : "dh-slot-inactive"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {targetSlot === "custom" && (
+                <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-black/40 px-3 py-1.5 ring-1 ring-white/10">
+                  <label htmlFor="dh-custom-time" className="text-[11px] text-slate-400">
+                    {t.customTargetPrompt}
+                  </label>
+                  <input
+                    id="dh-custom-time"
+                    type="text"
+                    inputMode="numeric"
+                    value={customTime}
+                    onChange={(e) => setCustomTime(e.target.value)}
+                    placeholder="00:00:00"
+                    className={`w-24 rounded-lg bg-white/10 px-2 py-1 text-center font-mono text-[13px] font-bold outline-none ring-1 ${
+                      timeInvalid ? "text-rose-300 ring-rose-500/50" : "text-emerald-300 ring-emerald-500/30 focus:ring-emerald-400"
+                    }`}
+                  />
+                </div>
+              )}
+              <div className="mt-2 flex items-center justify-between px-0.5 text-[12px]">
+                {timeInvalid ? (
+                  <span className="font-semibold text-rose-300">{t.invalidTimeFormat}</span>
+                ) : (
+                  <>
+                    <span className="text-slate-200">{t.huntAt(targetWallClock)}</span>
+                    <span className="text-slate-400">{t.homeTimeLeft(leftWords)}</span>
+                  </>
+                )}
+              </div>
+              <div className="mt-1.5 flex items-center gap-1.5 px-0.5 text-[10px]">
+                {syncing ? (
+                  <span className="text-slate-500">{t.clockChecking}</span>
+                ) : calibrated ? (
+                  <span className="flex items-center gap-1 text-slate-500">
+                    <CircleCheck className="h-3 w-3 text-emerald-500" />
+                    {t.clockReady(serverDomain || currentHost)}
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-slate-500">{t.clockFailed}</span>
+                    <button type="button" onClick={handleRecalibrate} className="font-semibold text-emerald-300 hover:underline">
+                      {t.clockRetry}
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          </>
         )}
 
-        {/* Card 3: Universal Target locking */}
-        <div className="dh-inner-card rounded-2xl p-3">
-          <div className="dh-card-header flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t.targetVoucher}</span>
-            {isTargetSaved && (
-              <span className="dh-card-badge flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-                <BookmarkCheck className="h-2.5 w-2.5" />
-                {t.savedTarget}
-              </span>
-            )}
-          </div>
-          {targetSummary && (
-            <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl bg-emerald-500/10 px-2.5 py-1.5 ring-1 ring-emerald-500/20">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
-                <span className="truncate font-mono text-xs font-semibold text-emerald-300" title={targetSummary}>
-                  {targetSummary}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleForgetSavedTarget}
-                disabled={isArmed}
-                className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-white/10 hover:text-rose-400 disabled:opacity-40"
-                title={t.forgetTarget}
-                aria-label={t.forgetTarget}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleSelectTarget}
-              disabled={isArmed}
-              className={`dh-action-btn flex items-center justify-center gap-1.5 rounded-xl text-[11px] font-semibold transition disabled:opacity-40 ${
-                picking ? "dh-action-btn-cancelling" : ""
-              }`}
-              title={picking ? t.cancelPickTooltip : targetSummary ? t.changeButton : t.pickButton}
-            >
-              {picking ? (
-                <>
-                  <X className="h-3.5 w-3.5 text-rose-400 animate-pulse stroke-[2]" />
-                  <span>{t.cancelPick}</span>
-                </>
-              ) : (
-                <>
-                  <Crosshair className="h-3.5 w-3.5 text-emerald-300 stroke-[1.75]" />
-                  <span>{targetSummary ? t.changeButton : t.pickButton}</span>
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={handleAutoDetect}
-              disabled={isArmed}
-              className="dh-action-btn flex items-center justify-center gap-1.5 rounded-xl text-[11px] font-semibold transition disabled:opacity-40"
-            >
-              <ScanSearch className="h-3.5 w-3.5 text-emerald-300 stroke-[1.75]" />
-              <span>{t.autoDetect}</span>
-            </button>
-          </div>
-          {suggestion && !isArmed && (
-            <div className="mt-2 grid grid-cols-3 gap-1.5">
-              <button
-                type="button"
-                onClick={acceptSuggestion}
-                className="dh-sub-btn col-span-1 rounded-lg py-1.5 text-[10px] font-semibold text-emerald-300"
-              >
-                {t.useSuggestedButton}
-              </button>
-              <button
-                type="button"
-                onClick={() => showSuggestion(suggestion.list, (suggestion.index + 1) % suggestion.list.length)}
-                disabled={suggestion.list.length < 2}
-                className="dh-sub-btn rounded-lg py-1.5 text-[10px] font-semibold text-slate-300 disabled:opacity-40"
-              >
-                {t.nextSuggestion}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  clearSuggestion();
-                  setStatusMsg({ text: "", tone: "idle" });
-                }}
-                className="dh-sub-btn rounded-lg py-1.5 text-[10px] font-semibold text-slate-400"
-              >
-                {t.dismissSuggestion}
-              </button>
-            </div>
-          )}
-          {targetSummary && (
-            <div className="mt-2.5 grid grid-cols-2 gap-2 border-t border-white/5 pt-2">
-              {isTargetSaved ? (
-                <button
-                  type="button"
-                  onClick={handleForgetSavedTarget}
-                  disabled={isArmed}
-                  className="dh-sub-btn dh-sub-btn-danger flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-semibold transition disabled:opacity-50"
-                  title={t.forgetTarget}
-                >
-                  <Trash2 className="h-2.5 w-2.5" />
-                  <span>{t.forgetTarget}</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSaveTarget}
-                  disabled={isArmed || !universalDescRef.current}
-                  className="dh-sub-btn dh-sub-btn-emerald flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-semibold transition disabled:opacity-50"
-                  title={t.saveTarget}
-                >
-                  <Bookmark className="h-2.5 w-2.5" />
-                  <span>{t.saveTarget}</span>
-                </button>
-              )}
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={handleScheduleFromHUD}
-                  disabled={isArmed || !universalDescRef.current}
-                  className="dh-sub-btn flex-1 flex items-center justify-center gap-1.5 rounded-lg text-[10px] font-semibold transition disabled:opacity-50"
-                  title={t.quickScheduleFromHUD}
-                >
+        {/* Step 3: start (or stop) */}
+        <div className="dh-action-group">
+          <button
+            type="button"
+            onClick={() => (isArmed ? disarmHunt() : armHunt())}
+            disabled={!isArmed && !canStart}
+            className={`dh-arm-btn ${isArmed ? "dh-arm-btn-rose" : canStart ? "dh-arm-btn-emerald" : "dh-arm-btn-disabled"}`}
+          >
+            {isArmed ? <Square className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+            <span>{isArmed ? t.disarm : t.armSniper}</span>
+          </button>
+          {!isArmed && (
+            <>
+              <p className="px-1 text-center text-[11px] leading-snug text-slate-500">{canStart ? t.armHint : t.noTargetSelected}</p>
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={handleScheduleFromHUD} disabled={!canStart} className="dh-sub-btn" style={{ flex: 1 }}>
                   <CalendarClock className="h-3 w-3 text-emerald-300" />
                   <span>{t.quickScheduleFromHUD}</span>
                 </button>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={isDailySchedule}
                   onClick={() => setIsDailySchedule(!isDailySchedule)}
-                  disabled={isArmed}
-                  className={`dh-sub-btn px-2 flex items-center justify-center gap-1 rounded-lg text-[10px] font-semibold transition disabled:opacity-50 ${
-                    isDailySchedule
-                      ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                  title={t.dailyScheduleCheckbox}
+                  disabled={!canStart}
+                  title={t.dailyScheduleHint}
+                  className={`dh-sub-btn dh-sub-btn-auto ${isDailySchedule ? "dh-sub-btn-emerald" : ""}`}
                 >
-                  <Repeat className={`h-2.5 w-2.5 ${isDailySchedule ? "text-emerald-300" : "text-slate-400"}`} />
+                  <Repeat className="h-3 w-3" />
                   <span>{t.dailyScheduleBadge}</span>
                 </button>
               </div>
-            </div>
+            </>
           )}
         </div>
 
-        {/* Action Group: Primary CTA & Secondary Test Click */}
-        <div className="dh-action-group">
-          <button
-            type="button"
-            onClick={() => (isArmed ? disarmHunt() : armHunt())}
-            disabled={!isArmed && (!hasTarget || (targetSlot === "custom" && !parseTimeString(customTime).valid))}
-            className={`dh-arm-btn flex w-full items-center justify-center gap-2 rounded-xl text-xs font-bold uppercase tracking-wider text-white shadow-lg transition ${
-              isArmed
-                ? "dh-arm-btn-rose bg-gradient-to-r from-rose-500 to-rose-600 shadow-rose-950/50 hover:from-rose-400 hover:to-rose-500"
-                : !hasTarget || (targetSlot === "custom" && !parseTimeString(customTime).valid)
-                ? "opacity-40 cursor-not-allowed bg-slate-700 shadow-none hover:bg-slate-700"
-                : "dh-arm-btn-emerald bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-950/50 hover:from-emerald-400 hover:to-teal-400"
-            }`}
-          >
-            <Zap className="h-4 w-4" />
-            <span>{isArmed ? t.disarm : t.armSniper}</span>
-          </button>
+        {/* More options: everything most people never need */}
+        {!isArmed && hasTarget && (
+          <div className="dh-inner-card rounded-2xl">
+            <button
+              type="button"
+              onClick={() => setShowMore(!showMore)}
+              aria-expanded={showMore}
+              className="flex w-full items-center justify-between px-3 py-2 text-[12px] font-semibold text-slate-300"
+            >
+              <span>{t.moreOptions}</span>
+              <ChevronDown className={`h-3.5 w-3.5 transition ${showMore ? "rotate-180" : ""}`} />
+            </button>
+            {showMore && (
+              <div className="space-y-1.5 border-t border-white/5 px-3 pb-3 pt-2">
+                {!pageDisablesReload && (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={preReloadEnabled}
+                    onClick={() => setPreReloadEnabled(!preReloadEnabled)}
+                    className="flex w-full items-center justify-between gap-2 rounded-xl bg-black/30 px-2.5 py-2 text-left ring-1 ring-white/5"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-semibold text-slate-200">{t.preReloadToggle}</span>
+                      <span className="block text-[10px] leading-snug text-slate-500">
+                        {preReloadEnabled ? t.preReloadHint(autoReloadLeadMs) : t.preReloadOffHint}
+                      </span>
+                    </span>
+                    <span className={`relative h-4 w-7 shrink-0 rounded-full transition ${preReloadEnabled ? "bg-emerald-500/80" : "bg-white/15"}`}>
+                      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${preReloadEnabled ? "left-3.5" : "left-0.5"}`} />
+                    </span>
+                  </button>
+                )}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button type="button" onClick={handleManualTestClick} title={t.testClickTooltip} className="dh-sub-btn">
+                    <MousePointerClick className="h-3 w-3" />
+                    <span>{t.testClick}</span>
+                  </button>
+                  <button type="button" onClick={handleForgetSavedTarget} className="dh-sub-btn dh-sub-btn-danger">
+                    <Trash2 className="h-3 w-3" />
+                    <span>{t.forgetTarget}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-          <button
-            type="button"
-            onClick={handleManualTestClick}
-            disabled={isArmed || !hasTarget}
-            className="dh-test-click-btn flex w-full items-center justify-center gap-1.5 rounded-xl text-[11px] font-medium transition disabled:opacity-40"
-            title={t.testClickTooltip}
+        {/* What is happening, in plain words (not repeating what the cards already show) */}
+        {showStatus && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`dh-status-bar flex items-center gap-2 rounded-xl bg-black/40 px-3 py-1.5 ring-1 ${tone.ring}`}
           >
-            <MousePointerClick className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-            <span>{t.testClick}</span>
-          </button>
-        </div>
-
-        {/* Status Bar */}
-        <div
-          role="status"
-          aria-live="polite"
-          className={`dh-status-bar flex h-[48px] min-h-[48px] max-h-[48px] items-center gap-2 rounded-xl bg-black/40 px-3 py-1.5 ring-1 overflow-hidden ${tone.ring}`}
-        >
-          {StatusIcon ? (
-            <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
-          ) : (
-            <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
-          )}
-          <span className={`flex-1 min-w-0 text-[11px] leading-snug line-clamp-2 break-words ${tone.text}`}>{statusDisplayText}</span>
-        </div>
+            {StatusIcon ? (
+              <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${tone.text}`} />
+            ) : (
+              <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
+            )}
+            <span className={`min-w-0 flex-1 break-words text-[11px] leading-snug line-clamp-2 ${tone.text}`}>{statusDisplayText}</span>
+          </div>
+        )}
       </div>
     </div>
   );
 };
-
