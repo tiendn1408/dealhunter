@@ -6,6 +6,7 @@ import { nextExactDropAt, parseTimeString, formatTimeLeft } from "../../lib/drop
 import { scheduleTaskViaBackground, updateTaskViaBackground, openAndPickViaBackground } from "../../lib/scheduler_client";
 import { isSamePageUrl, isValidHttpUrl } from "../../lib/url";
 import { Language, getTranslation } from "../../lib/i18n";
+import { readable } from "../../lib/button_name";
 
 interface ScheduleFormProps {
   onTaskCreated: () => void;
@@ -145,7 +146,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
         targetMinute: parsed.m,
         targetSecond: parsed.s,
         targetUrl: selected.url,
-        label: `${parsed.formatted} · ${selected.name}`,
+        label: `${parsed.formatted} · ${readable(selected.name) || t.targetButtonDefault}`,
         mode: "full_auto",
         isDaily,
         savedTargetId: selected.id,
@@ -215,7 +216,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
                 >
                   <span className={`h-3 w-3 shrink-0 rounded-full ring-2 ${active ? "bg-emerald-400 ring-emerald-400/40" : "ring-white/20"}`} />
                   <span className="min-w-0">
-                    <span className="block truncate text-[12px] font-semibold text-slate-100">{target.name}</span>
+                    <span className="block truncate text-[12px] font-semibold text-slate-100">{readable(target.name) || t.targetButtonDefault}</span>
                     <span className="block truncate text-[10px] text-slate-500">{hostOf(target.url)}</span>
                   </span>
                 </button>
@@ -223,17 +224,17 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
             })}
           </div>
         )}
-        {!editing && (
-          <div className={targets.length > 0 ? "border-t border-white/10 pt-3" : ""}>
-            {targets.length > 0 && (
-              <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold text-slate-400">
-                <Plus className="h-3 w-3" />
-                {t.scheduleNewButton}
-              </p>
-            )}
-            <NewButtonPicker t={t} activeUrl={activeUrl} showCurrent={activeIsWeb && !activeHasButton} />
-          </div>
-        )}
+        <div className={targets.length > 0 ? "border-t border-white/10 pt-3" : ""}>
+          {targets.length > 0 && (
+            <p className="mb-1.5 flex items-center gap-1 text-[11px] font-semibold text-slate-400">
+              <Plus className="h-3 w-3" />
+              {t.scheduleNewButton}
+            </p>
+          )}
+          <NewButtonPicker t={t} activeUrl={activeUrl} showCurrent={activeIsWeb && !activeHasButton} />
+          {/* Picking happens on the page (the popup closes): the new button is then in this list */}
+          {editing && <p className="mt-1.5 text-[10px] leading-snug text-slate-500">{t.scheduleEditNewButtonHint}</p>}
+        </div>
       </div>
     );
   }
@@ -287,7 +288,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
             className="flex w-full items-center gap-2 rounded-xl bg-black/30 px-3 py-2 text-left ring-1 ring-white/10 transition hover:bg-white/[0.06]"
           >
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[12px] font-semibold text-slate-100">{selected?.name ?? t.scheduleChooseButton}</span>
+              <span className="block truncate text-[12px] font-semibold text-slate-100">{selected ? readable(selected.name) || t.targetButtonDefault : t.scheduleChooseButton}</span>
               {selected && <span className="block truncate text-[10px] text-slate-500">{hostOf(selected.url)}</span>}
             </span>
             <span className="flex shrink-0 items-center text-[11px] font-semibold text-slate-400">

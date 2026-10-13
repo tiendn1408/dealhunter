@@ -147,7 +147,7 @@ Hẹn giờ phù hợp khi bạn không muốn ngồi chờ, hoặc muốn săn 
 
 | Mục | Tác dụng |
 | --- | --- |
-| **«Nút cần săn»** | Thẻ hiện nút đang chọn. Bấm **«Đổi»** để mở trang «Chọn nút cần săn»: chọn một nút đã lưu (mỗi nút gắn với một trang), hoặc ở phần **«Hoặc thêm nút mới»** chọn **«Chọn nút trên trang đang mở»** (khi trang đang mở chưa có nút) hay **«Nút ở trang khác (dán link trang)»** → dán link → **«Mở & chọn»**. DealHunter mở trang ở chế độ chọn nút; chọn xong, bấm «Hẹn giờ» trên bảng săn (hoặc mở lại khung này). Chưa có nút nào thì khung mở thẳng phần thêm nút mới. |
+| **«Nút cần săn»** | Thẻ hiện nút đang chọn. Bấm **«Đổi»** để mở trang «Chọn nút cần săn»: chọn một nút đã lưu (mỗi nút gắn với một trang), hoặc ở phần **«Hoặc thêm nút mới»** chọn **«Chọn nút trên trang đang mở»** (khi trang đang mở chưa có nút) hay **«Nút ở trang khác (dán link trang)»** → dán link → **«Mở & chọn»**. DealHunter mở trang ở chế độ chọn nút; chọn xong, bấm «Hẹn giờ» trên bảng săn (hoặc mở lại khung này). Chưa có nút nào thì khung mở thẳng phần thêm nút mới. Đang **sửa** lịch cũng thêm nút mới được: chọn xong trên trang, mở lại lịch đó và chọn nút mới trong danh sách. Nút chỉ có biểu tượng (không chữ) được đặt tên theo nhãn của nút, hoặc «Nút đã chọn». |
 | **«Chọn lại trên trang»** | DealHunter mở trang của nút đang chọn và bật chế độ chọn để bạn chọn lại nút. |
 | **«Giờ săn»** | Bấm vào ô giờ rồi gõ đè (`20`, `20h30`, `2030`…), hoặc bấm nhanh `00:00`, `12:00`, `20:00`. Bên cạnh ghi «còn ...». |
 | **«Lặp lại mỗi ngày»** | Săn lại vào giờ này mỗi ngày. |

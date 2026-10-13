@@ -122,7 +122,7 @@ Message dùng trường `action` (hằng `MESSAGE_ACTIONS` trong `src/lib/consta
 ## 6. Kiểm thử
 
 ```bash
-npx vitest run          # 31 file, 304 test (happy-dom)
+npx vitest run          # 32 file, 307 test (happy-dom)
 npx tsc --noEmit -p .   # kiểm tra kiểu
 ```
 

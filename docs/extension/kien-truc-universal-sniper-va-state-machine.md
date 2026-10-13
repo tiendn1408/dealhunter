@@ -2,7 +2,7 @@
 
 Tài liệu kỹ thuật mô tả kiến trúc, luồng xử lý và các thông số thời gian của Chrome Extension DealHunter (Manifest V3), khớp với mã nguồn trong [`extension/src`](../../extension/src) và [`extension/public`](../../extension/public).
 
-Cập nhật: 2026-10-13 · 31 file test / 304 test (`npx vitest run`).
+Cập nhật: 2026-10-13 · 32 file test / 307 test (`npx vitest run`).
 
 Tài liệu liên quan: [Hướng dẫn sử dụng](huong-dan-su-dung.md) · [Kết nối web và extension](ket-noi-web-extension.md) · [Rà soát lỗi và kế hoạch sửa](ra-soat-loi-va-ke-hoach-sua.md).
 
@@ -544,7 +544,7 @@ Popup dùng [`tailwind.config.js`](../../extension/tailwind.config.js) riêng.
 
 ## 16. Kiểm thử
 
-- `npx vitest run` (môi trường happy-dom): **31 file, 304 test**.
+- `npx vitest run` (môi trường happy-dom): **32 file, 307 test**.
 - `npx tsc --noEmit -p .`: kiểm tra kiểu.
 
 | Nhóm | File (số test) |

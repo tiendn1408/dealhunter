@@ -13,6 +13,7 @@ import { MESSAGE_ACTIONS } from "../../lib/constants";
 import { ScheduledTask, TargetDiagnosticsSummary } from "../../lib/types";
 import { isSamePageUrl } from "../../lib/url";
 import { reloadTiming } from "../../lib/reload_timing";
+import { buttonName, readable } from "../../lib/button_name";
 import { HudAnchor, DEFAULT_ANCHOR, anchorFromRect, applyAnchor, clampAnchor, loadHudAnchor, saveHudAnchor } from "./hud_position";
 import { IS_DEV_BUILD } from "../../lib/build_env";
 import { hudBus } from "./hud_bus";
@@ -61,12 +62,8 @@ const TONE_STYLES: Record<Tone, { dot: string; text: string; ring: string }> = {
 };
 
 /** The chosen button as the user sees it: its text (or label); "" when it has none. */
-const formatElementIdentifier = (el: HTMLElement, desc?: UniversalTargetDescriptor | null): string => {
-  const text = (desc?.initialText || el.innerText || el.getAttribute("aria-label") || el.getAttribute("title") || "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text.length > 30 ? `${text.slice(0, 30)}…` : text;
-};
+const formatElementIdentifier = (el: HTMLElement, desc?: UniversalTargetDescriptor | null): string =>
+  buttonName(el, desc?.initialText);
 
 type StatusState = {
   render?: (t: ReturnType<typeof getTranslation>, lang: Language) => string;
@@ -179,9 +176,9 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
         if (el) {
           targetElementRef.current = el;
           el.classList.add("dh-target-highlight");
-          setTargetSummary(saved.name);
+          setTargetSummary(readable(saved.name) || null);
         } else {
-          setTargetSummary(saved.name);
+          setTargetSummary(readable(saved.name) || null);
         }
         if (!huntCoordinator.getState().isArmed) {
           setStatusMsg({ render: (trans) => trans.savedTargetRestored, tone: "idle" });
@@ -551,7 +548,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
   ) => {
     const desc = descArg ?? universalDescRef.current;
     if (!desc || typeof window === "undefined") return;
-    const name = (nameArg || targetSummary || desc.initialText || t.targetButtonDefault).trim() || t.targetButtonDefault;
+    const name = readable(nameArg) || readable(targetSummary) || readable(desc.initialText) || t.targetButtonDefault;
     const existing = await storage.getSavedTargetForUrl(window.location.href);
     await storage.savePageTarget({
       id: existing ? existing.id : `target_${Date.now()}`,

@@ -6,6 +6,7 @@ import { MESSAGE_ACTIONS, POPULAR_SHOPPING_HUBS } from "../../lib/constants";
 import { isSamePageUrl } from "../../lib/url";
 import { formatTimeLeft } from "../../lib/drop_time";
 import { Language, getTranslation } from "../../lib/i18n";
+import { readable } from "../../lib/button_name";
 import { openHuntPanel, isWebUrl } from "../page_actions";
 import { ClockStatus } from "./TimeOffsetCard";
 
@@ -33,9 +34,9 @@ const hostOf = (url: string) => {
 
 /** Name of the button a task clicks, for display. */
 export function taskButtonName(task: ScheduledTask, fallback: string): string {
-  if (task.descriptor?.initialText?.trim()) return task.descriptor.initialText.trim();
-  const fromLabel = task.label?.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*·\s*/, "").trim();
-  return fromLabel || fallback;
+  const fromLabel = task.label?.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*·\s*/, "");
+  // Icon-only buttons ("≣") saved before readable names existed fall back to the default name
+  return readable(task.descriptor?.initialText) || readable(fromLabel) || fallback;
 }
 
 /** Where the open page stands in the 3 steps: 1 open the page (done), 2 pick a button, 3 set the time. */
@@ -202,7 +203,7 @@ export const HomePanel: React.FC<HomePanelProps> = ({ lang, activeTabId, activeU
             )}
             {saved && (
               <p className="mt-2.5 truncate border-t border-white/[0.06] pt-2 text-[12px] text-slate-300" title={saved.name}>
-                {t.homeReadyButton(saved.name)}
+                {t.homeReadyButton(readable(saved.name) || t.targetButtonDefault)}
               </p>
             )}
             {saved && hunting && (
