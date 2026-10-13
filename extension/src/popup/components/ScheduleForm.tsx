@@ -311,7 +311,9 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
               inputMode="numeric"
               value={timeInput}
               onChange={(e) => setTimeInput(e.target.value)}
-              placeholder="00:00:00"
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={() => parsed.valid && setTimeInput(parsed.formatted)}
+              placeholder="20h30"
               className={`w-[92px] shrink-0 rounded-xl bg-black/40 px-2 py-2 text-center font-mono text-[14px] font-bold outline-none ring-1 focus:ring-2 ${
                 parsed.valid ? "text-emerald-300 ring-white/10 focus:ring-emerald-400" : "text-rose-300 ring-rose-500/50"
               }`}
@@ -322,7 +324,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({ onTaskCreated, lang 
                 type="button"
                 onClick={() => setTimeInput(time)}
                 className={`flex-1 rounded-xl py-2 text-[12px] font-semibold transition ${
-                  timeInput === time
+                  parsed.valid && parsed.formatted === time
                     ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
                     : "bg-white/5 text-slate-300 ring-1 ring-white/10 hover:bg-white/10"
                 }`}

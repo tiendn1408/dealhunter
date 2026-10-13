@@ -67,8 +67,25 @@ describe("L1: parseTimeString validation", () => {
     expect(parseTimeString("12:30:60").valid).toBe(false);
     expect(parseTimeString("abc").valid).toBe(false);
     expect(parseTimeString("").valid).toBe(false);
-    expect(parseTimeString("12:").valid).toBe(false);
-    expect(parseTimeString("12:30:").valid).toBe(false);
+    expect(parseTimeString("12:30:45:10").valid).toBe(false);
+    expect(parseTimeString("1234567").valid).toBe(false);
+    expect(parseTimeString("2460").valid).toBe(false);
+  });
+
+  it("understands the ways people type a time over the field", () => {
+    const f = (x: string) => parseTimeString(x).formatted;
+    expect(f("20")).toBe("20:00:00");
+    expect(f("9")).toBe("09:00:00");
+    expect(f("20:")).toBe("20:00:00");
+    expect(f("12:30:")).toBe("12:30:00");
+    expect(f("2030")).toBe("20:30:00");
+    expect(f("930")).toBe("09:30:00");
+    expect(f("203015")).toBe("20:30:15");
+    expect(f("20h")).toBe("20:00:00");
+    expect(f("20h30")).toBe("20:30:00");
+    expect(f("20g30p")).toBe("20:30:00");
+    expect(f("20.30")).toBe("20:30:00");
+    expect(f("0")).toBe("00:00:00");
   });
 });
 

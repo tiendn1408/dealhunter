@@ -66,31 +66,36 @@ export interface ParsedTimeResult {
  * or if the input format does not match.
  */
 export function parseTimeString(timeStr: string): ParsedTimeResult {
-  if (!timeStr || typeof timeStr !== "string") {
-    return { valid: false, h: 0, m: 0, s: 0, formatted: "00:00:00" };
-  }
-  const trimmed = timeStr.trim();
-  const match = trimmed.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
-  if (!match) {
-    return { valid: false, h: 0, m: 0, s: 0, formatted: "00:00:00" };
+  const invalid = { valid: false, h: 0, m: 0, s: 0, formatted: "00:00:00" };
+  if (!timeStr || typeof timeStr !== "string") return invalid;
+
+  // Accept the ways people write a time, so typing over the field never shows an error midway:
+  // "20" → 20:00:00, "20:30" / "20h30" / "20g30" / "20.30" / "2030" → 20:30:00, "930" → 09:30:00,
+  // "203015" → 20:30:15, "20:" → 20:00:00.
+  const text = timeStr
+    .trim()
+    .toLowerCase()
+    .replace(/giờ|gio/g, ":")
+    .replace(/phút|phut|p$/g, "")
+    .replace(/[hg.\s-]/g, ":")
+    .replace(/:+/g, ":")
+    .replace(/:$/, "");
+  let parts: string[];
+  if (/^\d{1,2}(:\d{1,2}){0,2}$/.test(text)) {
+    parts = text.split(":");
+  } else if (/^\d{3,6}$/.test(text)) {
+    // Digits only: hours take 1 digit when the count is odd ("930" → 9:30), otherwise 2.
+    const hLen = text.length % 2 === 1 ? 1 : 2;
+    parts = [text.slice(0, hLen), text.slice(hLen, hLen + 2), text.slice(hLen + 2)].filter(Boolean);
+  } else {
+    return invalid;
   }
 
-  const h = parseInt(match[1], 10);
-  const m = parseInt(match[2], 10);
-  const s = match[3] !== undefined ? parseInt(match[3], 10) : 0;
-
-  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) {
-    return { valid: false, h: 0, m: 0, s: 0, formatted: "00:00:00" };
-  }
+  const [h, m = 0, s = 0] = parts.map((x) => parseInt(x, 10));
+  if (h > 23 || m > 59 || s > 59) return invalid;
 
   const pad = (n: number) => String(n).padStart(2, "0");
-  return {
-    valid: true,
-    h,
-    m,
-    s,
-    formatted: `${pad(h)}:${pad(m)}:${pad(s)}`,
-  };
+  return { valid: true, h, m, s, formatted: `${pad(h)}:${pad(m)}:${pad(s)}` };
 }
 
 

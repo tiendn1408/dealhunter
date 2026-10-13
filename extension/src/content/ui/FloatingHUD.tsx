@@ -406,6 +406,14 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     if (isArmed) return;
     setTargetSlot(slot);
     armedTargetTimestampRef.current = null;
+    if (slot === "custom") {
+      // Only when the user picks "Giờ khác": put the cursor in the time field, ready to type.
+      setTimeout(() => {
+        const input = document.getElementById("dh-custom-time") as HTMLInputElement | null;
+        input?.focus();
+        input?.select();
+      }, 0);
+    }
   };
 
   // Target timestamp calculation
@@ -1061,13 +1069,11 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
     );
   }
 
-  const step = (n: number, done: boolean) => (
-    <span
-      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-        done ? "bg-emerald-500 text-slate-950" : "bg-white/10 text-slate-300"
-      }`}
-    >
-      {done ? <Check className="h-3 w-3" /> : n}
+  // Plain step numbers, no ticks: a remembered button or the default time would show as "done"
+  // before the user did anything; the cards themselves show what is set.
+  const step = (n: number) => (
+    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-[11px] font-bold text-slate-300">
+      {n}
     </span>
   );
 
@@ -1131,7 +1137,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             {/* Step 1: the button */}
             <section className="dh-inner-card rounded-2xl p-3">
               <div className="mb-2 flex items-center gap-2">
-                {step(1, hasTarget)}
+                {step(1)}
                 <h3 className="text-[13px] font-semibold text-slate-100">{t.step1Title}</h3>
               </div>
 
@@ -1215,7 +1221,7 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
             {/* Step 2: the time */}
             <section className={`dh-inner-card rounded-2xl p-3 ${hasTarget ? "" : "opacity-60"}`}>
               <div className="mb-2 flex items-center gap-2">
-                {step(2, hasTarget && !timeInvalid)}
+                {step(2)}
                 <h3 className="text-[13px] font-semibold text-slate-100">{t.step2Title}</h3>
               </div>
               <div className="grid grid-cols-3 gap-1 rounded-xl bg-black/40 p-1 ring-1 ring-white/5" role="radiogroup" aria-label={t.step2Title}>
@@ -1238,32 +1244,40 @@ export const FloatingHUD: React.FC<FloatingHUDProps> = ({ onClose, hostElement, 
                   </button>
                 ))}
               </div>
-              {targetSlot === "custom" && (
-                <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-black/40 px-3 py-1.5 ring-1 ring-white/10">
-                  <label htmlFor="dh-custom-time" className="text-[11px] text-slate-400">
-                    {t.customTargetPrompt}
+              {/* One fixed-height row in every slot: with "Giờ khác" the time itself becomes the input,
+                  so choosing it adds no row and nothing below moves. */}
+              <div className="mt-2 flex h-[30px] items-center justify-between gap-2 px-0.5 text-[12px]">
+                {targetSlot === "custom" ? (
+                  <label htmlFor="dh-custom-time" className="flex items-center gap-1.5 text-slate-200">
+                    {t.huntAtPrefix}
+                    <input
+                      id="dh-custom-time"
+                      type="text"
+                      inputMode="numeric"
+                      value={customTime}
+                      onChange={(e) => setCustomTime(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onBlur={() => {
+                        const p = parseTimeString(customTime);
+                        if (p.valid) setCustomTime(p.formatted);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
+                      placeholder="20h30"
+                      aria-label={t.customTargetPrompt}
+                      className={`h-[26px] w-[84px] rounded-lg bg-white/10 px-1.5 text-center font-mono text-[13px] font-bold outline-none ring-1 ${
+                        timeInvalid ? "text-rose-300 ring-rose-500/50" : "text-emerald-300 ring-emerald-500/30 focus:ring-emerald-400"
+                      }`}
+                    />
                   </label>
-                  <input
-                    id="dh-custom-time"
-                    type="text"
-                    inputMode="numeric"
-                    value={customTime}
-                    onChange={(e) => setCustomTime(e.target.value)}
-                    placeholder="00:00:00"
-                    className={`w-24 rounded-lg bg-white/10 px-2 py-1 text-center font-mono text-[13px] font-bold outline-none ring-1 ${
-                      timeInvalid ? "text-rose-300 ring-rose-500/50" : "text-emerald-300 ring-emerald-500/30 focus:ring-emerald-400"
-                    }`}
-                  />
-                </div>
-              )}
-              <div className="mt-2 flex items-center justify-between px-0.5 text-[12px]">
-                {timeInvalid ? (
-                  <span className="font-semibold text-rose-300">{t.invalidTimeFormat}</span>
                 ) : (
-                  <>
-                    <span className="text-slate-200">{t.huntAt(targetWallClock)}</span>
-                    <span className="text-slate-400">{t.homeTimeLeft(leftWords)}</span>
-                  </>
+                  <span className="text-slate-200">{t.huntAt(targetWallClock)}</span>
+                )}
+                {timeInvalid ? (
+                  <span className="truncate font-semibold text-rose-300">{t.invalidTimeShort}</span>
+                ) : (
+                  <span className="shrink-0 text-slate-400">{t.homeTimeLeft(leftWords)}</span>
                 )}
               </div>
               <div className="dh-clock-line mt-1.5 px-0.5 text-[10px]">

@@ -91,7 +91,7 @@ Sau khi chọn, bảng hiện tên nút trong dấu «» và dòng **«Đã nh�
 | Nút | Tác dụng |
 | --- | --- |
 | **«0:00»** | Săn lúc nửa đêm (mặc định). |
-| **«Giờ khác»** | Gõ giờ dạng giờ:phút:giây, ví dụ `20:00:00`. |
+| **«Giờ khác»** | Ô giờ hiện ngay trong dòng «Săn lúc …» (bảng không đổi kích thước), giờ cũ được bôi đen sẵn: cứ gõ đè. Gõ kiểu nào cũng hiểu: `20` = 20:00:00, `20h30` hay `2030` = 20:30:00, `203015` = 20:30:15. Nhấn Enter hoặc bấm ra ngoài là xong. |
 | **«Thử sau 10 giây»** | Săn thử sau 10 giây để kiểm tra trước. |
 
 Bảng ghi rõ, ví dụ: **«Săn lúc 00:00:00 · còn 9 giờ 34 phút»**.
@@ -149,7 +149,7 @@ Hẹn giờ phù hợp khi bạn không muốn ngồi chờ, hoặc muốn săn 
 | --- | --- |
 | **«Nút cần săn»** | Thẻ hiện nút đang chọn. Bấm **«Đổi»** để mở trang «Chọn nút cần săn»: chọn một nút đã lưu (mỗi nút gắn với một trang), hoặc ở phần **«Hoặc thêm nút mới»** chọn **«Chọn nút trên trang đang mở»** (khi trang đang mở chưa có nút) hay **«Nút ở trang khác (dán link trang)»** → dán link → **«Mở & chọn»**. DealHunter mở trang ở chế độ chọn nút; chọn xong, bấm «Hẹn giờ» trên bảng săn (hoặc mở lại khung này). Chưa có nút nào thì khung mở thẳng phần thêm nút mới. |
 | **«Chọn lại trên trang»** | DealHunter mở trang của nút đang chọn và bật chế độ chọn để bạn chọn lại nút. |
-| **«Giờ săn»** | Gõ giờ dạng giờ:phút:giây, hoặc bấm nhanh `00:00`, `12:00`, `20:00`. Bên cạnh ghi «còn ...». |
+| **«Giờ săn»** | Bấm vào ô giờ rồi gõ đè (`20`, `20h30`, `2030`…), hoặc bấm nhanh `00:00`, `12:00`, `20:00`. Bên cạnh ghi «còn ...». |
 | **«Lặp lại mỗi ngày»** | Săn lại vào giờ này mỗi ngày. |
 | **«Tải lại trang trước giờ»** | Như trong bảng săn: tự canh theo tốc độ tải trang. |
 | **«Hẹn săn lúc ...»** | Lưu lịch. Nút này luôn nằm ở đáy khung, không cần cuộn. |
