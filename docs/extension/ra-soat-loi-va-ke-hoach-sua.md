@@ -2,7 +2,7 @@
 
 > **Ngày rà soát**: 2026-10-09 · **Phạm vi**: toàn bộ `extension/` (lõi săn, background/popup, UI/i18n) và tài liệu extension.
 > **Cách rà**: 3 agent độc lập, chỉ đọc; nhiều lỗi đã được **tái hiện bằng test riêng** (đánh dấu [R]). Build, `tsc`, `vitest` (120/120) đều pass — các lỗi dưới đây là lỗi logic/race mà test hiện có không phủ.
-> **Trạng thái (cập nhật 2026-10-13)**: các lỗi C/H/M/L/P/E đã được sửa, nhưng một số dòng "Đã sửa" bên dưới ghi lại cách sửa **của thời điểm 2026-10-09** và nay đã được thay bằng cách khác (xem **mục 10**). Số test hiện tại: 32 file, 307 test pass; `tsc` sạch; `npm run build` (bản phát hành) và `npm run build:dev` đều build được. Các con số "165/165", "206/206" trong bài là số cũ.
+> **Trạng thái (cập nhật 2026-10-13)**: các lỗi C/H/M/L/P/E đã được sửa, nhưng một số dòng "Đã sửa" bên dưới ghi lại cách sửa **của thời điểm 2026-10-09** và nay đã được thay bằng cách khác (xem **mục 10**). Số test hiện tại: 33 file, 317 test pass; `tsc` sạch; `npm run build` (bản phát hành) và `npm run build:dev` đều build được. Các con số "165/165", "206/206" trong bài là số cũ.
 
 ---
 

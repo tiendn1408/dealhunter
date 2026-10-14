@@ -1,293 +1,194 @@
-# Kế Hoạch Tối Ưu Tốc Độ 0 Giây (00:00:00) Cho Caffiliate & Flash Sale
+# Kế hoạch tối ưu điểm danh 0 giây (Caffiliate)
 
-> **Phiên bản**: 1.0.0  
-> **Ngày lập**: 14-10-2026  
-> **Phạm vi áp dụng**: `extension/` (Caffiliate Adapter, Main World Bridge, Strike Plan, Hunt Engine)  
-> **Mục tiêu**: Đưa thời điểm request chạm máy chủ vào cửa sổ `[00:00:00.005, 00:00:00.040]`, đoạt Top 1–3 Bảng vàng điểm danh sớm.
+> **Phiên bản**: 2.0 · **Cập nhật**: 14-10-2026
+> **Phạm vi**: `extension/` (Caffiliate adapter, main-world bridge, strike plan, nhật ký điểm danh)
+> **Mục tiêu**: lượt điểm danh được máy chủ xử lý **ngay sau** 00:00:00, càng sát 0h càng tốt, và không tới trước 0h.
+>
+> Bản 1.0 (cùng ngày) đề xuất lấy trước và giữ token Turnstile. Đề xuất đó **không được triển khai** (xem mục 6). Bản này mô tả những gì đã làm thật trong code.
 
----
+**Cách đọc các ghi chú:**
 
-## 1. Bối cảnh & Phân tích nguyên nhân thực nghiệm
-
-### 1.1. Dữ liệu thực tế ngày 13/10/2026 - 14/10/2026
-
-Trong đợt điểm danh nửa đêm ngày 13/10 rạng sáng 14/10/2026, hệ thống ghi nhận kết quả thực tế qua hai nguồn dữ liệu:
-
-1. **Bảng vàng điểm danh Caffiliate**:
-   - Hạng 1: HaHa — Hoàn tất lúc `00:00:00` (nhận thưởng sớm +3 xèng)
-   - Hạng 2: Hậu — Hoàn tất lúc `00:00:00` (nhận thưởng sớm +2 xèng)
-   - Hạng 3: THỐNG — Hoàn tất lúc `00:00:00` (nhận thưởng sớm +2 xèng)
-   - Hạng 4: Tien Dang — Hoàn tất lúc `00:00:01` (chỉ nhận thưởng chuỗi thường +1 xèng, trượt Top 3)
-
-2. **Nhật ký điểm danh DealHunter (Check-in Timing Log)**:
-   ```text
-   Kế hoạch: 8 lần từ T-98ms · chuẩn bị ~0ms · mạng ~39ms · ±48ms
-   Mốc dự kiến: -59 -28 -8 +12 +32 +52 +72 +92 ms
-
-   Lần 1: 23:59:59.906 | Hàm | Turnstile: 1434ms | Phản hồi: 00:00:01.477 (+1571ms) | Mạng: 186ms · 200
-   Lần 2: 23:59:59.939 | Hàm | Turnstile: 1ms    | Phản hồi: 00:00:01.674 (+1735ms) | Mạng: 181ms · 200
-   Lần 3: 23:59:59.975 | Hàm | Turnstile: 1ms    | Phản hồi: 00:00:01.674 (+1699ms) | Mạng: 162ms · 200
-   ```
-
-```
-[Kế hoạch lý thuyết]
-T - 98ms (23:59:59.906) ──[chuẩn bị ~0ms]──> Request bay đi (23:59:59.906) ──[mạng 39ms]──> Máy chủ (23:59:59.945)
-
-[Thực tế xảy ra]
-T - 98ms (23:59:59.906) ──[Turnstile 1434ms]──> Request bay đi (00:00:01.340) ──[mạng 137ms]──> Máy chủ (00:00:01.477)
-                                                                                                      └──> Hạng #4 (00:00:01)
-```
-
-### 1.2. Phân tích nguyên nhân kỹ thuật cốt lõi
-
-1. **Nút thắt cổ chai Cloudflare Turnstile Proof-of-Work (1434ms)**:
-   - Hàm `app.checkIn()` của trang web gọi `window.CheckInTurnstile.getToken()`.
-   - Vì token không được sinh sẵn từ trước, SDK Cloudflare Turnstile trong iframe phải tải thử thách, chạy thuật toán băm Proof-of-Work (PoW) trên CPU máy khách và gửi dữ liệu về máy chủ Cloudflare để lấy token.
-   - Quá trình này mất trọn vẹn **1434 mili-giây** (gần 1.5 giây).
-
-2. **Kế hoạch tính toán sai lệch do thiếu dữ liệu chuẩn bị (`prepMs = 0`)**:
-   - Công thức trong `src/lib/strike_plan.ts`:
-     $$\text{leadMs} = -(a_0 - P - L)$$
-     Trong đó:
-     - $a_0$: Mốc thời gian dự kiến request đến máy chủ relative to $T$ (ví dụ: $-59\text{ms}$).
-     - $P$: Thời gian chuẩn bị token (`prepMs`), lấy trung vị lịch sử. Khi chưa có mẫu, $P = 0\text{ms}$.
-     - $L$: Độ trễ mạng một chiều (`oneWayMs` $= RTT / 2 = 39\text{ms}$).
-   - Do $P = 0$, hệ thống tính toán thời điểm bắn là $T - 98\text{ms}$ (`23:59:59.906`). Nhưng thực tế $P = 1434\text{ms}$, khiến thời điểm request rời máy khách bị đẩy lùi sang:
-     $$\text{Thời điểm gửi thực tế} = 23:59:59.906 + 1434\text{ms} = 00:00:01.340$$
-   - Cộng thêm độ trễ mạng thực tế $137\text{ms}$, máy chủ nhận được request tại `00:00:01.477` và ghi nhận kết quả ở giây `00:00:01`.
-
-3. **Cơ chế cạnh tranh của đối thủ Top 1–3**:
-   - Đối thủ HaHa, Hậu, THỐNG đều chạm máy chủ tại giây `00:00:00`.
-   - Để đạt được mốc này trong điều kiện có Cloudflare Turnstile, đối thủ bắt buộc phải **lấy trước token Turnstile trong bộ nhớ đệm (Pre-warm)**. Khi tới giờ G, thời gian lấy token của họ bằng đúng $0\text{ms}$, request được gửi đi ngay lập tức và chạm máy chủ ở mili-giây đầu tiên.
+- **[Đã kiểm]**: đối chiếu được với nhật ký hoặc mã nguồn.
+- **[Suy luận]**: rút ra từ số liệu nhưng chưa chứng minh trực tiếp.
+- **[Chưa có dữ liệu]**: chưa có số liệu nào để khẳng định; cần đo thêm.
 
 ---
 
-## 2. Mục Tiêu & Chỉ Số Đạt Được (KPI/SLO)
+## 1. Dữ liệu đêm 13/10 → 14/10/2026
 
-| Chỉ số | Hiện trạng (13/10) | Mục tiêu tối ưu | Cơ sở kỹ thuật |
+Ảnh chụp gốc (nhật ký và bảng vàng) đã được chép thành chữ dưới đây rồi xoá khỏi thư mục.
+
+### 1.1. Bảng vàng điểm danh Caffiliate (14/10)
+
+| Hạng | Tên | Giờ hiển thị | Thưởng sớm |
 | :--- | :--- | :--- | :--- |
-| **Thời điểm chạm server** | `00:00:01.477` | `00:00:00.005` - `00:00:00.035` | Bù trừ chuẩn xác độ trễ mạng và token $0\text{ms}$ |
-| **Thời gian giải quyết Token** | `1434ms` | `<= 1ms` | Pre-warm token trước $3.5\text{s}$, trả từ cache bộ nhớ |
-| **Bắt tay mạng TLS/TCP** | `186ms` | `<= 40ms` | Socket pre-warm (HTTP keep-alive) tại $T - 3.5\text{s}$ |
-| **Thứ hạng điểm danh** | Hạng #4 | **Top 1 – Top 3** | Xuất phát trước giờ $G$ đúng bằng thời gian bay mạng |
-| **Tỷ lệ thành công Tầng 1** | 0% (trễ giờ) | `>= 95%` | `app.checkIn()` thực thi với token 0ms |
+| 1 | HaHa | 00:00:00 | +3 xèng |
+| 2 | Hậu | 00:00:00 | +2 xèng |
+| 3 | THỐNG | 00:00:00 | +2 xèng |
+| 4 | Tien Dang | 00:00:01 | trượt Top 3 (chỉ +1 xèng chuỗi) |
 
----
+Tài khoản: chuỗi 13 ngày, 95 xèng. Bảng vàng chỉ hiển thị **đến giây**, nên không biết Top 1–3 tới máy chủ ở mili-giây nào.
 
-## 3. Kiến Trúc Giải Pháp Kỹ Thuật
+### 1.2. Nhật ký điểm danh DealHunter (Cài đặt → Nhật ký điểm danh)
 
-Sơ đồ quy trình tối ưu hóa tốc độ 0 giây:
+Kết quả: «Đã điểm danh · page confirmed», lúc 13/10 23:59:59.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant Coordinator as HuntCoordinator
-  participant Adapter as CaffiliateAdapter
-  participant Bridge as CaffiliateBridge (MAIN)
-  participant CF as Cloudflare Turnstile
-  participant App as In-Page Vue App
-  participant Server as Caffiliate Server
-
-  Note over Coordinator, Server: Giai đoạn 1: Pre-warming (T - 3.5s)
-  Coordinator->>Adapter: preWarmStrike()
-  Adapter->>Bridge: CustomEvent "dh-caffiliate-prewarm"
-  Bridge->>CF: Pre-fetch CheckInTurnstile.getToken()
-  Bridge->>Server: OPTIONS /check-in-secure (TCP/TLS Keep-Alive)
-  CF-->>Bridge: Token hợp lệ (TTL 300s) -> Lưu vào prewarmedToken
-
-  Note over Coordinator, Server: Giai đoạn 2: Lập kế hoạch Strike Plan (T - 1.0s)
-  Adapter->>Adapter: planStrike(): prepMs = 0ms, oneWayMs = RTT / 2
-  Adapter->>Bridge: CustomEvent "dh-caffiliate-strike" (offsets: T-39ms, T-19ms, T+1ms...)
-
-  Note over Coordinator, Server: Giai đoạn 3: Khai hỏa đúng giờ G (23:59:59.961)
-  Bridge->>App: Lần 1: app.checkIn()
-  App->>Bridge: CheckInTurnstile.getToken()
-  Bridge-->>App: Trả về prewarmedToken NGAY LẬP TỨC (0ms)
-  App->>Server: POST /api/v2/xeng/check-in-secure (Bay mạng 39ms)
-  Note over Server: Chạm máy chủ lúc 00:00:00.000 -> ĐOẠT TOP 1
-  Server-->>App: HTTP 200 { success: true, rank: 1 }
-  Bridge->>Bridge: isCheckedIn() = true -> Hủy toàn bộ Lần 2..8
+```text
+Kế hoạch: 8 lần từ T−98ms · chuẩn bị ~0ms · mạng ~39ms · ±48ms
+Mốc dự kiến tới máy chủ: −59 −28 −8 +12 +32 +52 +72 +92 ms
 ```
 
+| Lần | Bắt đầu | Tầng | Turnstile | Gửi (sau khi bắt đầu) | Máy chủ · HTTP |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | 23:59:59.906 | Hàm | **1434 ms** | 00:00:01.477 (+1571 ms) | 186 ms · 200 |
+| 2 | 23:59:59.939 | Hàm | 1 ms | 00:00:01.674 (+1735 ms) | 181 ms · 200 |
+| 3 | 23:59:59.975 | Hàm | 1 ms | 00:00:01.674 (+1699 ms) | 162 ms · 200 |
+| 4 | 23:59:59.983 | Hàm | 1 ms | — | — |
+| 5 | 00:00:00.000 | Hàm | 1 ms | — | — |
+| 6 | 00:00:00.023 | Hàm | 1 ms | — | — |
+| 7 | 00:00:00.045 | Hàm | 1 ms | — | — |
+| 8 | 00:00:00.057 | Hàm | 1 ms | — | — |
+
+Phản hồi của lần 1 về lúc khoảng 00:00:01.663 (01.477 + 186 ms).
+
 ---
 
-## 4. Chi Tiết Triển Khai Kỹ Thuật
+## 2. Phân tích
 
-### 4.1. Tầng Pre-warm Token & Socket (Giai đoạn $T - 3.5$s)
+### 2.1. Bắt đầu quá muộn vì chưa có số đo **[Đã kiểm]**
 
-#### 4.1.1. Cơ chế sinh trước token Cloudflare Turnstile
-- **Đặc tính kỹ thuật của Turnstile**:
-  - Mã token sinh ra từ Turnstile có thời hạn hiệu lực (TTL) là **300 giây (5 phút)**.
-  - Phía máy chủ Caffiliate khi xác thực qua Cloudflare API (`https://challenges.cloudflare.com/turnstile/v0/siteverify`) chỉ kiểm tra tính hợp lệ của token và secret key; máy chủ không yêu cầu token phải được tạo đúng mili-giây của giờ điểm danh.
-- **Quy trình triển khai**:
-  1. Tại mốc $T - 3.5\text{s}$, `CaffiliateAdapter.preWarmStrike()` phát sự kiện `dh-caffiliate-prewarm`.
-  2. `caffiliate_bridge.js` lắng nghe sự kiện, kiểm tra `window.CheckInTurnstile` và gọi ngầm `window.CheckInTurnstile.getToken()`.
-  3. Kết quả trả về được lưu vào biến `prewarmedTurnstileToken`.
-  4. Nếu quá trình sinh token mất 1.2s - 1.8s, token sẽ sẵn sàng trong bộ nhớ lúc $T - 1.7\text{s}$, hoàn toàn kịp trước giờ G.
+- Kế hoạch tính thời gian chuẩn bị $P = 0$ vì nhật ký chưa có mẫu nào (đêm đầu tiên có nhật ký), nên lần 1 chỉ bắt đầu ở T − 98 ms.
+- Thực tế lần 1 chờ Turnstile 1434 ms, rồi thêm khoảng 137 ms (ký request…), nên request rời máy lúc 00:00:01.477.
+- Đây không phải lỗi công thức. Công thức đúng, nhưng thiếu dữ liệu đầu vào.
 
-#### 4.1.2. Kỹ thuật bọc trong suốt (Transparent Interception)
-Để giữ nguyên tính toàn vẹn của mã nguồn trang web và các bộ test, chúng ta bọc hàm `getToken` của trang:
+### 2.2. Trang chỉ giải một thử thách Turnstile mỗi lúc **[Suy luận]**
 
-```javascript
-// Bọc getToken: lần gọi đầu tiên trả token có sẵn trong 0ms,
-// các lần gọi sau (nếu có fallback) gọi hàm gốc để lấy token tươi mới.
-if (!origGetToken.__dh_wrapped) {
-  window.CheckInTurnstile.getToken = function () {
-    if (prewarmedTurnstileToken && (now() - prewarmedAt < 240000)) {
-      var cached = prewarmedTurnstileToken;
-      prewarmedTurnstileToken = ""; // Xóa cache ngay khi bốc ra để tránh tái sử dụng trùng token
-      return Promise.resolve(cached);
-    }
-    return origGetToken.apply(this, arguments);
-  };
-  window.CheckInTurnstile.getToken.__dh_wrapped = true;
-  window.CheckInTurnstile.getToken.__dh_orig = origGetToken;
-}
+- Lần 2–8 có «Turnstile 1 ms» nhưng không lần nào gửi request trong lúc lần 1 còn chờ token.
+- Vậy rải 8 lần quanh 0h không giúp được gì khi thời gian nằm ở Turnstile: giờ tới máy chủ do lần 1 quyết định.
+- **Cần kiểm chứng:** chưa xem được mã nguồn trang Caffiliate (`CheckInTurnstile.getToken`, `app.checkIn`). Kết luận chỉ dựa trên nhật ký của một đêm.
+
+### 2.3. «Lần 2» và «Lần 3» là ghi nhầm **[Suy luận]**
+
+- Cả hai cùng «gửi» lúc 00:00:01.674, chỉ 11 ms sau khi lần 1 có phản hồi (01.663).
+- Rất có thể đó là các request GET trạng thái / bảng vàng mà trang tự gọi sau khi điểm danh xong. Bridge cũ gán *mọi* URL có chữ `check-in` cho các lần thử theo thứ tự.
+- **Chưa chứng minh được:** bản cũ không ghi phương thức (GET/POST) nên không kiểm lại được đêm 13/10. Từ 14/10 bridge chỉ gán request POST (mục 4), nên nhật ký mới sẽ cho thấy rõ.
+
+### 2.4. Thời gian máy chủ lớn hơn RTT/2 nhiều **[Suy luận]**
+
+- Kế hoạch giả định 39 ms một chiều (RTT 78 ms đo lúc canh giờ), trong khi máy chủ mất 186 ms mới trả lời.
+- Giả định hiện tại là máy chủ còn gọi Cloudflare `siteverify` để kiểm token trước khi ghi nhận, nên thời gian hiệu dụng từ lúc gửi tới lúc được ghi nhận ≈ 186 − 39 = 147 ms.
+- **[Chưa có dữ liệu]:** không tách được bao nhiêu là mạng, bao nhiêu là xử lý của máy chủ.
+
+### 2.5. Máy chủ lấy giờ điểm danh vào lúc nào? **[Chưa có dữ liệu]**
+
+- Có thể máy chủ lấy giờ lúc nhận request, hoặc sau khi kiểm token xong.
+- Kế hoạch đang giả định *sau khi kiểm token* (gần lúc trả lời). Nếu thực tế là lúc nhận request, kế hoạch đang bắt đầu sớm hơn cần khoảng 100 ms. Như vậy lượt điểm danh sẽ tới sát 0h hơn, đồng thời rủi ro tới trước 0h cũng cao hơn một chút.
+
+### 2.6. Request tới trước 0h bị xử lý thế nào? **[Chưa có dữ liệu]**
+
+- Giả định hiện tại: bị từ chối (tính là hôm qua, đã điểm danh rồi), và token Turnstile đã bị tiêu, nên lần kế phải giải thử thách mới (~1 giây).
+- Chưa có đêm nào ghi lại phản hồi của một request tới trước 0h.
+- Từ 14/10 nhật ký đã lưu **câu trả lời của máy chủ** (mục 7), nên khi xảy ra sẽ đọc được lý do.
+
+### 2.7. Top 1–3 làm cách nào? **[Chưa có dữ liệu]**
+
+- Bản 1.0 khẳng định họ «bắt buộc phải lấy trước token». Không có dữ liệu nào cho thấy điều đó.
+- Một người bấm sớm khoảng 1,5 giây cũng được token và tới máy chủ ngay sau 0h.
+- Bảng vàng chỉ hiển thị đến giây nên không so được mili-giây.
+
+---
+
+## 3. Mục tiêu và chỉ số
+
+| Chỉ số | Đêm 13/10 | Mục tiêu | Ghi chú |
+| :--- | :--- | :--- | :--- |
+| Lúc request rời máy | 00:00:01.477 | khoảng 0h − thời gian máy chủ | |
+| Lúc được máy chủ xử lý | ~00:00:01.6 | trong giây 00:00:00 | Đêm 14/10 dự kiến 00:00:00.395 ± 395 ms |
+| Tỉ lệ lần 1 tới trước 0h | — | ≤ ~16% | 1σ an toàn; giảm khi số đo ổn định hơn |
+| Thứ hạng | #4 | Top 3 | **Không đảm bảo**: phụ thuộc đối thủ, mục 2.7 |
+
+---
+
+## 4. Đã triển khai (14-10-2026)
+
+| Thay đổi | Tệp |
+| :--- | :--- |
+| Chỉ gán request **POST** tới URL điểm danh cho lần thử, bỏ các GET trang tự gọi | `extension/public/caffiliate_bridge.js` |
+| Mẫu «chuẩn bị» và «phản hồi» chỉ lấy từ **lần thử có request đi đầu tiên** của mỗi lần chạy (các lần sau đứng chờ sau token của nó) | `extension/src/lib/checkin_log.ts` (`prepSamplesFromLogs`, `serverSamplesFromLogs`) |
+| Thời gian máy chủ $L$ học từ nhật ký: trung vị phản hồi 2xx − RTT/2, giới hạn [RTT/2, 1000 ms] | `extension/src/lib/strike_plan.ts` |
+| Chế độ **chờ token** ($P \ge 300$ ms): lần 1 nhắm tới **sau** 0h một khoảng $1\sigma$, 4 lần sau là dự phòng cách nhau 20 ms | `extension/src/lib/strike_plan.ts` |
+| Nhật ký lưu **câu trả lời của máy chủ** rút gọn cho mỗi lần thử (chỉ trường kiểu thông báo, ≤ 160 ký tự), hiện trong Cài đặt → Nhật ký điểm danh | `caffiliate_bridge.js`, `checkin_log.ts`, `CheckInLog.tsx` |
+| Mẫu chỉ lấy từ nhật ký **của cùng trang** (host): lần chạy thử trên trình mô phỏng không làm lệch kế hoạch Caffiliate | `checkin_log.ts`, `caffiliate_adapter.ts` |
+| Sửa báo **«Thành công» sớm**: lúc bắn, nút vẫn còn nhãn hôm qua «Đã điểm danh #N»; adapter giờ ghi lại nhãn đó lúc T − 3.5 s và chỉ tính xong khi nhãn đổi hoặc bridge xác nhận | `caffiliate_adapter.ts` |
+| Test: kế hoạch theo số liệu đêm 13/10, lấy mẫu từ nhật ký, chỉ gán request POST, câu trả lời của máy chủ | `strike_plan.test.ts`, `checkin_log.test.ts`, `caffiliate_bridge.test.ts` |
+
+### 4.1. Công thức
+
+Lần thử bắt đầu lúc $s$ được máy chủ xử lý khoảng $s + P + L$:
+
+- $P$: trung vị «bắt đầu → request rời máy» của 10 đêm gần nhất (lần đi đầu mỗi đêm).
+- $L$: trung vị «request → phản hồi» trừ $RTT/2$.
+- $\sigma = \max(10,\ \sqrt{(E/\sqrt3)^2 + J_P^2 + J_L^2})$, với $E$ là sai số canh giờ. $J_P$, $J_L$ = IQR/1.349 khi có ≥ 4 mẫu, nếu không thì 1/4 trung vị.
+- Chờ token ($P \ge 300$ ms): $a_0 = \max(20,\ \sigma)$ sau 0h, $a_i = a_0 + 20i$, 5 lần.
+- Không chờ token ($P < 300$ ms): giữ cách rải theo phân vị chuẩn quanh 0h như trước (vài lần ngay trước 0h, các lần sau ngay sau 0h).
+- Bắt đầu: $s_i = a_i - P - L$, sớm nhất 3 s trước 0h.
+
+Chi tiết đầy đủ: [`docs/extension/kien-truc-universal-sniper-va-state-machine.md`](../extension/kien-truc-universal-sniper-va-state-machine.md) mục 11.3.
+
+### 4.2. Kế hoạch đêm 14/10 (từ số liệu đêm 13/10)
+
+$P$ = 1571 ms, phản hồi 186 ms, RTT 78 ms → $L$ = 147 ms, $\sigma$ ≈ 395 ms:
+
+```text
+Kế hoạch: 5 lần từ T−1323ms · chuẩn bị ~1571ms · mạng ~147ms · ±395ms
+Lần 1 bắt đầu 23:59:58.677 → dự kiến được xử lý 00:00:00.395 (±395 ms)
 ```
 
-#### 4.1.3. Pre-warm kết nối mạng (Socket Keep-Alive)
-- Bắt tay TLS/TCP mới tốn từ 100ms đến 200ms.
-- Tại $T - 3.5\text{s}$, gửi một request OPTIONS hoặc HEAD nhẹ với `keepalive: true` tới endpoint `/api/v2/xeng/check-in-secure`:
-  ```javascript
-  if (typeof fetch === "function") {
-    fetch("/api/v2/xeng/check-in-secure", { method: "OPTIONS", keepalive: true }).catch(function () {});
-  }
-  ```
-- Hành động này giữ ấm đường ống TCP và phiên TLS sẵn sàng, giúp request POST thật ở giờ G bay qua mạng trong thời gian ngắn nhất (chỉ còn $RTT / 2 \approx 35\text{ms} - 40\text{ms}$).
+- Biên ±395 ms rộng vì mới có **1 mẫu** (độ dao động được ước tính bằng 1/4 trung vị). Từ 4 đêm trở đi, độ dao động tính từ số đo thật và biên sẽ tự hẹp lại.
+- **[Chưa có dữ liệu]:** độ dao động thật của thời gian Turnstile giữa các đêm.
 
 ---
 
-### 4.2. Tối Ưu Lập Kế Hoạch Bắn (Strike Plan Gaussian)
+## 5. Đã có sẵn, không cần làm thêm
 
-Khi token Turnstile được giải quyết trong $0\text{ms}$, tham số đầu vào của thuật toán Gaussian trong [`strike_plan.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/lib/strike_plan.ts) thay đổi hoàn toàn:
-
-```
-Trước tối ưu:
-  P (prepMs) = 1434ms (hoặc 0ms sai lệch)
-  Jitter Turnstile = lớn (±500ms)
-  Request bị lệch sang 00:00:01
-
-Sau tối ưu:
-  P (prepMs) = 0ms (chính xác tuyệt đối)
-  Jitter Token = 0ms
-  Độ phân tán tổng thể: sigma = sqrt(clockSigma^2 + netJitter^2) <= 15ms
-```
-
-#### Công thức tính toán mốc bắn mới
-Với độ trễ mạng đo được $RTT = 78\text{ms} \implies L = 39\text{ms}$:
-- Mục tiêu chạm máy chủ lần 1: $a_0 = +10\text{ms}$ (ngay sau mốc 00:00:00).
-- Thời điểm xuất phát lần 1:
-  $$s_0 = a_0 - P - L = 10\text{ms} - 0\text{ms} - 39\text{ms} = -29\text{ms} \implies 23:59:59.971$$
-- Các lần bắn kế tiếp cách nhau tối thiểu $20\text{ms}$:
-  - Lần 1: $23:59:59.971 \implies$ chạm máy chủ lúc `00:00:00.010`
-  - Lần 2: $23:59:59.991 \implies$ chạm máy chủ lúc `00:00:00.030`
-  - Lần 3: $00:00:00.011 \implies$ chạm máy chủ lúc `00:00:00.050`
-  - Lần 4: $00:00:00.031 \implies$ chạm máy chủ lúc `00:00:00.070`
-  - Lần 5: $00:00:00.051 \implies$ chạm máy chủ lúc `00:00:00.090`
-
-Nếu máy chủ mở cổng sớm ở đúng mili-giây số 10: Lần 1 ăn ngay Top 1.  
-Nếu máy chủ bị trễ 20ms: Lần 2 ăn ngay Top 1–2.  
-Toàn bộ chuỗi 5 lần thử đều chạm đích trước khi đồng hồ chuyển sang `00:00:00.100`.
+- **Chạy được khi tab bị ẩn:** `hunt_engine.ts` chỉ dùng `requestAnimationFrame` khi `!document.hidden`, ngược lại dùng `setTimeout`. `WorkerTimer` là nguồn nhịp chính.
+- **Giữ ấm kết nối:** engine gửi `HEAD` cùng origin lúc T − 5 s (`keepalive`), adapter `preconnect` tới `challenges.cloudflare.com` lúc T − 3.5 s. API điểm danh cùng origin với trang nên không cần `OPTIONS`.
 
 ---
 
-### 4.3. Kiến Trúc 3 Tầng Khai Hỏa (Execution Fallback Cascade)
+## 6. Không triển khai: lấy trước / giữ / trả token Turnstile từ bộ đệm
 
-Mỗi lần thử ($s_i$) đi qua 3 tầng nghiêm ngặt, đảm bảo không có bất kỳ ngoại lệ nào làm gián đoạn:
+Bản 1.0 đề xuất:
 
-```
-[Bắt đầu lần thử s_i]
-       │
-       ▼
-┌───────────────────────────────┐
-│ Tầng 1: app.checkIn()         │ ──(Thành công)──> Chạm server 00:00:00
-└───────────────────────────────┘                   └──> isCheckedIn() = true -> HỦY LẦN 2..5
-       │ (Reject / Lỗi)
-       ▼
-┌───────────────────────────────┐
-│ Tầng 2: Direct API            │ ──(Thành công)──> Chạm server 00:00:00
-│ POST /check-in-secure         │                   └──> isCheckedIn() = true -> HỦY LẦN 2..5
-└───────────────────────────────┘
-       │ (Reject / Không có sig)
-       ▼
-┌───────────────────────────────┐
-│ Tầng 3: DOM Click             │ ──(Bấm nút)────> Dự phòng chốt chặn cuối
-│ #btnCheckIn.click()           │
-└───────────────────────────────┘
-```
+- sinh token lúc T − 3.5 s, giữ trong bộ nhớ;
+- bọc `CheckInTurnstile.getToken()` để trả token đó trong 0 ms;
+- sự kiện `dh-caffiliate-prewarm`.
 
-#### Quy tắc an toàn token khi Fallback:
-1. Nếu Tầng 1 đã lấy token ra và gửi request, biến `prewarmedTurnstileToken` lập tức trở thành rỗng (`""`).
-2. Nếu Tầng 1 gặp lỗi client trước khi gửi mạng, token chưa bị server Cloudflare verify thì Tầng 2 có thể sử dụng.
-3. Nếu Tầng 1 đã gửi mạng nhưng máy chủ sàn lỗi, token đã bị Cloudflare tiêu thụ (single-use consumed): Tầng 2 khi gọi `getToken()` sẽ tự động kích hoạt hàm gốc để lấy token mới, tránh lỗi `timeout-or-duplicate`.
+**Không làm**, vì:
+
+- Turnstile là lớp chống bot của Caffiliate. Lấy token trước rồi phát lại vào lúc mình chọn là lách đúng thứ mà lớp đó kiểm tra.
+- Lập luận «đối thủ bắt buộc phải lấy trước token» không có dữ liệu (mục 2.7).
+- Các nhận định kỹ thuật đi kèm cũng **chưa được kiểm chứng**: token sống 300 s, máy chủ không kiểm thời điểm tạo token, các lần sau tự lấy token mới. Không có tài liệu hay số đo nào trong repo cho các điểm này.
+
+Cách đã làm thay thế (mục 4) đạt cùng mục tiêu: bắt đầu lượt điểm danh của trang sớm đúng bằng thời gian Turnstile + máy chủ đã đo. Token vẫn được sinh ngay trong lượt điểm danh đó.
 
 ---
 
-### 4.4. Ngăn Chặn Đóng Băng Khi Tab Chạy Nền (Background Throttling Guard)
+## 7. Cần xem / làm tiếp
 
-Một rủi ro lớn là người dùng đặt giờ săn nhưng lại chuyển sang tab khác làm việc hoặc thu nhỏ trình duyệt:
-1. `WorkerTimer` (Web Worker) được sử dụng làm nguồn nhịp chính vì Web Worker không bị Chrome bóp xung nhịp (throttle) về 1000ms.
-2. Tại vòng lặp Microtask Spin-Wait (dưới 35ms cuối):
-   - Không được dùng `requestAnimationFrame` trần vì trình duyệt đóng băng hoàn toàn `requestAnimationFrame` (0 FPS) khi tab bị ẩn (`document.hidden = true`).
-   - Bắt buộc kiểm tra:
-     ```typescript
-     if (typeof document !== "undefined" && !document.hidden && typeof requestAnimationFrame === "function") {
-       requestAnimationFrame(spinPoll);
-     } else {
-       setTimeout(spinPoll, 1);
-     }
-     ```
-   - Điều này đảm bảo dù tab bị ẩn hay thu nhỏ, vòng lặp khai hỏa vẫn nổ súng chính xác tuyệt đối ở mili-giây định trước.
+- [ ] **Đêm 14/10:** chụp nhật ký và bảng vàng. So với dự kiến: lần 1 bắt đầu khoảng 23:59:58.6xx, được xử lý trong giây 00:00:00.
+- [ ] **Xác nhận mục 2.2–2.3:** trong nhật ký mới, chỉ lần thử có request POST thật mới có giờ «gửi». Nếu lần 2+ cũng gửi POST thật thì trang không giải Turnstile tuần tự, và chế độ chờ token cần xem lại.
+- [x] **Lưu câu trả lời của máy chủ** vào nhật ký (14-10-2026): mỗi lần thử có dòng «Máy chủ: «…»» (đỏ khi HTTP không phải 2xx). JSON chỉ giữ các trường kiểu thông báo (`success`, `message`, `rank`…), không lưu nguyên body; tối đa 160 ký tự. Dùng để trả lời mục 2.6 khi có đêm lần 1 tới trước 0h.
+- [ ] **Sau ≥ 4 đêm:** xem $\sigma$ thu hẹp tới đâu và tỉ lệ lần 1 tới trước 0h. Nếu gần 0%, cân nhắc giảm biên an toàn (`SAFE_SIGMAS` trong `strike_plan.ts`); nếu cao, tăng lên.
+- [ ] **Mục 2.5:** nếu nhiều đêm liền được xử lý ở 00:00:00.3–0.5 mà vẫn trượt Top 3, thử giả định máy chủ lấy giờ lúc *nhận* request (giảm $L$ về khoảng RTT/2). Chỉ đổi khi có số liệu.
 
 ---
 
-## 5. Ma Trận Thay Đổi Mã Nguồn
+## 8. Cách kiểm chứng
 
-| Tệp tin | Vị trí | Nội dung thay đổi |
-| :--- | :--- | :--- |
-| [`extension/public/caffiliate_bridge.js`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/public/caffiliate_bridge.js) | Lắng nghe `dh-caffiliate-prewarm` | Thêm hàm `handlePrewarm`: gọi ngầm `CheckInTurnstile.getToken()`, lưu cache token vào `prewarmedTurnstileToken`, gửi OPTIONS keep-alive tới `/api/v2/xeng/check-in-secure`. |
-| [`extension/public/caffiliate_bridge.js`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/public/caffiliate_bridge.js) | Hàm `wrapTurnstile` | Sửa logic bọc: nếu có token cache thì trả về ngay trong 0ms và xóa biến cache. Đồng thời ghi nhận thời gian `tokenStartAt = tokenEndAt` để nhật ký phản ánh đúng $0\text{ms}$. |
-| [`extension/src/content/adapters/caffiliate_adapter.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/adapters/caffiliate_adapter.ts) | Hàm `preWarmStrike` | Phát CustomEvent `dh-caffiliate-prewarm` sang Main World để kích hoạt chuỗi pre-warm trước giờ G 3.5 giây. |
-| [`extension/src/content/core/hunt_engine.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/core/hunt_engine.ts) | Vòng lặp `spinPoll` | Bổ sung điều kiện `!document.hidden` trước khi gọi `requestAnimationFrame`, bảo vệ tiến trình khai hỏa không bị treo khi người dùng chuyển tab. |
-
----
-
-## 6. Chiến Lược Kiểm Thử (Test & Verification)
-
-### 6.1. Unit Test & Integration Test (Vitest)
-Cập nhật và bổ sung test cases trong [`caffiliate_bridge.test.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/content/adapters/caffiliate_bridge.test.ts):
-1. **Test Pre-warm Token Resolution**:
-   - Khi nhận sự kiện `dh-caffiliate-prewarm`, bridge gọi `CheckInTurnstile.getToken()`.
-   - Khi `strike()` diễn ra sau đó, `app.checkIn()` nhận được token trong $0\text{ms}$ mà không gọi thêm lần fetch Turnstile mới nào.
-2. **Test Single-Use Invalidation**:
-   - Xác nhận `prewarmedTurnstileToken` bị xóa ngay sau lần sử dụng đầu tiên.
-   - Lần gọi thứ hai trong cùng chuỗi bắt buộc phải kích hoạt hàm gốc.
-3. **Test Cancel on Confirm**:
-   - Khi lần 1 xác nhận thành công, các lần 2..5 bị xóa khỏi hàng đợi hẹn giờ ngay lập tức.
-
-### 6.2. Kiểm thử trên Bench Simulator (`localhost:3100`)
-1. Chạy simulator cục bộ: `npm run dev` trong `deal-hunter/simulator`.
-2. Mở trình duyệt có cài extension ở chế độ dev.
-3. Kích hoạt lượt săn thử nghiệm ở mốc $T + 10\text{s}$.
-4. Kiểm tra tab "Nhật ký điểm danh":
-   - Xác nhận `Turnstile: 0ms` (hoặc `<= 1ms`).
-   - Xác nhận thời gian chạm đích nằm trong khoảng $00:00:00.010 - 00:00:00.030$.
-
-### 6.3. Kiểm thử thực chiến mốc 00:00:00 trên Caffiliate
-- Đặt lịch hẹn tự động (hoặc mở sẵn tab và Arm trước 23:59:00).
-- Sau 00:00:05, kiểm tra hai vị trí:
-  1. **Bảng vàng điểm danh**: Thứ hạng nằm trong Top 1, Top 2 hoặc Top 3.
-  2. **Popup DealHunter -> Cài đặt -> Nhật ký điểm danh**:
-     - Lần 1: `Turnstile 0ms` (thay vì 1434ms).
-     - Thời gian phản hồi trang: `00:00:00.xxx` (thay vì `00:00:01.xxx`).
-
----
-
-## 7. Kế Hoạch Triển Khai (Action Checklist)
-
-- [ ] **Bước 1**: Cập nhật `caffiliate_bridge.js` tích hợp bộ đệm `prewarmedTurnstileToken` và sự kiện `dh-caffiliate-prewarm`.
-- [ ] **Bước 2**: Cập nhật `caffiliate_adapter.ts` gửi sự kiện pre-warm tại $T - 3.5\text{s}$.
-- [ ] **Bước 3**: Thêm guard `!document.hidden` vào `hunt_engine.ts` chống freeze khi tab chạy nền.
-- [ ] **Bước 4**: Chạy toàn bộ test suite `npx vitest run` đảm bảo 32/32 file test pass 100%.
-- [ ] **Bước 5**: Chạy `npm run build` đóng gói thư mục `dist/`.
-- [ ] **Bước 6**: Hướng dẫn người dùng reload extension trên `chrome://extensions` để sẵn sàng cho đêm tiếp theo.
+1. Reload extension (`chrome://extensions`), F5 tab Caffiliate, để tab mở qua 0h.
+2. Sau 00:00:05, mở popup → Cài đặt → **Nhật ký điểm danh**:
+   - dòng kế hoạch: `5 lần từ T−…ms · chuẩn bị ~…ms · mạng ~…ms · ±…ms`;
+   - lần 1: giờ bắt đầu, thời gian Turnstile, giờ gửi, thời gian máy chủ và dòng «Máy chủ: «…»» (câu trả lời).
+3. So với **Bảng vàng điểm danh** trên Caffiliate: giờ hiển thị và thứ hạng.
+4. Ghi số liệu của đêm vào mục 1 của tài liệu này (dạng bảng, không cần lưu ảnh).

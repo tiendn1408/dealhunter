@@ -101,14 +101,14 @@ go run cmd/notifier/main.go
 - [x] Caffiliate: diem danh 3 tang (ham cua trang -> API cua trang -> bam nut), toi thieu 5 lan gui theo lich tinh toan, nhat ky trong Cai dat.
 - [x] Huy hieu gia tren trang san pham Shopee / Lazada / Tiki / TikTok Shop cho thanh vien da dang nhap.
 - [x] Dang nhap mot lan qua web (`DH_WEB_SESSION`, `externally_connectable`, `chrome.storage.session`).
-- [x] Ban phat hanh / ban dev: `npm run build` (chi tin `dealhunter.vn`) va `npm run build:dev` (them localhost). 32 file, 307 unit test pass.
+- [x] Ban phat hanh / ban dev: `npm run build` (chi tin `dealhunter.vn`) va `npm run build:dev` (them localhost). 33 file, 317 unit test pass.
 
 ## Documentation
 Chi tiet tai lieu he thong duoc quan ly trong thu muc [`docs/`](docs/README.md):
 - [**DealHunter Assistant Extension Guide**](docs/extension/huong-dan-su-dung.md): Huong dan su dung cho nguoi khong chuyen (3 buoc, bang san, Lich san, Cai dat).
 - [**Kien truc Universal Sniper & State Machine**](docs/extension/kien-truc-universal-sniper-va-state-machine.md): Kien truc hien tai cua extension (dong co bam, lich san, canh gio, Caffiliate).
 - [**Ket noi Web App & Extension**](docs/extension/ket-noi-web-extension.md): Giao thuc `DH_WEB_SESSION`, origin theo ban build va bao mat.
-- [**Extension Source & Build Guide**](extension/README.md): Build ban phat hanh / ban dev, kiem thu (307 unit test) va cau truc ma nguon.
+- [**Extension Source & Build Guide**](extension/README.md): Build ban phat hanh / ban dev, kiem thu (317 unit test) va cau truc ma nguon.
 - [**Ra soat loi & Ke hoach sua Extension**](docs/extension/ra-soat-loi-va-ke-hoach-sua.md): Bien ban ra soat toan dien, theo doi Dot 1 -> Dot 3 va danh gia ky thuat.
 - [**Cam nang Trien khai San xuat**](docs/deployment/production-deployment-guide.md): Huong dan trien khai Production (Docker Compose Prod, Systemd, Nginx SSL, Backup).
 - [**Dac ta REST API Toan Dien**](docs/api/rest-api-reference.md): Danh muc 24+ HTTP endpoints, payload, auth va curl examples.

@@ -103,6 +103,14 @@ export const CheckInLog: React.FC<CheckInLogProps> = ({ lang = "en" }) => {
                               {t.checkInLogTier(tier.tier)}: {tier.error}
                             </div>
                           ))}
+                        {a.reply && (
+                          <div
+                            className={`break-words ${a.status !== null && a.status >= 200 && a.status < 300 ? "text-slate-400" : "text-rose-300/80"}`}
+                            title={a.reply}
+                          >
+                            {t.checkInLogReply}: «{a.reply}»
+                          </div>
+                        )}
                       </td>
                       <td className="w-[112px] py-1 text-right font-mono tabular-nums">
                         {a.tokenMs !== null && (

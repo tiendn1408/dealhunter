@@ -21,8 +21,9 @@ describe("planStrike", () => {
   });
 
   it("starts early by the measured prep + one-way time so requests reach the server around 00:00", () => {
-    const plan = planStrike({ rttMs: 100, clockErrorMs: 30, prepSamplesMs: [800, 810, 790, 805, 795] });
-    expect(plan.prepMs).toBe(800);
+    const plan = planStrike({ rttMs: 100, clockErrorMs: 30, prepSamplesMs: [200, 210, 190, 205, 195] });
+    expect(plan.tokenBound).toBe(false);
+    expect(plan.prepMs).toBe(200);
     expect(plan.oneWayMs).toBe(50);
     // first start = T - lead; its arrival = start + prep + oneWay
     expect(-plan.leadMs + plan.prepMs + plan.oneWayMs).toBeCloseTo(plan.arrivalsMs[0], -1);
@@ -30,12 +31,12 @@ describe("planStrike", () => {
     expect(plan.arrivalsMs[0]).toBeLessThan(0);
     expect(plan.arrivalsMs[plan.arrivalsMs.length - 1]).toBeGreaterThan(0);
     expect(median(plan.arrivalsMs)).toBeGreaterThanOrEqual(0);
-    expect(plan.leadMs).toBeGreaterThan(800);
+    expect(plan.leadMs).toBeGreaterThan(200);
   });
 
   it("widens the spread and adds attempts when the clock or the prep time is uncertain", () => {
-    const tight = planStrike({ rttMs: 40, clockErrorMs: 5, prepSamplesMs: [500, 502, 498, 501] });
-    const loose = planStrike({ rttMs: 40, clockErrorMs: 200, prepSamplesMs: [300, 900, 500, 700] });
+    const tight = planStrike({ rttMs: 40, clockErrorMs: 5, prepSamplesMs: [100, 102, 98, 101] });
+    const loose = planStrike({ rttMs: 40, clockErrorMs: 200, prepSamplesMs: [50, 250, 100, 200] });
     expect(loose.sigmaMs).toBeGreaterThan(tight.sigmaMs);
     expect(loose.offsetsMs.length).toBeGreaterThan(tight.offsetsMs.length);
     expect(loose.offsetsMs.length).toBeLessThanOrEqual(STRIKE_PLAN.MAX_ATTEMPTS);
@@ -51,5 +52,33 @@ describe("planStrike", () => {
 
     const slow = planStrike({ rttMs: 400, clockErrorMs: 1000, prepSamplesMs: [5000, 5200, 4900, 5100] });
     expect(slow.leadMs).toBeLessThanOrEqual(STRIKE_PLAN.MAX_LEAD_MS);
+  });
+
+  // 13/10 night: the first attempt waited 1571 ms for its Turnstile token and the server answered
+  // in 186 ms (it verifies the token with Cloudflare first); the plan had assumed 0 ms and 39 ms.
+  it("token-bound: the first arrival lands after 00:00, never before (an early one burns the token)", () => {
+    const plan = planStrike({ rttMs: 78, clockErrorMs: 20, prepSamplesMs: [1571], serverSamplesMs: [186] });
+    expect(plan.tokenBound).toBe(true);
+    expect(plan.prepMs).toBe(1571);
+    expect(plan.oneWayMs).toBe(186 - 39); // learned: response time minus the way back
+    expect(plan.arrivalsMs[0]).toBeGreaterThan(0);
+    expect(plan.arrivalsMs[0]).toBeGreaterThanOrEqual(plan.sigmaMs * STRIKE_PLAN.SAFE_SIGMAS - 1);
+    expect(plan.arrivalsMs.every((a, i) => i === 0 || a - plan.arrivalsMs[i - 1] === STRIKE_PLAN.MIN_GAP_MS)).toBe(true);
+    // starts about prep + server time + margin before 00:00 (13/10 started only 98 ms before)
+    expect(plan.leadMs).toBe(Math.round(plan.prepMs + plan.oneWayMs - plan.arrivalsMs[0]));
+    expect(plan.leadMs).toBeGreaterThan(1300);
+    expect(plan.leadMs).toBeLessThanOrEqual(STRIKE_PLAN.MAX_LEAD_MS);
+  });
+
+  it("the margin after 00:00 shrinks as the measured token time gets steadier", () => {
+    const one = planStrike({ rttMs: 78, clockErrorMs: 20, prepSamplesMs: [1571], serverSamplesMs: [186] });
+    const steady = planStrike({
+      rttMs: 78,
+      clockErrorMs: 20,
+      prepSamplesMs: [1560, 1575, 1580, 1565, 1570],
+      serverSamplesMs: [180, 186, 190, 184],
+    });
+    expect(steady.arrivalsMs[0]).toBeLessThan(one.arrivalsMs[0]);
+    expect(steady.arrivalsMs[0]).toBeGreaterThan(0);
   });
 });

@@ -90,8 +90,19 @@
     run.ok = ok;
     run.method = method;
     if (error) run.error = error;
-    emit("dh-checkin-timing", run);
     emit("dh-checkin-result", { ok: ok, method: method, error: error || null });
+    // The log waits (briefly) for the server's answers still being read, the result above does not.
+    var r = run;
+    var waited = 0;
+    (function emitTiming() {
+      var pending = r.attempts.some(function (a) { return a.replyPending; });
+      if (pending && waited < REPLY_WAIT_MS) {
+        waited += 25;
+        return setTimeout(emitTiming, 25);
+      }
+      r.attempts.forEach(function (a) { delete a.replyPending; });
+      emit("dh-checkin-timing", r);
+    })();
   }
 
   // ---- Tier 1: the page's own function ------------------------------------------------------------
@@ -313,8 +324,10 @@
     if (wrapTurnstile() || ++wrapTries > 120) clearInterval(wrapTimer);
   }, 500);
 
-  function onRequestStart(url) {
-    if (!CHECKIN_URL.test(String(url))) return null;
+  // Only the check-in itself (a POST) belongs to an attempt: the page also GETs check-in status /
+  // leaderboard URLs after answering, which must not be logged as attempts.
+  function onRequestStart(url, method) {
+    if (!CHECKIN_URL.test(String(url)) || String(method || "GET").toUpperCase() !== "POST") return null;
     var a = nextAttempt("requestStartAt");
     if (a) a.requestStartAt = now();
     return a;
@@ -326,16 +339,64 @@
     if (serverDate) a.serverDate = serverDate;
   }
 
+  // What the server said, short: the message-like fields of a JSON answer (never the whole body,
+  // which may carry tokens), or the text of an HTML/plain error page. Explains a refused check-in
+  // (too early, already checked in, token rejected...) in the Log tab.
+  var REPLY_MAX = 160;
+  var REPLY_WAIT_MS = 500;
+  function summarizeReply(text) {
+    text = String(text || "");
+    try {
+      var b = JSON.parse(text);
+      if (b && typeof b === "object") {
+        var d = b.data && typeof b.data === "object" ? b.data : {};
+        var parts = [];
+        ["success", "ok", "code", "status"].forEach(function (k) {
+          if (k in b && (typeof b[k] !== "object" || b[k] === null)) parts.push(k + "=" + b[k]);
+        });
+        var msg = b.message || b.msg || b.error || b.detail || b.reason || d.message || d.msg || d.error;
+        if (msg && typeof msg === "object") msg = msg.message || JSON.stringify(msg);
+        if (msg) parts.push(String(msg));
+        var rank = b.rank !== undefined ? b.rank : d.rank;
+        if (rank !== undefined && rank !== null) parts.push("rank=" + rank);
+        return parts.length ? parts.join(" · ").slice(0, REPLY_MAX) : null;
+      }
+    } catch (e) {}
+    var plain = text.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return plain ? plain.slice(0, REPLY_MAX) : null;
+  }
+  function onReply(a, text) {
+    if (!a) return;
+    var reply = summarizeReply(text);
+    if (reply) a.reply = reply;
+  }
+
   if (typeof window.fetch === "function") {
     var origFetch = window.fetch;
-    window.fetch = function (input) {
+    window.fetch = function (input, init) {
       var url = typeof input === "string" ? input : input && input.url;
-      var a = onRequestStart(url);
+      var method = (init && init.method) || (input && typeof input === "object" && input.method) || "GET";
+      var a = onRequestStart(url, method);
       var p = origFetch.apply(this, arguments);
       if (a) {
         p.then(
-          function (resp) { onResponse(a, resp.status, resp.headers.get("date")); },
-          function () { onResponse(a, 0, null); }
+          function (resp) {
+            onResponse(a, resp.status, resp.headers.get("date"));
+            // A copy: the page reads the original body itself
+            try {
+              a.replyPending = true;
+              resp.clone().text().then(
+                function (t) { a.replyPending = false; onReply(a, t); },
+                function () { a.replyPending = false; }
+              );
+            } catch (e) {
+              a.replyPending = false;
+            }
+          },
+          function (err) {
+            onResponse(a, 0, null);
+            onReply(a, "network error: " + errText(err));
+          }
         );
       }
       return p;
@@ -347,14 +408,19 @@
     var origSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.open = function (method, url) {
       this.__dhUrl = url;
+      this.__dhMethod = method;
       return origOpen.apply(this, arguments);
     };
     XMLHttpRequest.prototype.send = function () {
-      var a = onRequestStart(this.__dhUrl);
+      var a = onRequestStart(this.__dhUrl, this.__dhMethod);
       if (a) {
         var xhr = this;
         xhr.addEventListener("loadend", function () {
           onResponse(a, xhr.status, xhr.getResponseHeader("date"));
+          try {
+            var rt = xhr.responseType;
+            onReply(a, rt === "" || rt === "text" ? xhr.responseText : rt === "json" ? JSON.stringify(xhr.response) : "");
+          } catch (e) {}
         });
       }
       return origSend.apply(this, arguments);

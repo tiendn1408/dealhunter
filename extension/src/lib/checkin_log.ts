@@ -21,6 +21,8 @@ export interface CheckInAttempt {
   status?: number;
   /** Date header of the check-in response (1 s resolution). */
   serverDate?: string;
+  /** What the server answered, short (message-like fields only, at most 160 characters). */
+  reply?: string;
 }
 
 /** Summary of the strike plan a run followed (see strike_plan.ts). */
@@ -65,6 +67,8 @@ export interface CheckInLogEntry {
     sentAfterMs: number | null;
     serverMs: number | null;
     status: number | null;
+    /** Server's answer, short; absent in logs written before it was recorded. */
+    reply?: string | null;
   }>;
 }
 
@@ -96,6 +100,7 @@ export function toCheckInLogEntry(run: CheckInRun, offsetMs: number, host: strin
       sentAfterMs: a.requestStartAt !== undefined ? ms(a.requestStartAt - a.startAt) : null,
       serverMs: a.requestStartAt !== undefined && a.responseAt !== undefined ? ms(a.responseAt - a.requestStartAt) : null,
       status: a.status ?? null,
+      reply: a.reply ?? null,
     })),
   };
 }
@@ -107,24 +112,39 @@ export function describeAttempt(a: CheckInLogEntry["attempts"][number]): string 
   if (a.tokenMs !== null) parts.push(`Turnstile ${a.tokenMs}ms${a.tokenError ? " (error)" : ""}`);
   if (a.sent) parts.push(`sent ${a.sent} (+${a.sentAfterMs}ms)`);
   if (a.serverMs !== null) parts.push(`server ${a.serverMs}ms · HTTP ${a.status ?? "?"}`);
+  if (a.reply) parts.push(`"${a.reply}"`);
   return parts.join(" · ");
 }
 
 /**
- * Measured "attempt start -> request sent" times of recent runs, the input for the strike plan's
- * prep estimate. Only attempts whose first tier was the page function (or a manual click) count:
- * after a failed tier the time includes that failure.
+ * The attempt of each run whose request actually went out first, the one that waited for the
+ * Turnstile token. Later attempts reuse the page's pending token and wait behind it: their times
+ * say nothing about how long a check-in takes. Only runs whose first tier was the page function (or
+ * a manual click) count: after a failed tier the time includes that failure.
  */
-export function prepSamplesFromLogs(logs: CheckInLogEntry[], maxRuns = 10): number[] {
-  const samples: number[] = [];
-  for (const log of logs.slice(0, maxRuns)) {
-    for (const a of log.attempts) {
-      const first = a.tiers[0];
-      if (a.sentAfterMs === null || !first || !first.ok) continue;
-      if (first.tier === 1 || log.source === "manual") samples.push(a.sentAfterMs);
-    }
+function firstSentAttempts(logs: CheckInLogEntry[], maxRuns: number, host?: string) {
+  const out: CheckInLogEntry["attempts"] = [];
+  // Only this site's runs: a test on the local simulator must not move the real site's plan
+  const own = host ? logs.filter((l) => l.host === host) : logs;
+  for (const log of own.slice(0, maxRuns)) {
+    const a = log.attempts.find((x) => x.sentAfterMs !== null);
+    const first = a?.tiers[0];
+    if (!a || !first || !first.ok) continue;
+    if (first.tier === 1 || log.source === "manual") out.push(a);
   }
-  return samples;
+  return out;
+}
+
+/** Measured "attempt start -> request sent" times of recent runs: the strike plan's prep estimate. */
+export function prepSamplesFromLogs(logs: CheckInLogEntry[], maxRuns = 10, host?: string): number[] {
+  return firstSentAttempts(logs, maxRuns, host).map((a) => a.sentAfterMs as number);
+}
+
+/** Measured "request sent -> answer" times of recent runs (successful answers only). */
+export function serverSamplesFromLogs(logs: CheckInLogEntry[], maxRuns = 10, host?: string): number[] {
+  return firstSentAttempts(logs, maxRuns, host)
+    .filter((a) => a.serverMs !== null && a.status !== null && a.status >= 200 && a.status < 300)
+    .map((a) => a.serverMs as number);
 }
 
 export async function getCheckInLogs(): Promise<CheckInLogEntry[]> {

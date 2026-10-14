@@ -9,6 +9,7 @@ import {
   describeAttempt,
   getCheckInLogs,
   prepSamplesFromLogs,
+  serverSamplesFromLogs,
   toCheckInLogEntry,
 } from "../../lib/checkin_log";
 import { StrikePlan, planStrike } from "../../lib/strike_plan";
@@ -34,9 +35,12 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
   lastRun: CheckInRun | null = null;
   /** Attempt start -> request sent measurements from the Log history (newest runs). */
   prepSamplesMs: number[] = [];
+  serverSamplesMs: number[] = [];
   plan: StrikePlan | null = null;
   /** Set when the main-world helper saw the site confirm today's check-in. */
   confirmed = false;
+  /** Check-in button label when the current strike was prepared (yesterday's state), or null. */
+  labelBeforeStrike: string | null = null;
   private listening = false;
 
   isMatchUrl(url: string): boolean {
@@ -55,7 +59,8 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       getCheckInLogs()
         .then((logs) => {
-          this.prepSamplesMs = prepSamplesFromLogs(logs);
+          this.prepSamplesMs = prepSamplesFromLogs(logs, 10, window.location.hostname);
+          this.serverSamplesMs = serverSamplesFromLogs(logs, 10, window.location.hostname);
         })
         .catch(() => {});
     }
@@ -75,7 +80,8 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
           appendCheckInLog(entry)
             .then(getCheckInLogs)
             .then((logs) => {
-              this.prepSamplesMs = prepSamplesFromLogs(logs);
+              this.prepSamplesMs = prepSamplesFromLogs(logs, 10, window.location.hostname);
+              this.serverSamplesMs = serverSamplesFromLogs(logs, 10, window.location.hostname);
             })
             .catch(() => {});
         }
@@ -138,9 +144,12 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     if (this.confirmed) return true;
     if (!button || !button.isConnected) return false;
     // Only the site's own confirmation counts: the check-in button turns into "Đã điểm danh #N".
-    // Any popup (including errors such as "Chưa tới giờ") is not a success.
+    // Any popup (including errors such as "Chưa tới giờ") is not a success. During a strike the
+    // button still shows yesterday's "Đã điểm danh #N" until the server answers: that label is not
+    // today's check-in (the main-world helper's confirmed result is).
     const done = (el: HTMLElement) => {
       const text = elementResolver.text(el);
+      if (this.labelBeforeStrike !== null && text === this.labelBeforeStrike) return false;
       return /đã điểm danh|da diem danh/i.test(text) && /#\d+/.test(text);
     };
     if (done(button)) return true;
@@ -189,6 +198,7 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     this.listenForTimings();
     this.lastRun = null;
     this.confirmed = false;
+    this.snapshotLabel();
     this.planStrike();
     if (typeof document === "undefined") return;
     if (!document.querySelector('link[rel="preconnect"][href="https://challenges.cloudflare.com"]')) {
@@ -207,6 +217,7 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
   executeDirectStrike(): boolean {
     if (typeof window === "undefined") return false;
     this.listenForTimings();
+    if (this.labelBeforeStrike === null) this.snapshotLabel();
     const plan = this.plan ?? this.planStrike();
     window.dispatchEvent(
       new CustomEvent("dh-caffiliate-strike", {
@@ -226,6 +237,11 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     return true;
   }
 
+  private snapshotLabel(): void {
+    const btn = this.findCheckInButton();
+    this.labelBeforeStrike = btn ? elementResolver.text(btn) : null;
+  }
+
   /**
    * Recomputes the attempt schedule from the current clock calibration and the Log history.
    * The engine starts the strike leadMs before the drop.
@@ -235,6 +251,7 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
       rttMs: timeSyncClient.getRttMs(),
       clockErrorMs: timeSyncClient.getErrorMs(),
       prepSamplesMs: this.prepSamplesMs,
+      serverSamplesMs: this.serverSamplesMs,
     });
     return this.plan;
   }

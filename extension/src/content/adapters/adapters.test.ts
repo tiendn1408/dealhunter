@@ -218,6 +218,18 @@ describe("Marketplace Adapters & Multi-Platform Registry", () => {
     expect(adapter.isButtonFinished(btn)).toBe(false);
   });
 
+  it("yesterday's \"Đã điểm danh #N\" still on the button during the strike is not today's success", () => {
+    const adapter = getAdapterForUrl("https://app.caffiliate.vn/rewards") as CaffiliateAdapter;
+    document.body.innerHTML = `<button id="btnCheckIn" disabled><span>Đã điểm danh #4</span></button>`;
+    const btn = document.getElementById("btnCheckIn") as HTMLButtonElement;
+    adapter.preWarmStrike(); // T - 3.5 s: remembers yesterday's label
+    adapter.executeDirectStrike();
+    expect(adapter.isButtonFinished(btn)).toBe(false);
+    expect(adapter.confirmsCompletion(btn)).toBe(false);
+    btn.innerHTML = "<span>Đã điểm danh #2</span>"; // today's answer
+    expect(adapter.isButtonFinished(btn)).toBe(true);
+  });
+
   it("returns null for non-marketplace domains", () => {
     expect(getAdapterForUrl("https://example.com/item/1")).toBeNull();
     expect(getAdapterForUrl("https://google.com")).toBeNull();

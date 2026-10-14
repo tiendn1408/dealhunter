@@ -2,7 +2,7 @@
 
 Tài liệu kỹ thuật mô tả kiến trúc, luồng xử lý và các thông số thời gian của Chrome Extension DealHunter (Manifest V3), khớp với mã nguồn trong [`extension/src`](../../extension/src) và [`extension/public`](../../extension/public).
 
-Cập nhật: 2026-10-13 · 32 file test / 307 test (`npx vitest run`).
+Cập nhật: 2026-10-13 · 33 file test / 317 test (`npx vitest run`).
 
 Tài liệu liên quan: [Hướng dẫn sử dụng](huong-dan-su-dung.md) · [Kết nối web và extension](ket-noi-web-extension.md) · [Rà soát lỗi và kế hoạch sửa](ra-soat-loi-va-ke-hoach-sua.md).
 
@@ -436,24 +436,30 @@ Trước lần thử đầu, bridge đặt lại các cờ còn từ hôm qua (`
 
 Không lấy trước hoặc giữ token Turnstile để dùng sau.
 
-**Xác nhận:** `app.state.todayCheckedIn === true` (sau khi đã đặt lại), nút đổi thành "Đã điểm danh #N" khác với nhãn trước lúc bắt đầu, hoặc API trả thành công. Kiểm tra mỗi 10 ms; xác nhận xong thì hủy các lần chưa chạy; quá 8 s thì kết thúc thất bại. Popup bất kỳ (kể cả popup lỗi "Chưa tới giờ") không được tính là thành công.
+**Xác nhận (phía adapter):** nhãn nút lúc chuẩn bị (T − 3.5 s, nhãn của hôm qua, ví dụ "Đã điểm danh #4") được ghi lại; nhãn "Đã điểm danh #N" chỉ tính là xong khi **khác** nhãn đó, hoặc khi bridge báo `dh-checkin-result ok`. Trước đây nhãn của hôm qua làm engine báo "Thành công" ngay lúc bắn.
+
+**Xác nhận (bridge):** `app.state.todayCheckedIn === true` (sau khi đã đặt lại), nút đổi thành "Đã điểm danh #N" khác với nhãn trước lúc bắt đầu, hoặc API trả thành công. Kiểm tra mỗi 10 ms; xác nhận xong thì hủy các lần chưa chạy; quá 8 s thì kết thúc thất bại. Popup bất kỳ (kể cả popup lỗi "Chưa tới giờ") không được tính là thành công.
 
 ### 11.3. Công thức kế hoạch ([`lib/strike_plan.ts`](../../extension/src/lib/strike_plan.ts))
 
-Mục tiêu là request **tới máy chủ** quanh 00:00, không phải bắt đầu quanh 00:00. Lần thử bắt đầu lúc $s$ tới máy chủ khoảng $s + P + L$.
+Mục tiêu là request **được máy chủ xử lý** ngay sau 00:00, không phải bắt đầu quanh 00:00. Lần thử bắt đầu lúc $s$ được xử lý khoảng $s + P + L$.
 
-- $P$ (chuẩn bị, chủ yếu là Turnstile): trung vị "bắt đầu lần thử → request rời máy" trong 10 lần chạy gần nhất của nhật ký (chỉ các lần thử mà tầng đầu là hàm của trang và thành công, hoặc lần bấm tay). Chưa có mẫu: $P = 0$.
-- $L$ (một chiều mạng): $RTT/2$ từ lần canh giờ; chưa đo: 30 ms.
-- Độ không chắc chắn: $\sigma = \max\left(10,\ \sqrt{(E/\sqrt{3})^2 + J_P^2 + J_L^2}\right)$ với $E$ = sai số canh giờ (giới hạn 1 000 ms), $J_P$ = IQR/1.349 của $P$ (dưới 4 mẫu thì $P/4$), $J_L = L/4$ (chưa đo RTT thì $J_L = L$).
-- Số lần thử: $n = \mathrm{clamp}(\lceil 3\sigma / 20 \rceil + 1,\ 5,\ 8)$.
-- Thời điểm tới máy chủ: $a_i = \sigma \cdot (\Phi^{-1}((i + 0.5)/n) + 0.3)$, mỗi lần cách lần trước ít nhất 20 ms. Lệch về sau 0h một chút: request tới trước 0h bị từ chối, tới ngay sau 0h vẫn hạng cao.
+- $P$ (chuẩn bị, chủ yếu là Turnstile): trung vị "bắt đầu lần thử → request rời máy" trong 10 lần chạy gần nhất **của cùng trang** (host) trong nhật ký; lần chạy trên trình mô phỏng không ảnh hưởng trang thật. Mỗi lần chạy chỉ lấy **lần thử có request đi đầu tiên** (lần chờ token); các lần sau dùng chung token đang chờ của trang và đứng sau nó nên không phản ánh thời gian thật. Chỉ tính lần chạy mà tầng đầu là hàm của trang và thành công, hoặc lần bấm tay. Chưa có mẫu: $P = 0$.
+- $L$ (từ lúc request rời máy tới lúc máy chủ xử lý): học từ nhật ký, bằng trung vị "request → phản hồi" (chỉ phản hồi 2xx của lần đi đầu) trừ $RTT/2$ (đường về), giới hạn $[RTT/2,\ 1000]$. Máy chủ còn tự hỏi Cloudflare để kiểm token trước khi trả lời, nên $L$ lớn hơn nhiều so với $RTT/2$ (đêm 13/10: 186 ms phản hồi, $L$ = 147 ms so với 39 ms trước đây). Chưa có mẫu: $RTT/2$ (chưa đo: 30 ms).
+- Độ không chắc chắn: $\sigma = \max\left(10,\ \sqrt{(E/\sqrt{3})^2 + J_P^2 + J_L^2}
+ight)$ với $E$ = sai số canh giờ (giới hạn 1 000 ms), $J_P$ = IQR/1.349 của $P$ (dưới 4 mẫu thì $P/4$), $J_L$ = IQR/1.349 của thời gian phản hồi khi có ≥ 4 mẫu, nếu không thì $L/4$ (chưa đo gì thì $J_L = L$).
+- **Chờ token** ($P \ge 300$ ms, `tokenBound`): trang chỉ giải một thử thách Turnstile mỗi lúc, nên giờ tới máy chủ do lần thử đầu quyết định; lần nào tới trước 0h bị từ chối sau khi đã tiêu token và lần kế phải giải thử thách mới (~1 giây). Vì vậy $a_0 = \max(20,\ 1 \cdot \sigma)$ sau 0h (tới sau 0h trong ~84% số đêm), các lần sau là dự phòng $a_i = a_0 + 20i$, $n = 5$. Biên sau 0h tự thu hẹp khi nhật ký có thêm mẫu ổn định.
+- **Không chờ token** ($P < 300$ ms): $n = \mathrm{clamp}(\lceil 3\sigma / 20 
+ceil + 1,\ 5,\ 8)$ và $a_i = \sigma \cdot (\Phi^{-1}((i + 0.5)/n) + 0.3)$, mỗi lần cách lần trước ít nhất 20 ms: vài lần ngay trước 0h, các lần sau ngay sau 0h.
 - Bắt đầu: $s_i = a_i - P - L$. `leadMs` $= \min(3000, -s_0)$; `offsetsMs` $= s_i - s_0$.
+
+Ví dụ đêm 14/10 (dữ liệu đêm 13/10: $P$ = 1571, phản hồi 186 ms, RTT 78): bắt đầu T − 1323 ms (23:59:58.677), dự kiến được xử lý 00:00:00.395 ± 395 ms. Đêm 13/10 (chưa có mẫu): bắt đầu T − 98 ms, tới 00:00:01.477.
 
 Engine nhận `leadMs` qua `planStrike()` (tính lúc khởi động và tính lại ngay sau `preWarmStrike()` ở T − 3.5 s) và dùng nó làm mốc bấm. Bridge đặt hẹn giờ cho mỗi lần thử tính từ lúc bắt đầu chuỗi (hẹn giờ trễ không đẩy lùi các lần sau), lần nào tới sớm thì chờ nốt phần còn lại. Thiếu lịch trong sự kiện thì dùng `[0, 35, 70, 105, 140]` ms.
 
 ### 11.4. Nhật ký điểm danh
 
-Mỗi lần chạy (theo kế hoạch hoặc bấm tay) được ghi vào `dh_checkin_logs` (mới nhất trước, giữ 30 mục), thời gian đổi sang giờ máy chủ: kết quả, cách thành công, kế hoạch, và từng lần thử (giờ bắt đầu, các tầng và lỗi, thời gian Turnstile, lúc gửi và sau bao nhiêu ms, thời gian máy chủ trả lời, HTTP). Xem trong Cài đặt → "Nhật ký điểm danh" ([`CheckInLog.tsx`](../../extension/src/popup/components/CheckInLog.tsx)).
+Mỗi lần chạy (theo kế hoạch hoặc bấm tay) được ghi vào `dh_checkin_logs` (mới nhất trước, giữ 30 mục), thời gian đổi sang giờ máy chủ: kết quả, cách thành công, kế hoạch, và từng lần thử (giờ bắt đầu, các tầng và lỗi, thời gian Turnstile, lúc gửi và sau bao nhiêu ms, thời gian máy chủ trả lời, HTTP, và **câu trả lời của máy chủ** rút gọn). Câu trả lời đọc từ bản sao phản hồi (`resp.clone()`, trang vẫn đọc bản gốc): với JSON chỉ giữ các trường kiểu thông báo (`success`/`ok`/`code`/`status`, `message`/`msg`/`error`/`detail`/`reason`, `rank`), không lưu nguyên body (có thể chứa token); với trang lỗi HTML thì lấy chữ; tối đa 160 ký tự. Nhật ký chờ tối đa 0,5 s để đọc xong câu trả lời, còn kết quả `dh-checkin-result` vẫn gửi ngay. Chỉ request **POST** tới URL điểm danh được gán cho lần thử (theo thứ tự); các request GET trạng thái/bảng vàng trang tự gọi sau khi điểm danh không được tính. Xem trong Cài đặt → "Nhật ký điểm danh" ([`CheckInLog.tsx`](../../extension/src/popup/components/CheckInLog.tsx)).
 
 ---
 
@@ -544,7 +550,7 @@ Popup dùng [`tailwind.config.js`](../../extension/tailwind.config.js) riêng.
 
 ## 16. Kiểm thử
 
-- `npx vitest run` (môi trường happy-dom): **32 file, 307 test**.
+- `npx vitest run` (môi trường happy-dom): **33 file, 317 test**.
 - `npx tsc --noEmit -p .`: kiểm tra kiểu.
 
 | Nhóm | File (số test) |
@@ -553,7 +559,7 @@ Popup dùng [`tailwind.config.js`](../../extension/tailwind.config.js) riêng.
 | Tìm nút, bấm, chẩn đoán | `element_resolver.test.ts` (19), `human_clicker.test.ts` (8), `human_biometrics.test.ts` (12), `target_diagnostics.test.ts` (9), `timer_worker.test.ts` (2) |
 | Đồng hồ | `time_calibrator.test.ts` (8), `time_sync_client.test.ts` (6), `TimeOffsetCard.test.ts` (3) |
 | Lịch săn | `scheduler.test.ts` (10), `task_lifecycle.test.ts` (13), `drop_time.test.ts` (9) |
-| Adapter và Caffiliate | `adapters.test.ts` (20), `caffiliate_bridge.test.ts` (8), `strike_plan.test.ts` (5) |
+| Adapter và Caffiliate | `adapters.test.ts` (21), `caffiliate_bridge.test.ts` (11), `strike_plan.test.ts` (7), `checkin_log.test.ts` (4) |
 | Reload và lưu trữ | `reload_timing.test.ts` (9), `storage.test.ts` (10), `url.test.ts` (8) |
 | UI và phạm vi | `content_scope.test.ts` (6), `isolation.test.ts` (2), `status_text.test.ts` (9) |
 | Web, API, build | `web_session.test.ts` (19), `api_client.test.ts` (12), `endpoints.test.ts` (21), `production_build.test.ts` (5) |

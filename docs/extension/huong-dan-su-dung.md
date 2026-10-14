@@ -208,6 +208,7 @@ Trên trang Caffiliate (caffiliate.vn), DealHunter có cách săn riêng cho nú
 - Kết quả: **«Đã điểm danh»** hoặc **«Chưa xác nhận»**. Lần bạn tự bấm tay được ghi là **«Bấm tay»**.
 - Kế hoạch DealHunter đã dùng: thử mấy lần, bắt đầu sớm bao lâu, mạng mất khoảng bao lâu.
 - Từng lần thử («Lần 1», «Lần 2»...): đã thử bằng cách nào («Hàm», «API» hoặc «Bấm nút»), gửi lúc nào, trang trả lời lúc nào.
+- Dòng **«Máy chủ: «…»»**: câu trả lời ngắn của Caffiliate (ví dụ «Chưa tới giờ điểm danh»). Dòng này có màu đỏ khi máy chủ báo lỗi.
 
 Bạn không cần hiểu hết các con số này. Nhật ký giúp người hỗ trợ kỹ thuật biết chuyện gì đã xảy ra nếu điểm danh không được. DealHunter cũng dùng nhật ký này để tự canh thời gian tốt hơn cho lần sau. Bấm **«Xoá»** để xoá nhật ký.
 

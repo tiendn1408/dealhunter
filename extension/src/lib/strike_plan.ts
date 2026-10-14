@@ -2,14 +2,24 @@
  * Strike plan for a timed check-in: when to start each attempt so that the requests reach the
  * server spread around the drop moment T, computed from what was measured instead of fixed gaps.
  *
- * An attempt started at s reaches the server at about  s + prep + oneWay  where
+ * An attempt started at s is handled by the server at about  s + prep + oneWay  where
  *   prep   = time from the attempt start until the request leaves (mostly the Turnstile token),
- *            the median of earlier attempts' measurements (Log tab history),
- *   oneWay = RTT / 2 to the site.
+ *            the median of earlier runs' measurements (Log tab history),
+ *   oneWay = time from the request leaving until the server handles it. Learned from earlier
+ *            check-in responses when there are some (the server verifies the Turnstile token with
+ *            Cloudflare before answering, so this is much more than RTT / 2), else RTT / 2.
  * The arrival is uncertain by sigma, combining the clock calibration error, the spread of prep
- * and network jitter. Arrivals are placed on normal quantiles of that uncertainty, shifted a bit
- * past T (a request that lands before T is rejected, one just after T still ranks high), kept at
- * least MIN_GAP_MS apart. Start times follow by subtracting prep + oneWay.
+ * and the spread of the server time.
+ *
+ * Two shapes:
+ * - prep is short (no token wait): arrivals on normal quantiles of that uncertainty, shifted a bit
+ *   past T, at least MIN_GAP_MS apart. Some land just before T, the next ones just after.
+ * - prep is token-bound (>= TOKEN_BOUND_PREP_MS): the page solves one Turnstile challenge at a time,
+ *   so only the first attempt really decides the arrival, and an attempt landing before T is
+ *   rejected after using up its token (the next one pays a whole new challenge, about a second).
+ *   The first arrival is then placed SAFE_SIGMAS after T (lands after T in ~84% of the nights);
+ *   the following attempts are backups right after it.
+ * Start times follow by subtracting prep + oneWay.
  */
 
 export interface StrikeInputs {
@@ -19,6 +29,8 @@ export interface StrikeInputs {
   clockErrorMs: number;
   /** Earlier measurements of attempt start -> request sent (ms). */
   prepSamplesMs: number[];
+  /** Earlier measurements of request sent -> check-in response (ms). */
+  serverSamplesMs?: number[];
 }
 
 export interface StrikePlan {
@@ -31,6 +43,8 @@ export interface StrikePlan {
   prepMs: number;
   oneWayMs: number;
   sigmaMs: number;
+  /** The first attempt waits for a Turnstile token: arrivals placed after T only. */
+  tokenBound: boolean;
 }
 
 export const STRIKE_PLAN = {
@@ -45,6 +59,12 @@ export const STRIKE_PLAN = {
   UNKNOWN_ONE_WAY_MS: 30,
   /** The engine prepares the strike 3.5 s ahead; the plan must start after that. */
   MAX_LEAD_MS: 3000,
+  /** Prep at least this long means the attempt waits for a Turnstile token. */
+  TOKEN_BOUND_PREP_MS: 300,
+  /** Token-bound: first arrival this many sigmas after T. */
+  SAFE_SIGMAS: 1,
+  /** Learned server time is capped to this (a slow night must not push the start too far). */
+  MAX_ONE_WAY_MS: 1000,
 };
 
 /** Inverse standard normal CDF (Acklam's rational approximation, |error| < 1.2e-9). */
@@ -85,21 +105,36 @@ export function planStrike(inputs: StrikeInputs): StrikePlan {
     samples.length >= 4 ? (quantile(samples, 0.75) - quantile(samples, 0.25)) / 1.349 : prepMs * 0.25;
 
   const rttKnown = inputs.rttMs > 0;
-  const oneWayMs = rttKnown ? inputs.rttMs / 2 : P.UNKNOWN_ONE_WAY_MS;
-  const netJitter = rttKnown ? oneWayMs * 0.25 : oneWayMs;
+  const rttOneWay = rttKnown ? inputs.rttMs / 2 : P.UNKNOWN_ONE_WAY_MS;
+  // The leaderboard time is taken while the server handles the request, just before it answers:
+  // from the request leaving, that is the measured response time minus the way back.
+  const server = (inputs.serverSamplesMs ?? []).filter((v) => Number.isFinite(v) && v > 0).sort((x, y) => x - y);
+  const oneWayMs =
+    server.length > 0 ? Math.min(P.MAX_ONE_WAY_MS, Math.max(rttOneWay, quantile(server, 0.5) - rttOneWay)) : rttOneWay;
+  const netJitter =
+    server.length >= 4
+      ? (quantile(server, 0.75) - quantile(server, 0.25)) / 1.349
+      : rttKnown || server.length > 0
+      ? oneWayMs * 0.25
+      : oneWayMs;
 
   // The calibration error is a bound (uniform within ±E): its sigma is E / sqrt(3).
   const clockSigma = Math.min(Math.max(inputs.clockErrorMs, 0), 1000) / Math.sqrt(3);
   const sigmaMs = Math.max(P.MIN_SIGMA_MS, Math.sqrt(clockSigma ** 2 + prepJitter ** 2 + netJitter ** 2));
 
-  // Enough attempts to cover about ±1.5 sigma at MIN_GAP_MS spacing, within [MIN, MAX].
-  const n = Math.min(P.MAX_ATTEMPTS, Math.max(P.MIN_ATTEMPTS, Math.ceil((3 * sigmaMs) / P.MIN_GAP_MS) + 1));
-
+  const tokenBound = prepMs >= P.TOKEN_BOUND_PREP_MS;
   const arrivalsMs: number[] = [];
-  for (let i = 0; i < n; i++) {
-    let a = sigmaMs * (normalQuantile((i + 0.5) / n) + P.LATE_BIAS);
-    if (i > 0) a = Math.max(a, arrivalsMs[i - 1] + P.MIN_GAP_MS);
-    arrivalsMs.push(Math.round(a));
+  if (tokenBound) {
+    const first = Math.max(P.MIN_GAP_MS, Math.round(P.SAFE_SIGMAS * sigmaMs));
+    for (let i = 0; i < P.MIN_ATTEMPTS; i++) arrivalsMs.push(first + i * P.MIN_GAP_MS);
+  } else {
+    // Enough attempts to cover about ±1.5 sigma at MIN_GAP_MS spacing, within [MIN, MAX].
+    const n = Math.min(P.MAX_ATTEMPTS, Math.max(P.MIN_ATTEMPTS, Math.ceil((3 * sigmaMs) / P.MIN_GAP_MS) + 1));
+    for (let i = 0; i < n; i++) {
+      let a = sigmaMs * (normalQuantile((i + 0.5) / n) + P.LATE_BIAS);
+      if (i > 0) a = Math.max(a, arrivalsMs[i - 1] + P.MIN_GAP_MS);
+      arrivalsMs.push(Math.round(a));
+    }
   }
 
   const starts = arrivalsMs.map((a) => a - prepMs - oneWayMs);
@@ -113,5 +148,6 @@ export function planStrike(inputs: StrikeInputs): StrikePlan {
     prepMs: Math.round(prepMs),
     oneWayMs: Math.round(oneWayMs),
     sigmaMs: Math.round(sigmaMs),
+    tokenBound,
   };
 }

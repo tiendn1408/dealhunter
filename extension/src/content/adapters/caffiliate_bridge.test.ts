@@ -178,4 +178,66 @@ describe("caffiliate_bridge strike", () => {
     expect(claimDailyReward).toHaveBeenCalledTimes(1);
     expect(run.attempts[0].tiers[0].name).toBe("claimDailyReward()");
   });
+
+  it("logs only the check-in POST as an attempt's request, not the page's status GETs after it", async () => {
+    const realFetch = w.fetch;
+    const calls: string[] = [];
+    // the bridge wraps window.fetch at load: route the mock through a fresh copy of the wrapper
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      return new Response("{}", { status: 200 });
+    });
+    const state = { todayCheckedIn: false };
+    const checkIn = vi.fn(async () => {
+      await w.fetch("/api/v2/xeng/check-in-status"); // a GET with "check-in" in the URL
+      await sleep(40);
+      await w.fetch("/api/v2/xeng/check-in-secure", { method: "POST", body: "{}" });
+      state.todayCheckedIn = true;
+    });
+    w.app = { state, checkIn };
+
+    const run = await strike([0]);
+    expect(calls).toEqual(["GET /api/v2/xeng/check-in-status", "POST /api/v2/xeng/check-in-secure"]);
+    const a = run.attempts[0];
+    // the request time is the POST's (40 ms after the status GET), not the GET's
+    expect(a.requestStartAt - a.startAt).toBeGreaterThanOrEqual(35);
+    w.fetch = realFetch;
+  });
+
+  it("logs what the server answered: message-like fields only, never the whole body", async () => {
+    const answers = [
+      new Response(JSON.stringify({ success: false, message: "Chưa tới giờ điểm danh", token: "secret-token" }), { status: 409 }),
+      new Response(JSON.stringify({ success: true, data: { message: "Điểm danh thành công", rank: 4, csrf: "secret-csrf" } }), { status: 200 }),
+    ];
+    fetchMock.mockImplementation(async () => answers.shift());
+    const state = { todayCheckedIn: false };
+    const checkIn = vi.fn(async () => {
+      const r = await w.fetch("/api/v2/xeng/check-in-secure", { method: "POST", body: "{}" });
+      if (r.ok) state.todayCheckedIn = true;
+    });
+    w.app = { state, checkIn };
+
+    const run = await strike([0, 30]);
+    const replies = run.attempts.map((a: any) => a.reply);
+    expect(replies[0]).toBe("success=false · Chưa tới giờ điểm danh");
+    expect(replies[1]).toBe("success=true · Điểm danh thành công · rank=4");
+    expect(JSON.stringify(run)).not.toContain("secret");
+    expect(run.attempts.some((a: any) => "replyPending" in a)).toBe(false);
+  });
+
+  it("an HTML error page is logged as its short text", async () => {
+    fetchMock.mockImplementation(async () =>
+      new Response("<html><head><style>b{}</style></head><body><h1>502 Bad Gateway</h1></body></html>", { status: 502 })
+    );
+    const state = { todayCheckedIn: false };
+    const checkIn = vi.fn(async () => {
+      await w.fetch("/api/v2/xeng/check-in-secure", { method: "POST", body: "{}" });
+      state.todayCheckedIn = true; // end the run without waiting for the 8 s timeout
+    });
+    w.app = { state, checkIn };
+
+    const run = await strike([0]);
+    expect(run.attempts[0].status).toBe(502);
+    expect(run.attempts[0].reply).toBe("502 Bad Gateway");
+  });
 });
