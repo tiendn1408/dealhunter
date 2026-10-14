@@ -72,6 +72,12 @@ AUTH_COOKIE_SECURE=true
 # (vi du dealhunter.vn va api.dealhunter.vn). Frontend can NEXT_PUBLIC_GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID.
 
 # 3. POSTGRESQL DATABASE
+# Compose prod tu ghep DATABASE_URL tu POSTGRES_* (dong DATABASE_URL o day chi dung cho systemd).
+# BAT BUOC dat POSTGRES_PASSWORD: thieu bien nay thi compose prod dung lai va bao loi (khong con mac dinh "dealpass").
+# Compose ghep thang mat khau vao DATABASE_URL: dung mat khau manh KHONG co ky tu @ : / ? # (de khoi URL-encode).
+# May chu DA chay truoc 2026-10-14 voi mat khau mac dinh: Postgres giu mat khau cu trong volume, nen dat
+# POSTGRES_PASSWORD=dealpass de khoi dong lai, roi doi mat khau that (ALTER USER dealuser PASSWORD '...';)
+# va cap nhat bien nay cho khop.
 POSTGRES_USER=dealuser
 POSTGRES_PASSWORD=MAT_KHAU_MANH_POSTGRES_PROD_123!
 POSTGRES_DB=dealdb
@@ -108,10 +114,19 @@ ZALO_OA_SECRET_KEY=YOUR_PRODUCTION_ZALO_SECRET_KEY
 ZALO_REFRESH_TOKEN=YOUR_PRODUCTION_INITIAL_REFRESH_TOKEN
 ZALO_OA_ACCESS_TOKEN=
 ZALO_TEMPLATE_ID=YOUR_APPROVED_ZNS_TEMPLATE_ID
-ZALO_WEBHOOK_SECRET=YOUR_ZALO_WEBHOOK_SECRET_KEY
+# Mau ZNS gui ma xac minh khi lien ket Zalo (bien: otp). De trong = nguoi dung khong lien ket duoc Zalo
+ZALO_OTP_TEMPLATE_ID=
+# De trong: he thong dung ZALO_OA_SECRET_KEY de kiem chu ky webhook (dung cach Zalo ky)
+ZALO_WEBHOOK_SECRET=
 
-# 8. FRONTEND BUILD VARIABLE
+# 8. QUAN TRI
+# Email Google duoc phep tao voucher qua API (cach nhau dau phay)
+ADMIN_EMAILS=
+
+# 9. FRONTEND BUILD VARIABLES (nhung vao image web luc build)
 NEXT_PUBLIC_API_URL=https://dealhunter.vn/api/v1
+# ID extension tren Chrome Web Store (web gui phien dang nhap sang extension). De trong = tat
+EXTENSION_ID=
 ```
 
 ---
@@ -130,6 +145,9 @@ Phuong an nay dong goi toan bo 6 thanh phan vao container rieng biet tren mang c
 
 2. Thiet lap file `.env` voi cac thong so Production tu Muc 2:
    ```bash
+   # .env.example la mau cho LOCAL DEV: sau khi copy phai thay theo danh sach muc 2
+   # (khong giu JWT_SECRET, POSTGRES_PASSWORD, AUTH_COOKIE_SECURE cua dev). Cach lay tung gia tri:
+   # docs/third_party_and_environment_requirements.md
    cp .env.example .env
    chmod 600 .env
    nano .env

@@ -1,195 +1,162 @@
-# DealHunter — Danh Sách & Biểu Mẫu Cấu Hình Bên Thứ Ba (API Keys & Credentials)
+# DealHunter — Biến môi trường & cách lấy từng giá trị
 
-> [!NOTE]
-> Tài liệu này liệt kê toàn bộ các dịch vụ bên thứ ba (Third-party Services), khóa bảo mật (API Keys / Secrets), cấu hình Webhook và biến môi trường cần thiết để vận hành hệ sinh thái **DealHunter** từ môi trường phát triển (Local/Dev) lên môi trường thực tế (Staging/Production).
-
----
-
-## 1. Bảng Tổng Hợp Thông Tin Cần Điền (Quick Checklist)
-
-| Dịch vụ bên thứ ba | Thông số / Khóa cần điền | Mục đích sử dụng | Bắt buộc khi nào? | Nơi lấy thông tin |
-| :--- | :--- | :--- | :--- | :--- |
-| **Google Cloud** | `GOOGLE_CLIENT_ID` | Đăng nhập Google 1-click & đồng bộ dữ liệu | Chạy tính năng Auth thật (GAP-02) | [Google Cloud Console](https://console.cloud.google.com/) |
-| **Zalo Developers** | `ZALO_APP_ID` | Định danh ứng dụng Zalo | Chạy thông báo Zalo OA (GAP-04) | [Zalo for Developers](https://developers.zalo.me/) |
-| **Zalo Developers** | `ZALO_OA_SECRET_KEY` | Tạo token truy cập & xác thực chữ ký | Chạy thông báo Zalo OA (GAP-04) | [Zalo for Developers](https://developers.zalo.me/) |
-| **Zalo OA / ZNS** | `ZALO_REFRESH_TOKEN` | Duy trì Access Token 24/7 (vòng đời 25h) | Chạy thông báo Zalo OA (GAP-04) | OAuth v4 Authorization Flow |
-| **Zalo OA / ZNS** | `ZALO_OA_ACCESS_TOKEN` | Token gửi tin nhắn tức thì (nếu có sẵn) | Tùy chọn (hệ thống tự sinh từ refresh) | Zalo API Explorer |
-| **Zalo ZNS** | `ZALO_TEMPLATE_ID` | ID mẫu tin nhắn ZNS thông báo giảm giá | Gửi tin ZNS qua số điện thoại | [Zalo Cloud Services](https://zns.zalocloud.com/) |
-| **Zalo Webhook** | `ZALO_WEBHOOK_SECRET` | Khóa xác thực chữ ký HMAC-SHA256 | Nhận trạng thái `delivered` & `read` | Cấu hình trên Zalo OA Console |
-| **Bảo mật nội bộ** | `JWT_SECRET` | Ký và xác thực phiên đăng nhập (7 ngày) | Luôn luôn bắt buộc | Tự sinh ngẫu nhiên 32 ký tự |
-| **Cơ sở dữ liệu** | `DATABASE_URL` | Kết nối PostgreSQL 15 | Luôn luôn bắt buộc | Thông tin máy chủ PostgreSQL |
-| **Hàng đợi & Cache** | `REDIS_URL` | Kết nối Redis 7 (Stream & Cache) | Luôn luôn bắt buộc | Thông tin máy chủ Redis |
+> Cập nhật: 2026-10-14 · Đối chiếu với code: `pkg/config/config.go`, `docker-compose.yml`, `docker-compose.prod.yml`, `dealhunter-web/lib`.
+>
+> File mẫu:
+> - Backend: [`dealhunter/.env.example`](../.env.example) → copy thành `.env` (local dev).
+> - Web: [`dealhunter-web/.env.example`](../../dealhunter-web/.env.example) → copy thành `.env.local`.
+> - Production (Docker Compose): **không** copy nguyên file mẫu. Dùng danh sách ở [hướng dẫn triển khai, mục 2](deployment/production-deployment-guide.md).
 
 ---
 
-## 2. Hướng Dẫn Chi Tiết Từng Dịch Vụ Bên Thứ Ba
+## 1. Bảng tổng hợp
 
-### 2.1. Google OAuth 2.0 (Đăng Nhập & Di Trú Dữ Liệu Thành Viên)
+**Cột «Bắt buộc»:**
+- **Luôn**: thiếu là API không khởi động.
+- **Prod**: chỉ bắt buộc khi `APP_ENV` khác `development`/`test`. Production sẽ từ chối khởi động nếu thiếu hoặc sai.
+- **Tuỳ chọn**: để trống thì tính năng đó tắt.
 
-* **Mục đích**: Cho phép người dùng đăng nhập bằng tài khoản Google, tự động di trú danh mục sản phẩm đang theo dõi từ khách vãng lai (Guest) sang tài khoản cá nhân cố định.
-* **Các bước lấy thông tin**:
-  1. Truy cập [Google Cloud Console](https://console.cloud.google.com/).
-  2. Tạo mới một Project (ví dụ: `DealHunter-Production`).
-  3. Vào mục **APIs & Services** $\to$ **OAuth consent screen**:
-     * Chọn User Type: **External**.
-     * Điền App name: `DealHunter`.
-     * User support email & Developer contact information: Email quản trị của bạn.
-  4. Vào mục **APIs & Services** $\to$ **Credentials**:
-     * Nhấn **Create Credentials** $\to$ **OAuth client ID**.
-     * Application type: **Web application**.
-     * Name: `DealHunter Web Client`.
-     * **Authorized JavaScript origins**:
-       * Dev: `http://localhost:3000`
-       * Production: `https://your-domain.com`
-     * **Authorized redirect URIs**:
-       * Dev: `http://localhost:3000`
-       * Production: `https://your-domain.com`
-  5. Sao chép **Client ID** và điền vào cấu hình.
+### 1.1. Backend (`dealhunter/.env`)
 
----
+| Biến | Bắt buộc | Mặc định | Lấy ở đâu / ý nghĩa |
+| :--- | :--- | :--- | :--- |
+| `APP_ENV` | Luôn | `production` | `development` khi chạy local. Thiếu biến = áp quy tắc production. |
+| `HTTP_PORT` | — | `8080` | Cổng API. |
+| `LOG_LEVEL` | — | `info` | `debug` / `info` / `warn` / `error`. |
+| `CORS_ALLOWED_ORIGINS` | Prod | `http://localhost:3000` | Địa chỉ web, cách nhau dấu phẩy. Production không được chứa `*`. |
+| `JWT_SECRET` | Luôn | giá trị dev | Tự tạo: `openssl rand -base64 32`. Production từ chối giá trị dev và chuỗi < 32 ký tự. |
+| `ACCESS_TOKEN_TTL` | — | `15m` | Thời hạn access token. |
+| `REFRESH_TOKEN_TTL` | — | `720h` | Thời hạn refresh token (30 ngày), phải lớn hơn access. |
+| `AUTH_COOKIE_SECURE` | Prod (`true`) | `false` ở dev, `true` ở prod | Cookie refresh chỉ gửi qua HTTPS. |
+| `GOOGLE_CLIENT_ID` | Prod | trống | [Mục 2.1](#21-google-đăng-nhập). |
+| `ADMIN_EMAILS` | Tuỳ chọn | trống | Email Google được phép tạo voucher qua API, cách nhau dấu phẩy. |
+| `DATABASE_URL` | Luôn | Postgres dev | Chuỗi kết nối Postgres. Mật khẩu có `@ : / ? #` phải URL-encode. |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Compose (`POSTGRES_PASSWORD` bắt buộc ở prod) | `dealuser` / `dealpass` (chỉ dev) / `dealdb` | Dùng để tạo container Postgres. Code Go chỉ đọc `DATABASE_URL`. Compose prod dừng lại nếu thiếu `POSTGRES_PASSWORD`; dùng mật khẩu mạnh không có `@ : / ? #`. |
+| `POSTGRES_PORT` | — | `5433` | Chỉ để ghi nhớ: `docker-compose.yml` luôn mở cổng 5433. |
+| `REDIS_URL` | Luôn | `redis://localhost:6380` | Redis 7+ (dùng Streams). |
+| `REDIS_PORT` | Compose | `6380` | Cổng trên máy của container Redis (dev). |
+| `WORKER_CONCURRENCY` | — | `10` | Số job đọc giá chạy song song. |
+| `DEFAULT_POLL_INTERVAL` | — | `1800` | Chu kỳ kiểm tra giá mặc định (giây). |
+| `FETCH_TIMEOUT` | — | `10s` | Thời gian chờ tối đa mỗi lần đọc trang sàn. |
+| `MAX_RETRY` | — | `5` | Số lần thử lại một job lỗi. |
+| `TRUSTED_PROXIES` | Tuỳ | trống | IP/CIDR reverse proxy được tin header `X-Forwarded-For`. **Không đặt khi dùng compose prod** (compose tự điền). |
+| `AFFILIATE_ENABLED` | Tuỳ chọn | `false` | [Mục 2.3](#23-affiliate-tiếp-thị-liên-kết). |
+| `SHOPEE_AFFILIATE_ID` / `SHOPEE_AFFILIATE_URL_TEMPLATE` | Tuỳ chọn | trống | Mục 2.3. |
+| `LAZADA_AFFILIATE_ID` / `LAZADA_AFFILIATE_URL_TEMPLATE` | Tuỳ chọn | trống | Mục 2.3. |
+| `TIKTOK_AFFILIATE_ID` / `TIKTOK_AFFILIATE_URL_TEMPLATE` | Tuỳ chọn | trống | Mục 2.3. |
+| `ACCESSTRADE_DEEPLINK_URL` | Tuỳ chọn | trống | Mục 2.3. |
+| `ZALO_ENABLED` | Tuỳ chọn | `false` | [Mục 2.2](#22-zalo-oa--zns-thông-báo). Có `ZALO_REFRESH_TOKEN` hoặc `ZALO_OA_ACCESS_TOKEN` thì Zalo **tự bật**. |
+| `ZALO_APP_ID` | Prod khi bật Zalo | trống | Mục 2.2. |
+| `ZALO_OA_SECRET_KEY` | Prod khi bật Zalo | trống | Mục 2.2. |
+| `ZALO_REFRESH_TOKEN` | Khi bật Zalo | trống | Mục 2.2. |
+| `ZALO_OA_ACCESS_TOKEN` | Tuỳ chọn | trống | Mục 2.2 (thường để trống). |
+| `ZALO_TEMPLATE_ID` | Khi bật Zalo | trống | Mẫu ZNS báo giá giảm. |
+| `ZALO_OTP_TEMPLATE_ID` | Tuỳ chọn | trống | Mẫu ZNS gửi mã xác minh khi người dùng liên kết Zalo. Trống = không liên kết được Zalo. |
+| `ZALO_WEBHOOK_SECRET` | Tuỳ chọn | = `ZALO_OA_SECRET_KEY` | Khoá kiểm chữ ký webhook. Để trống là đúng trong hầu hết trường hợp. |
 
-### 2.2. Zalo Official Account & ZNS (Hệ Thống Thông Báo Biến Động Giá)
+### 1.2. Chỉ dùng với `docker-compose.prod.yml`
 
-* **Mục đích**: Gửi tin nhắn thông báo tức thời đến Zalo của người dùng khi sản phẩm chạm giá mục tiêu hoặc giảm giá sâu; tự động nhận webhook xác nhận người dùng đã nhận (`delivered`) hoặc đã xem (`read`).
-* **Các bước lấy thông tin**:
-  1. **Đăng ký Zalo App**:
-     * Truy cập [Zalo for Developers](https://developers.zalo.me/).
-     * Tạo ứng dụng mới liên kết với Zalo Official Account (OA) của doanh nghiệp.
-     * Lấy **App ID** $\to$ điền vào `ZALO_APP_ID`.
-     * Lấy **App Secret Key** $\to$ điền vào `ZALO_OA_SECRET_KEY`.
-  2. **Cấp quyền & Lấy Refresh Token ban đầu**:
-     * Trong mục **Official Account** $\to$ **Login with Zalo**: Bật quyền gửi tin nhắn (`oa.message`).
-     * Thực hiện luồng OAuth v4 để xin Authorization Code từ Admin OA:
-       $$\text{https://oauth.zaloapp.com/v4/oa/permission?app\_id=\{APP\_ID\}\&redirect\_uri=\{REDIRECT\_URI\}}$$
-     * Đổi Authorization Code lấy Access Token & Refresh Token qua endpoint:
-       $$\text{POST https://oauth.zaloapp.com/v4/oa/access\_token}$$
-     * Lấy giá trị `refresh_token` điền vào `ZALO_REFRESH_TOKEN`. Hệ thống `TokenManager` ngầm của DealHunter sẽ tự động làm mới và xoay vòng token 12 giờ/lần vào Redis.
-  3. **Đăng ký Mẫu Tin Nhắn ZNS (Zalo Notification Service)**:
-     * Truy cập [Zalo Cloud Services](https://zns.zalocloud.com/) $\to$ **Quản lý mẫu ZNS**.
-     * Tạo mẫu tin thông báo biến động giá với các biến nội dung: `<price_before>`, `<price_after>`.
-     * Sau khi Zalo kiểm duyệt, sao chép mã mẫu $\to$ điền vào `ZALO_TEMPLATE_ID`.
-  4. **Cấu hình Webhook Callback**:
-     * Trong Zalo Developers $\to$ **Webhook**:
-     * Điền Webhook URL: `https://api.your-domain.com/api/v1/webhooks/zalo`
-     * Chọn các sự kiện đăng ký:
-       * `user_received_message` (Người dùng nhận tin nhắn $\to$ trạng thái `delivered`).
-       * `user_read_message` (Người dùng mở đọc tin nhắn $\to$ trạng thái `read`).
-     * Khóa bí mật webhook (dùng xác thực HMAC-SHA256) $\to$ điền vào `ZALO_WEBHOOK_SECRET`.
+| Biến | Bắt buộc | Ý nghĩa |
+| :--- | :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | Có | URL API mà web gọi, nhúng vào image web lúc **build** (ví dụ `https://dealhunter.vn/api/v1`). |
+| `EXTENSION_ID` | Tuỳ chọn | ID extension trên Chrome Web Store; web dùng làm `NEXT_PUBLIC_EXTENSION_ID`. |
+| `DEALHUNTER_GATEWAY` | Tuỳ chọn | Gateway mạng Docker mà API tin `X-Forwarded-For` (mặc định `172.30.240.1`). |
 
----
+Compose prod tự đặt `APP_ENV=production`, `DATABASE_URL`, `REDIS_URL` cho từng service. Giá trị `DATABASE_URL`/`REDIS_URL` trong `.env` **không** được dùng khi chạy compose prod.
 
-### 2.3. Sàn Thương Mại Điện Tử (Shopee, Lazada, TikTok Shop)
+### 1.3. Web (`dealhunter-web/.env.local`)
 
-* **Hiện trạng hệ thống**:
-  * DealHunter sử dụng bộ Direct HTTP Crawler bóc tách chuẩn quốc tế OpenGraph, Twitter Cards, và Schema.org JSON-LD `Product`.
-  * Không yêu cầu API Key chính thức của sàn khi chạy quy mô vừa và nhỏ.
-* **Cần chuẩn bị khi Scale Production (Tùy chọn nâng cao - Phase 6)**:
-  * **Residential Proxy Provider** (Ví dụ: BrightData, Oxylabs, Smartproxy): Cần chuẩn bị tài khoản và chuỗi kết nối Proxy (`http://user:pass@proxy-node:port`) nếu IP datacenter bị sàn chặn tần suất cao.
+| Biến | Bắt buộc | Ý nghĩa |
+| :--- | :--- | :--- |
+| `NEXT_PUBLIC_API_URL` | Có | URL API (local: `http://localhost:8080/api/v1`). |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Khi dùng đăng nhập Google | **Phải trùng** `GOOGLE_CLIENT_ID` của backend. |
+| `NEXT_PUBLIC_EXTENSION_ID` | Tuỳ chọn | ID extension (xem `chrome://extensions`). Trống thì web không gửi phiên đăng nhập sang extension. |
+| `PORT` | — | Cổng dev server (mặc định 3000). |
 
----
-
-### 2.4. Khóa Bảo Mật & Hạ Tầng Nội Bộ
-
-* **JWT Secret (`JWT_SECRET`)**:
-  * Chuỗi ký token phiên đăng nhập của người dùng DealHunter.
-  * Lệnh tạo chuỗi an toàn 256-bit:
-    ```bash
-    openssl rand -base64 32
-    ```
-* **PostgreSQL (`DATABASE_URL`)**:
-  * Khuyên dùng PostgreSQL phiên bản 15 trở lên.
-  * Cần hỗ trợ extension `pgcrypto` hoặc `gen_random_uuid()` (đã có sẵn trong migration).
-* **Redis (`REDIS_URL`)**:
-  * Khuyên dùng Redis 7 trở lên có hỗ trợ Redis Streams (`XADD`, `XREADGROUP`, `XACK`).
+Các biến `NEXT_PUBLIC_*` được nhúng vào code lúc build: đổi giá trị thì phải build lại.
 
 ---
 
-## 3. Biểu Mẫu Điền Biến Môi Trường (Form Điền Trực Tiếp)
+## 2. Cách lấy giá trị từ dịch vụ bên ngoài
 
-### 3.1. File Cấu Hình Backend (`dealhunter/.env`)
+> Các bước trên giao diện của Google, Zalo và các chương trình affiliate là tóm tắt tại thời điểm viết. Giao diện của họ có thể đã đổi. Phần **đã đối chiếu với code** là tên biến, định dạng và cách hệ thống dùng chúng.
 
-```ini
-# ==============================================================================
-# DEALHUNTER BACKEND CONFIGURATION
-# ==============================================================================
+### 2.1. Google (đăng nhập)
 
-# [1] MOI TRUONG VA CONG MANG
-APP_ENV=production
-HTTP_PORT=8080
-LOG_LEVEL=info
-CORS_ALLOWED_ORIGINS=https://dealhunter.vn,http://localhost:3000
+Web dùng **Google Identity Services** (nút «Đăng nhập với Google», nhận ID token). Backend kiểm tra token với `GOOGLE_CLIENT_ID`.
 
-# [2] KHOA BAO MAT PHIEN DANG NHAP (JWT)
-# Dien chuoi ngau nhien it nhat 32 ky tu:
-JWT_SECRET=THAY_BANG_CHUOI_BI_MAT_32_KY_TU
+1. [Google Cloud Console](https://console.cloud.google.com/): tạo project (ví dụ `DealHunter`).
+2. **APIs & Services → OAuth consent screen**: User type **External**, điền tên app và email hỗ trợ.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, loại **Web application**.
+4. **Authorized JavaScript origins**: `http://localhost:3000` (dev) và `https://dealhunter.vn` (prod). Không cần redirect URI vì luồng này không chuyển hướng.
+5. Copy **Client ID** (dạng `….apps.googleusercontent.com`) vào `GOOGLE_CLIENT_ID` (backend) **và** `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (web).
 
-# [3] GOOGLE OAUTH 2.0 (GAP-02)
-# Lay tu Google Cloud Console -> APIs & Services -> Credentials:
-GOOGLE_CLIENT_ID=xxxx-xxxxxxxxxxxxxxxx.apps.googleusercontent.com
+Không có client secret trong cấu hình: luồng ID token không cần secret.
 
-# [4] POSTGRESQL DATABASE
-POSTGRES_USER=dealuser
-POSTGRES_PASSWORD=MAT_KHAU_POSTGRES
-POSTGRES_DB=dealdb
-POSTGRES_PORT=5432
-DATABASE_URL=postgres://dealuser:MAT_KHAU_POSTGRES@localhost:5432/dealdb?sslmode=disable
+**Kiểm tra:** mở web, bấm Đăng nhập, chọn tài khoản. Nếu Google báo `origin_mismatch` thì origin ở bước 4 chưa đúng.
 
-# [5] REDIS QUEUE & CACHE
-REDIS_PORT=6380
-REDIS_URL=redis://localhost:6380
+### 2.2. Zalo OA & ZNS (thông báo)
 
-# [6] CAU HINH SCANNER & WORKER
-WORKER_CONCURRENCY=10
-DEFAULT_POLL_INTERVAL=1800
-FETCH_TIMEOUT=10s
-MAX_RETRY=5
+Không bật Zalo thì thông báo Zalo được ghi là **failed** (chưa cấu hình). **Không có chế độ giả lập** trong ứng dụng; client giả `tests/fakezalo` chỉ dùng cho test.
 
-# [7] ZALO OA & ZNS NOTIFICATION (GAP-04)
-# Bat true de kich hoat gui tin Zalo thuc te (false de chay sandbox mien phi)
-ZALO_ENABLED=false
-# ID ung dung tu Zalo for Developers:
-ZALO_APP_ID=
-# Khoa bi mat ung dung tu Zalo for Developers:
-ZALO_OA_SECRET_KEY=
-# Refresh token OAuth v4 ban dau de he thong tu dong duy tri token 24/7:
-ZALO_REFRESH_TOKEN=
-# Access token co san (tuy chon, he thong se tu khoi tao tu refresh token):
-ZALO_OA_ACCESS_TOKEN=
-# ID mau tin ZNS da duyet:
-ZALO_TEMPLATE_ID=
-# Khoa bi mat kiem tra chu ky webhook HMAC-SHA256 (mac):
-ZALO_WEBHOOK_SECRET=
-```
+1. [Zalo for Developers](https://developers.zalo.me/): tạo ứng dụng, liên kết với Zalo Official Account.
+   - **App ID** → `ZALO_APP_ID`
+   - **Secret key** của ứng dụng → `ZALO_OA_SECRET_KEY`
+2. **Refresh token ban đầu (OAuth v4 cho OA):**
+   - Admin OA mở `https://oauth.zaloapp.com/v4/oa/permission?app_id=<APP_ID>&redirect_uri=<REDIRECT_URI>` và cấp quyền. Zalo trả `code` về redirect URI.
+   - Đổi `code` lấy token: `POST https://oauth.zaloapp.com/v4/oa/access_token`, kèm header `secret_key`; body gồm `app_id`, `code`, `grant_type=authorization_code`.
+   - `refresh_token` nhận được → `ZALO_REFRESH_TOKEN`. Hệ thống tự làm mới token mỗi **12 giờ** và lưu token mới vào Redis (`zalo:oa:refresh_token`). Vì refresh token xoay vòng, **chỉ dùng giá trị ban đầu một lần**; sau đó hệ thống tự quản lý.
+3. **Mẫu ZNS** (Zalo Cloud / ZNS → Quản lý mẫu), tạo và chờ Zalo duyệt:
+   - Mẫu báo giá giảm → `ZALO_TEMPLATE_ID`. Biến hệ thống gửi: `price_before`, `price_after`, `deal_url` (link sản phẩm, đã gắn affiliate nếu bật).
+   - Mẫu mã xác minh → `ZALO_OTP_TEMPLATE_ID`. Biến: `otp`.
+4. **Webhook:** URL `https://<domain>/api/v1/webhooks/zalo`, đăng ký sự kiện người dùng nhận tin và đọc tin. Zalo ký bằng header `X-ZEvent-Signature` = `sha256(appId + body + timestamp + OA secret key)`. Vì vậy `ZALO_WEBHOOK_SECRET` để trống là đúng: hệ thống tự dùng `ZALO_OA_SECRET_KEY`.
 
----
+Chi tiết kiểm chứng với hệ thống thật: [`plans/real-integration-setup.md`](plans/real-integration-setup.md).
 
-### 3.2. File Cấu Hình Frontend (`dealhunter-web/.env.local`)
+### 2.3. Affiliate (tiếp thị liên kết)
 
-```ini
-# ==============================================================================
-# DEALHUNTER WEB FRONTEND CONFIGURATION
-# ==============================================================================
+Khi bật, link «Mua» (trên web, trong tin Zalo, trong trang so sánh) được chuyển thành link affiliate có `sub_id` để biết người dùng và sản phẩm nào tạo đơn. Thiếu cấu hình thì luôn giữ **link gốc** (người dùng vẫn mua được bình thường).
 
-# Dia chi Backend Go API:
-NEXT_PUBLIC_API_URL=https://api.dealhunter.vn/api/v1
+**Quy tắc của code** (`pkg/affiliate/affiliate.go`):
+- Chỉ chạy khi `AFFILIATE_ENABLED=true`.
+- Mỗi sàn dùng template riêng **chỉ khi có cả** `*_AFFILIATE_ID` và `*_URL_TEMPLATE`. Thiếu một trong hai thì dùng `ACCESSTRADE_DEEPLINK_URL` nếu có, không thì giữ link gốc.
+- Template phải chứa `{URL}` (link sản phẩm đã URL-encode) hoặc `{RAW_URL}`. Không chứa thì bị bỏ qua, để tránh đưa mọi sản phẩm về cùng một trang.
+- Biến thay thế được: `{URL}`, `{RAW_URL}`, `{SUB_ID}`, `{AFFILIATE_ID}`.
+- `{SUB_ID}` có dạng `u_<8 ký tự user>_p_<8 ký tự sản phẩm>`, hoặc `guest_…` với khách.
 
-# Tên thuong hieu:
-NEXT_PUBLIC_APP_NAME=DealHunter
-NEXT_PUBLIC_DEFAULT_POLL_INTERVAL=1800
-NEXT_PUBLIC_ENABLE_MOCK_SANDBOX=false
+**Lấy giá trị:**
+- **Shopee / Lazada / TikTok Shop Affiliate:** đăng ký chương trình affiliate của sàn, lấy **mã affiliate** và **mẫu link tuỳ chỉnh** (custom link / deeplink) trong trang quản lý. Đổi phần link sản phẩm thành `{URL}` và phần sub-id thành `{SUB_ID}`.
+- **AccessTrade (một tài khoản cho nhiều sàn):** trong trang publisher, lấy **deeplink** có tham số `url=`, đổi giá trị đó thành `{URL}`. Ví dụ dạng: `https://go.isclix.com/deep_link/<ma_publisher>?url={URL}&utm_content={SUB_ID}`.
 
-# Google OAuth Client ID (Bat buoc phai trung voi GOOGLE_CLIENT_ID cua Backend):
-NEXT_PUBLIC_GOOGLE_CLIENT_ID=xxxx-xxxxxxxxxxxxxxxx.apps.googleusercontent.com
+> **[Chưa kiểm chứng]** Định dạng link của từng chương trình affiliate chưa được thử với tài khoản thật trong repo này. Ví dụ ở trên (và trong `plans/phase-3-5-monetization-and-voucher-engine.md`) chỉ minh hoạ vị trí `{URL}` / `{SUB_ID}`. Lấy đúng mẫu từ trang quản lý affiliate của bạn.
 
-# Cong chay server Next.js:
-PORT=3000
-```
+**Kiểm tra:** bật cấu hình, theo dõi một sản phẩm, gọi `GET /api/v1/tracked-products/{id}`. Trường `AffiliateURL` phải là link affiliate chứa link sản phẩm, không phải link gốc. Nút «Mua trên …» ở trang chủ dùng đúng trường này.
+
+### 2.4. Khoá và hạ tầng nội bộ
+
+- **`JWT_SECRET`:** `openssl rand -base64 32`. Đổi khoá thì mọi phiên đăng nhập hiện tại hết hiệu lực.
+- **PostgreSQL:** bản 15 trở lên. Migration dùng `gen_random_uuid()`.
+- **Redis:** bản 7 trở lên (Redis Streams: `XADD`, `XREADGROUP`, `XACK`).
+- **Sàn TMĐT:** không cần API key. Giá được đọc trực tiếp từ trang sản phẩm (OpenGraph, JSON-LD `Product`…). Khi quy mô lớn mà IP máy chủ bị chặn, cần proxy dân cư; hiện chưa có biến cấu hình cho proxy.
 
 ---
 
-## 4. Chế Độ Vận Hành Hiện Tại (Sandbox / Dev Mode)
+## 3. Tự kiểm tra trước khi chạy
 
-> [!TIP]
-> Hệ thống DealHunter đã được thiết kế sẵn cơ chế **Fallback An Toàn** tuyệt đối:
-> * Nếu bạn chưa có tài khoản Google Cloud: Hệ thống cung cấp nút **Đăng nhập Demo** 1-click để kiểm tra trọn vẹn luồng di trú dữ liệu mà không cần cấu hình Google.
-> * Nếu bạn chưa đăng ký Zalo OA: Đặt `ZALO_ENABLED=false`, hệ thống sẽ kích hoạt **MockZaloClient**, tự động mô phỏng sinh mã `msg_id`, trả trạng thái thành công và cho phép kiểm thử trọn vẹn toàn bộ quy trình nhận webhook mà không phát sinh bất kỳ chi phí tin nhắn nào.
+| Kiểm tra | Cách |
+| :--- | :--- |
+| Cấu hình API hợp lệ | Khởi động API; nếu sai, log in `invalid configuration (APP_ENV=…)` kèm danh sách lỗi. |
+| Web gọi đúng API | Mở web, tab Network: request tới `NEXT_PUBLIC_API_URL`, không lỗi CORS. |
+| Google | Đăng nhập thành công, `GET /api/v1/auth/me` trả email. |
+| Zalo | Log notifier ghi `Using Zalo OA HTTP client`, không phải `Zalo OA is NOT configured`. Liên kết Zalo trong Cài đặt nhận được mã OTP. |
+| Affiliate | `AffiliateURL` của một sản phẩm là link affiliate (mục 2.3). |
+
+---
+
+## 4. Các điểm cũ đã sửa trong tài liệu này (2026-10-14)
+
+- Bỏ «nút Đăng nhập Demo» và «MockZaloClient sandbox»: code không có hai thứ này. Zalo tắt thì thông báo ghi là failed.
+- JWT không phải «7 ngày»: access token 15 phút, refresh token 30 ngày (`ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL`).
+- Thêm các biến code có đọc nhưng tài liệu cũ thiếu: `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL`, `AUTH_COOKIE_SECURE`, `ADMIN_EMAILS`, `TRUSTED_PROXIES`, `ZALO_OTP_TEMPLATE_ID`, toàn bộ nhóm affiliate, `NEXT_PUBLIC_EXTENSION_ID`, `EXTENSION_ID`, `DEALHUNTER_GATEWAY`.
+- Bỏ các biến web không có code nào đọc: `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_DEFAULT_POLL_INTERVAL`, `NEXT_PUBLIC_ENABLE_MOCK_SANDBOX`.
+- Mẫu ZNS báo giá có thêm biến `deal_url`; webhook dùng chính `ZALO_OA_SECRET_KEY` để kiểm chữ ký.

@@ -50,6 +50,8 @@ Tài liệu hướng dẫn từ đầu (zero-to-running) cách cài đặt, cấ
 
 Tạo file `.env` tại thư mục `dealhunter/` (thư mục backend):
 
+> Cách lấy giá trị cho từng biến (Google, Zalo, affiliate…) và biến nào bắt buộc: [`third_party_and_environment_requirements.md`](../third_party_and_environment_requirements.md). Cách nhanh nhất: `cp .env.example .env`.
+
 ```bash
 cd /Users/tiendn/Workplace/Projects/deal-hunter/dealhunter
 ```
