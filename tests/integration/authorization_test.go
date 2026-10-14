@@ -57,7 +57,7 @@ func TestProductGroupAuthorization(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -101,7 +101,7 @@ func TestProductGroupAuthorization(t *testing.T) {
 		return resp.StatusCode, string(out)
 	}
 	newURL := func(name string) string {
-		return fmt.Sprintf("https://mock.dealhunter.vn/item/%s-%s", name, uuid.New().String()[:8])
+		return fmt.Sprintf("https://mock.dealhunter.io.vn/item/%s-%s", name, uuid.New().String()[:8])
 	}
 	track := func(bearer, url string) (trackingID, sourceID, productID uuid.UUID) {
 		t.Helper()
@@ -129,7 +129,7 @@ func TestProductGroupAuthorization(t *testing.T) {
 		return src.ProductID
 	}
 
-	_, sessA, _ := googleLogin(t, server.URL, fmt.Sprintf("authz-a-%s@dealhunter.vn", uuid.New().String()[:8]), "")
+	_, sessA, _ := googleLogin(t, server.URL, fmt.Sprintf("authz-a-%s@dealhunter.io.vn", uuid.New().String()[:8]), "")
 	bearerA := "Bearer " + sessA.AccessToken
 	bearerB, _, _ := startGuest(t, server.URL)
 
@@ -141,7 +141,7 @@ func TestProductGroupAuthorization(t *testing.T) {
 	t.Run("SEC07_SharedGroupOnlyChangedBySystem", func(t *testing.T) {
 		sharedURL := newURL("shared")
 		_, _, groupG := track(bearerA, sharedURL)
-		_, sessC, _ := googleLogin(t, server.URL, fmt.Sprintf("authz-c-%s@dealhunter.vn", uuid.New().String()[:8]), "")
+		_, sessC, _ := googleLogin(t, server.URL, fmt.Sprintf("authz-c-%s@dealhunter.io.vn", uuid.New().String()[:8]), "")
 		track("Bearer "+sessC.AccessToken, sharedURL) // C now tracks the same source: G is shared
 
 		if code, body := call(http.MethodPost, "/api/v1/products/"+groupG.String()+"/link-source", bearerA, map[string]string{"url": newURL("cheap-fake")}); code != http.StatusConflict {
@@ -288,7 +288,7 @@ func TestProductGroupAuthorization(t *testing.T) {
 	})
 
 	t.Run("SEC11_OversizedBodyRejected", func(t *testing.T) {
-		big := map[string]string{"url": "https://mock.dealhunter.vn/item/" + strings.Repeat("a", 70<<10)}
+		big := map[string]string{"url": "https://mock.dealhunter.io.vn/item/" + strings.Repeat("a", 70<<10)}
 		if code, _ := call(http.MethodPost, "/api/v1/tracked-products", bearerA, big); code != http.StatusRequestEntityTooLarge {
 			t.Errorf("oversized body: expected 413, got %d", code)
 		}

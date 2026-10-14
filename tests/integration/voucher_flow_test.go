@@ -57,7 +57,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 	registry.RegisterForHosts(fakemarket.NewNamedAdapter("shopee"), "shopee.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
@@ -91,7 +91,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	handler.SetAuthService(authSvc, jwtMgr)
 	handler.SetAffiliateTransformer(affTr)
 	handler.SetVoucherRepository(voucherRepo)
-	adminEmail := fmt.Sprintf("voucher-admin-%s@dealhunter.vn", uuid.New().String()[:8])
+	adminEmail := fmt.Sprintf("voucher-admin-%s@dealhunter.io.vn", uuid.New().String()[:8])
 	handler.SetAdminEmails([]string{strings.ToUpper(adminEmail)})
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -102,7 +102,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	client := server.Client()
 
 	// 1. Authenticate user
-	_, loginDataPtr, _ := googleLogin(t, server.URL, fmt.Sprintf("voucher-user-%s@dealhunter.vn", uuid.New().String()[:8]), "")
+	_, loginDataPtr, _ := googleLogin(t, server.URL, fmt.Sprintf("voucher-user-%s@dealhunter.io.vn", uuid.New().String()[:8]), "")
 	loginData := *loginDataPtr
 	userToken := loginData.AccessToken
 	userID := loginData.User.ID
@@ -110,7 +110,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 	adminToken := adminDataPtr.AccessToken
 
 	// 2. Track a Shopee product
-	mockShopeeURL := fmt.Sprintf("https://mock.dealhunter.vn/item/shopee-keyboard-%s", uuid.New().String()[:8])
+	mockShopeeURL := fmt.Sprintf("https://mock.dealhunter.io.vn/item/shopee-keyboard-%s", uuid.New().String()[:8])
 	trackPayload, _ := json.Marshal(map[string]string{"url": mockShopeeURL})
 	reqTrack, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/tracked-products", bytes.NewBuffer(trackPayload))
 	reqTrack.Header.Set("Content-Type", "application/json")
@@ -208,7 +208,7 @@ func TestVoucherIntelligenceAndComboFlow(t *testing.T) {
 		"expiry over a year": func(b map[string]interface{}) { b["expires_at"] = time.Now().AddDate(2, 0, 0) },
 		"phishing host":      func(b map[string]interface{}) { b["collect_url"] = "https://shopee.vn.evil.com/claim" },
 		"http collect_url":   func(b map[string]interface{}) { b["collect_url"] = "http://shopee.vn/claim" },
-		"other marketplace":  func(b map[string]interface{}) { b["collect_url"] = "https://mock.dealhunter.vn/claim" },
+		"other marketplace":  func(b map[string]interface{}) { b["collect_url"] = "https://mock.dealhunter.io.vn/claim" },
 		"javascript url":     func(b map[string]interface{}) { b["collect_url"] = "javascript:alert(1)" },
 		"unknown field":      func(b map[string]interface{}) { b["expires_in_days"] = 3 },
 	} {

@@ -12,7 +12,7 @@ func TestJWTManager_GenerateAndValidate(t *testing.T) {
 	manager := NewJWTManager("test-secret-key-at-least-32-chars-long!", 1*time.Hour)
 
 	userUUID := uuid.New()
-	email := "test@dealhunter.vn"
+	email := "test@dealhunter.io.vn"
 	name := "Test User"
 	user := &User{
 		ID:           userUUID,
@@ -47,7 +47,7 @@ func TestJWTManager_ExpiredToken(t *testing.T) {
 	manager := NewJWTManager("test-secret-key-at-least-32-chars-long!", -1*time.Second)
 
 	userUUID := uuid.New()
-	email := "expired@dealhunter.vn"
+	email := "expired@dealhunter.io.vn"
 	user := &User{
 		ID:           userUUID,
 		Email:        &email,

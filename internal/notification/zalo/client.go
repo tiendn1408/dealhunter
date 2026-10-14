@@ -3,6 +3,9 @@ package zalo
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +29,7 @@ type HTTPZaloClient struct {
 	httpClient   *http.Client
 	redisClient  *redis.Client
 	tokenManager *TokenManager
+	appSecret    string
 }
 
 func NewHTTPZaloClient(accessToken string, redisClient *redis.Client) *HTTPZaloClient {
@@ -39,6 +43,20 @@ func NewHTTPZaloClient(accessToken string, redisClient *redis.Client) *HTTPZaloC
 
 func (c *HTTPZaloClient) SetTokenManager(tm *TokenManager) {
 	c.tokenManager = tm
+}
+
+// SetAppSecret enables the appsecret_proof header on every API call. Zalo checks it when the app has
+// "require app secret proof" turned on; it proves the call comes from the app's owner even if an
+// access token leaks. Empty = no header.
+func (c *HTTPZaloClient) SetAppSecret(secret string) {
+	c.appSecret = secret
+}
+
+// AppSecretProof is hex(HMAC-SHA256(key = app secret key, message = access token)).
+func AppSecretProof(accessToken, appSecret string) string {
+	mac := hmac.New(sha256.New, []byte(appSecret))
+	mac.Write([]byte(accessToken))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 type TemplateRequest struct {
@@ -92,6 +110,9 @@ func (c *HTTPZaloClient) SendMessage(ctx context.Context, recipient string, temp
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("access_token", token)
+	if c.appSecret != "" {
+		req.Header.Set("appsecret_proof", AppSecretProof(token, c.appSecret))
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

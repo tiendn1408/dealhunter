@@ -1,5 +1,7 @@
 # Thiết Lập Kiểm Chứng Với Hệ Thống Thật (phần còn lại của Bước 1)
 
+> Thiết lập Zalo đầy đủ (ứng dụng, khoá, refresh token, mẫu ZNS): [`runbooks/zalo-setup.md`](../runbooks/zalo-setup.md).
+
 > Phần code của Bước 1 / 1.5 đã xong và đã test bằng test double. Hai việc dưới đây chỉ kiểm chứng được với dịch vụ thật nên cần bạn tạo tài khoản / khoá trước. Làm xong phần nào thì báo, tôi sẽ chạy kiểm tra phần đó.
 >
 > **Không dán secret vào chat.** Chỉ điền vào `.env` / `.env.local` (cả hai đã được gitignore) rồi báo "xong".
@@ -62,9 +64,9 @@ Mục tiêu: xác nhận công thức `sha256(appId + body + timestamp + OASecre
 3. Điền `dealhunter/.env`:
    ```
    ZALO_APP_ID=<app id>
-   ZALO_OA_SECRET_KEY=<oa secret key>
-   ZALO_WEBHOOK_SECRET=            # để trống ⇒ dùng ZALO_OA_SECRET_KEY
-   ZALO_ENABLED=false              # chưa gửi tin; webhook vẫn được xác thực
+   ZALO_OA_SECRET_KEY=<app secret key>   # khoá của ứng dụng, dùng lấy/làm mới token
+   ZALO_WEBHOOK_SECRET=<oa secret key>   # khoá ở trang Webhook, dùng kiểm chữ ký
+   ZALO_ENABLED=false                    # chưa gửi tin; webhook vẫn được xác thực
    ```
 4. **URL HTTPS public** trỏ về API local (Zalo không gọi được `localhost`). Chọn một cách:
    - `brew install cloudflared` (máy chưa có). Tôi sẽ chạy `cloudflared tunnel --url http://localhost:8080` và gửi bạn URL. URL quick tunnel đổi mỗi lần chạy.
@@ -76,7 +78,7 @@ Mục tiêu: xác nhận công thức `sha256(appId + body + timestamp + OASecre
 ### Tôi kiểm tra
 - [ ] Log API có `zalo webhook accepted` với `event_name=user_send_text` (chữ ký thật khớp).
 - [ ] Nếu log `zalo webhook rejected` thì `reason` sẽ chỉ ra nguyên nhân (`invalid signature` / `stale timestamp` / `invalid json`). Log không bao giờ chứa secret hay body.
-- [ ] Request giả mạo (sai chữ ký, timestamp lệch > 15 phút, body > 64KB) gửi qua cùng URL public ⇒ 401 / 400.
+- [ ] Request giả mạo có chữ ký sai hoặc timestamp lệch > 15 phút ⇒ 401; body > 64KB ⇒ 400. Request **không có chữ ký** (như request «Kiểm tra» của Zalo) ⇒ 200 nhưng không xử lý gì (log `zalo webhook ignored`).
 - [ ] Sau khi xong thì tắt tunnel; nhớ gỡ hoặc đổi URL webhook trên Zalo nếu là quick tunnel.
 
 ---

@@ -101,19 +101,22 @@ func (t *Transformer) Transform(rawURL, platform, subID string) string {
 	return res
 }
 
-// FormatSubID formats a standard subID for tracking conversions per user and product.
+// FormatSubID formats a standard subID for tracking conversions per user and product:
+// "u<8 hex>-p<8 hex>" ("guest" / "all" when unknown). Only letters, digits and "-": Shopee accepts
+// alphanumeric sub IDs and splits them on "-" into Sub_id1..Sub_id5 in its report (here: user,
+// product); other characters may be dropped.
 func FormatSubID(userID, productID uuid.UUID) string {
 	userPart := "guest"
 	if userID != uuid.Nil {
-		userPart = "u_" + userID.String()[:8]
+		userPart = "u" + userID.String()[:8]
 	}
 
 	prodPart := "all"
 	if productID != uuid.Nil {
-		prodPart = "p_" + productID.String()[:8]
+		prodPart = "p" + productID.String()[:8]
 	}
 
-	return userPart + "_" + prodPart
+	return userPart + "-" + prodPart
 }
 
 func detectPlatform(rawURL string) string {

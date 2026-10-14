@@ -45,7 +45,7 @@ func TestEndToEndTrackingFlow(t *testing.T) {
 	}
 
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -56,7 +56,7 @@ func TestEndToEndTrackingFlow(t *testing.T) {
 
 	userID := uuid.New()
 	createGuestUser(t, dbPool, userID)
-	testURL := "https://mock.dealhunter.vn/product/" + uuid.New().String()
+	testURL := "https://mock.dealhunter.io.vn/product/" + uuid.New().String()
 
 	// 1. Ingest URL
 	tracked, err := trackingSvc.TrackURL(ctx, userID, testURL)

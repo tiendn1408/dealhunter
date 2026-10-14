@@ -30,6 +30,7 @@ Chua tai lieu PRD, dac ta BA/PM va ke hoach trien khai chi tiet cho tung giai do
 Chua cac huong dan cai dat moi truong, chay ung dung, cau hinh va xu ly su co:
 - [**setup-and-run.md**](runbooks/setup-and-run.md): Huong dan cau hinh moi truong (.env), chay Docker Compose, migration va khoi dong cac tien trinh Go o moi truong local dev.
 - [**third_party_and_environment_requirements.md**](third_party_and_environment_requirements.md): Tung bien moi truong (backend `.env.example`, web `.env.example`, compose prod): bat buoc khi nao, mac dinh, lay gia tri o dau (Google, Zalo, affiliate) va cach tu kiem tra.
+- [**zalo-setup.md**](runbooks/zalo-setup.md): Thiet lap Zalo tu dau: mo ta & danh muc ung dung, App Secret Key vs OA Secret Key, refresh token ban dau, 2 mau ZNS (bao gia, ma xac minh), webhook, kiem tra va su co.
 
 ---
 

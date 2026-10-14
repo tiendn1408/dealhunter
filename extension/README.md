@@ -24,7 +24,7 @@ Kết quả nằm ở `dist/`.
 
 | Lệnh | Môi trường | Khác biệt |
 | --- | --- | --- |
-| `npm run build` | production | Chỉ tin `https://dealhunter.vn` và `https://www.dealhunter.vn`. API mặc định `https://dealhunter.vn/api/v1`. Manifest không có mục localhost. Không có simulator. |
+| `npm run build` | production | Chỉ tin `https://dealhunter.io.vn` và `https://www.dealhunter.io.vn`. API mặc định `https://dealhunter.io.vn/api/v1`. Manifest không có mục localhost. Không có simulator. |
 | `npm run build:dev`, `npm run dev` | development | Thêm `http://localhost:3000`, `http://localhost:3100` (web), `http://localhost:8080` (API) và Caffiliate Bench simulator trên `:3100`. Phiên bản trong Cài đặt hiện «(bản dev)». |
 
 - Chế độ dev được bật bởi `--mode development` hoặc biến môi trường `DH_ENV=development` (xem `vite.config.ts`). Cờ build là `__DH_DEV__`, đọc qua `IS_DEV_BUILD` trong `src/lib/build_env.ts`.

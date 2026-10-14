@@ -46,7 +46,7 @@ func TestRegistryDetect(t *testing.T) {
 			shouldErr:    false,
 		},
 		{
-			url:       "https://mock.dealhunter.vn/item/999",
+			url:       "https://mock.dealhunter.io.vn/item/999",
 			shouldErr: true,
 		},
 		{

@@ -157,6 +157,25 @@ func TestZaloWebhook_DeliveryStatusFlow(t *testing.T) {
 	if repo.updatedTime["zalo-msg-nested-002"] == nil || repo.updatedTime["zalo-msg-nested-002"].Year() < 2024 {
 		t.Errorf("expected valid parsed millisecond epoch timestamp, got %v", repo.updatedTime["zalo-msg-nested-002"])
 	}
+
+	// 4. user_seen_message acknowledging several messages at once -> read
+	rec4 := httptest.NewRecorder()
+	h.HandleZaloWebhook(rec4, signedWebhookRequest(t, map[string]interface{}{
+		"app_id":     testZaloAppID,
+		"event_name": "user_seen_message",
+		"timestamp":  time.Now().UnixMilli(),
+		"message": map[string]interface{}{
+			"msg_ids": []string{"zalo-msg-seen-1", "zalo-msg-seen-2"},
+		},
+	}))
+	if rec4.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for seen event, got %d", rec4.Code)
+	}
+	for _, id := range []string{"zalo-msg-seen-1", "zalo-msg-seen-2"} {
+		if repo.updatedStatus[id] != notification.StatusRead {
+			t.Errorf("expected status 'read' for %s, got '%s'", id, repo.updatedStatus[id])
+		}
+	}
 }
 
 // SEC-10: verification can never be skipped or keyed by the caller
@@ -169,13 +188,26 @@ func TestZaloWebhook_SignatureValidation(t *testing.T) {
 		}
 	}
 
-	t.Run("not configured returns 503", func(t *testing.T) {
+	t.Run("not configured: acknowledged, nothing processed", func(t *testing.T) {
 		h := NewHandler(nil, nil)
-		h.SetAlertAndNotificationRepos(nil, newMockWebhookNotifRepo())
+		repo := newMockWebhookNotifRepo()
+		h.SetAlertAndNotificationRepos(nil, repo)
 		rec := httptest.NewRecorder()
 		h.HandleZaloWebhook(rec, signedWebhookRequest(t, newPayload()))
-		if rec.Code != http.StatusServiceUnavailable {
-			t.Errorf("expected 503, got %d", rec.Code)
+		if rec.Code != http.StatusOK || len(repo.updatedStatus) != 0 {
+			t.Errorf("expected 200 and no status change, got %d / %v", rec.Code, repo.updatedStatus)
+		}
+	})
+
+	t.Run("Zalo URL check (unsigned, any body): 200 so the URL can be saved, nothing processed", func(t *testing.T) {
+		for _, body := range []string{"", "{}", "not json", `{"event_name":"user_read_message","msg_id":"zalo-msg-sig-1"}`} {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/zalo", strings.NewReader(body))
+			rec := httptest.NewRecorder()
+			repo := newMockWebhookNotifRepo()
+			newWebhookTestHandler(repo).HandleZaloWebhook(rec, req)
+			if rec.Code != http.StatusOK || len(repo.updatedStatus) != 0 {
+				t.Errorf("body %q: expected 200 and no status change, got %d / %v", body, rec.Code, repo.updatedStatus)
+			}
 		}
 	})
 
@@ -188,13 +220,14 @@ func TestZaloWebhook_SignatureValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("missing signature", func(t *testing.T) {
+	t.Run("missing signature: never processed", func(t *testing.T) {
 		req := signedWebhookRequest(t, newPayload())
 		req.Header.Del("X-ZEvent-Signature")
 		rec := httptest.NewRecorder()
-		newWebhookTestHandler(newMockWebhookNotifRepo()).HandleZaloWebhook(rec, req)
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("expected 401, got %d", rec.Code)
+		repo := newMockWebhookNotifRepo()
+		newWebhookTestHandler(repo).HandleZaloWebhook(rec, req)
+		if len(repo.updatedStatus) != 0 {
+			t.Errorf("an unsigned request must not change anything, got %v", repo.updatedStatus)
 		}
 	})
 

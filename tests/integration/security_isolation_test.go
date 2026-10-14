@@ -56,7 +56,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -96,7 +96,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// -------------------------------------------------------------------------
 	// Setup Two Separate Users: User A (Registered Member) and User B (Guest / Attacker)
 	// -------------------------------------------------------------------------
-	userAEmail := fmt.Sprintf("user-a-%s@dealhunter.vn", uuid.New().String()[:8])
+	userAEmail := fmt.Sprintf("user-a-%s@dealhunter.io.vn", uuid.New().String()[:8])
 	_, loginDataPtr, _ := googleLogin(t, server.URL, userAEmail, "")
 	loginData := *loginDataPtr
 
@@ -108,7 +108,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	userBID := userBSess.User.ID
 
 	// Shared product URL tracked by both users
-	sharedURL := fmt.Sprintf("https://mock.dealhunter.vn/item/laptop-%s", uuid.New().String()[:8])
+	sharedURL := fmt.Sprintf("https://mock.dealhunter.io.vn/item/laptop-%s", uuid.New().String()[:8])
 
 	// User A tracks product
 	trackPayload, _ := json.Marshal(map[string]string{"url": sharedURL})
@@ -534,7 +534,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 		}
 
 		// Logging in while naming the victim guest through X-User-ID migrates nothing
-		attackerEmail := fmt.Sprintf("attacker-%s@dealhunter.vn", uuid.New().String()[:8])
+		attackerEmail := fmt.Sprintf("attacker-%s@dealhunter.io.vn", uuid.New().String()[:8])
 		loginReq, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/google",
 			bytes.NewBufferString(fmt.Sprintf(`{"id_token":%q}`, "valid:"+attackerEmail)))
 		loginReq.Header.Set("Content-Type", "application/json")
@@ -560,7 +560,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// -------------------------------------------------------------------------
 	t.Run("Vulnerability7_RegisteredUserMigrationTheftBlocked", func(t *testing.T) {
 		// User C logs in presenting User A's member token as if it were a guest token
-		userCEmail := fmt.Sprintf("user-c-%s@dealhunter.vn", uuid.New().String()[:8])
+		userCEmail := fmt.Sprintf("user-c-%s@dealhunter.io.vn", uuid.New().String()[:8])
 		_, sessC, _ := googleLogin(t, server.URL, userCEmail, "Bearer "+userAToken)
 
 		if sessC.Migration != nil {
@@ -576,7 +576,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 	// -------------------------------------------------------------------------
 	t.Run("Vulnerability8_AlreadyMigratedGuestReplayPrevented", func(t *testing.T) {
 		guestDBearer, _, guestDCookie := startGuest(t, server.URL)
-		guestURL := fmt.Sprintf("https://mock.dealhunter.vn/item/camera-%s", uuid.New().String()[:8])
+		guestURL := fmt.Sprintf("https://mock.dealhunter.io.vn/item/camera-%s", uuid.New().String()[:8])
 		trackPayload, _ := json.Marshal(map[string]string{"url": guestURL})
 
 		reqTrackGuest, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/tracked-products", bytes.NewBuffer(trackPayload))
@@ -595,7 +595,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 		}
 
 		// Replaying guest D's (still unexpired) access token into another account migrates nothing
-		replayEmail := fmt.Sprintf("replay-%s@dealhunter.vn", uuid.New().String()[:8])
+		replayEmail := fmt.Sprintf("replay-%s@dealhunter.io.vn", uuid.New().String()[:8])
 		_, sessReplay, _ := googleLogin(t, server.URL, replayEmail, guestDBearer)
 		if sessReplay.Migration != nil {
 			t.Fatalf("Expected no migration on replay, got %+v", sessReplay.Migration)
@@ -657,7 +657,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 
 	t.Run("Vulnerability9d_MigratedGuestTokenRejected", func(t *testing.T) {
 		guestBearer, _, _ := startGuest(t, server.URL)
-		googleLogin(t, server.URL, fmt.Sprintf("migrate-%s@dealhunter.vn", uuid.New().String()[:8]), guestBearer)
+		googleLogin(t, server.URL, fmt.Sprintf("migrate-%s@dealhunter.io.vn", uuid.New().String()[:8]), guestBearer)
 
 		// The guest's access token is still a valid JWT, but the guest no longer exists as such
 		req, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/tracked-products", nil)
@@ -692,7 +692,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 		if _, err := dbPool.Exec(ctx, "UPDATE users SET phone = $2 WHERE id = $1", guestSess.User.ID, phone); err != nil {
 			t.Fatal(err)
 		}
-		_, member, _ := googleLogin(t, server.URL, fmt.Sprintf("phone-%s@dealhunter.vn", uuid.New().String()[:8]), guestBearer)
+		_, member, _ := googleLogin(t, server.URL, fmt.Sprintf("phone-%s@dealhunter.io.vn", uuid.New().String()[:8]), guestBearer)
 
 		var memberPhone, guestPhone *string
 		_ = dbPool.QueryRow(ctx, "SELECT phone FROM users WHERE id = $1", member.User.ID).Scan(&memberPhone)
@@ -805,7 +805,7 @@ func TestSecurityAndDataIsolationFlow(t *testing.T) {
 		}
 
 		// Another member cannot take the number with a guessed code, and gets no hint it is linked
-		otherMemberBearer, _, _ := googleLogin(t, server.URL, fmt.Sprintf("member-x-%s@dealhunter.vn", uuid.New().String()[:8]), "")
+		otherMemberBearer, _, _ := googleLogin(t, server.URL, fmt.Sprintf("member-x-%s@dealhunter.io.vn", uuid.New().String()[:8]), "")
 		if resp := post("/api/v1/users/me/zalo/otp", otherMemberBearer, map[string]string{"phone": uniquePhone}); resp.StatusCode != http.StatusAccepted {
 			t.Fatalf("expected 202 (no 409 revealing the number is linked), got %d", resp.StatusCode)
 		}

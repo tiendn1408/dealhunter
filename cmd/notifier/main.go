@@ -77,6 +77,7 @@ func main() {
 	default:
 		logger.Info("Using Zalo OA HTTP client", "auto_refresh", tokenManager.CanRefresh())
 		httpCli := zalo.NewHTTPZaloClient(cfg.ZaloOAAccessToken, rdb)
+		httpCli.SetAppSecret(cfg.ZaloOASecretKey)
 		if tokenManager.CanRefresh() {
 			httpCli.SetTokenManager(tokenManager)
 			tokenManager.StartAutoRefresh(ctx, zalo.DefaultRefreshWindow)

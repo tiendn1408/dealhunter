@@ -53,7 +53,7 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -86,7 +86,7 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 		t.Fatalf("expected guest user, got %s", guestSess.User.AuthProvider)
 	}
 
-	prodURL := fmt.Sprintf("https://mock.dealhunter.vn/item/sony-%s", uuid.New().String()[:8])
+	prodURL := fmt.Sprintf("https://mock.dealhunter.io.vn/item/sony-%s", uuid.New().String()[:8])
 	trackBody, _ := json.Marshal(map[string]string{"url": prodURL})
 	req, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/tracked-products", bytes.NewBuffer(trackBody))
 	req.Header.Set("Content-Type", "application/json")
@@ -100,7 +100,7 @@ func TestAuthAndGuestMigrationFlow(t *testing.T) {
 
 	// Step 2: Login while presenting the guest token migrates the guest data automatically
 	_, authResult, loginCookie := googleLogin(t, server.URL,
-		fmt.Sprintf("user-%s@dealhunter.vn", uuid.New().String()[:8]), guestBearer)
+		fmt.Sprintf("user-%s@dealhunter.io.vn", uuid.New().String()[:8]), guestBearer)
 	if authResult.AccessToken == "" || loginCookie == nil || !loginCookie.HttpOnly {
 		t.Fatal("Expected access token and HttpOnly refresh cookie")
 	}

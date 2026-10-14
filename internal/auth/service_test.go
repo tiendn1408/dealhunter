@@ -173,14 +173,14 @@ func TestAuthService_GoogleLogin(t *testing.T) {
 	repo := newMemoryUserRepo()
 	svc, jwtMgr := newTestService(t, repo)
 
-	sess, err := svc.GoogleLogin(context.Background(), "valid:Tien.Dang@dealhunter.vn", uuid.Nil)
+	sess, err := svc.GoogleLogin(context.Background(), "valid:Tien.Dang@dealhunter.io.vn", uuid.Nil)
 	if err != nil {
 		t.Fatalf("GoogleLogin failed: %v", err)
 	}
 	if sess.AccessToken == "" || sess.RefreshToken == "" {
 		t.Fatal("expected access and refresh tokens")
 	}
-	if sess.User.Email == nil || *sess.User.Email != "tien.dang@dealhunter.vn" {
+	if sess.User.Email == nil || *sess.User.Email != "tien.dang@dealhunter.io.vn" {
 		t.Errorf("expected lower-cased email, got %v", sess.User.Email)
 	}
 	if sess.User.AuthProvider != "google" {
@@ -192,7 +192,7 @@ func TestAuthService_GoogleLogin(t *testing.T) {
 	}
 
 	// Logging in again returns the same account
-	again, err := svc.GoogleLogin(context.Background(), "valid:tien.dang@dealhunter.vn", uuid.Nil)
+	again, err := svc.GoogleLogin(context.Background(), "valid:tien.dang@dealhunter.io.vn", uuid.Nil)
 	if err != nil || again.User.ID != sess.User.ID {
 		t.Fatalf("expected same account on second login, got %v err=%v", again, err)
 	}

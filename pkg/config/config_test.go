@@ -60,7 +60,7 @@ func validProductionConfig() *Config {
 		AccessTokenTTL:     15 * time.Minute,
 		RefreshTokenTTL:    720 * time.Hour,
 		AuthCookieSecure:   true,
-		CORSAllowedOrigins: "https://dealhunter.vn, https://www.dealhunter.vn",
+		CORSAllowedOrigins: "https://dealhunter.io.vn, https://www.dealhunter.io.vn",
 	}
 }
 

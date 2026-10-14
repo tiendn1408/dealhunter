@@ -55,3 +55,32 @@ func TestSendMessage_NotSentClassification(t *testing.T) {
 		t.Fatalf("missing token must be ErrNotSent, got %v", err)
 	}
 }
+
+func TestSendMessage_AppSecretProof(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("appsecret_proof"))
+		w.Write([]byte(`{"error":0,"data":{"msg_id":"m1"}}`))
+	}))
+	defer srv.Close()
+
+	// With the app secret: hex(HMAC-SHA256(key=app secret, message=access token)), computed independently
+	c := NewHTTPZaloClient("access-token-123", nil)
+	c.endpoint = srv.URL
+	c.SetAppSecret("app-secret-key")
+	if _, err := c.SendMessage(context.Background(), "84912345678", "tpl", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without it: no header at all
+	plain := NewHTTPZaloClient("access-token-123", nil)
+	plain.endpoint = srv.URL
+	if _, err := plain.SendMessage(context.Background(), "84912345678", "tpl", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "3d272fe3a7d6c3fc846354c1e5d38f601548fa81d456f2549978a2fa1614518c"
+	if len(got) != 2 || got[0] != want || got[1] != "" {
+		t.Fatalf("appsecret_proof headers = %q, want [%q \"\"]", got, want)
+	}
+}

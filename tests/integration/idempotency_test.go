@@ -46,7 +46,7 @@ func TestJobIdempotencyOnReplay(t *testing.T) {
 		ProductID:         prod.ID,
 		Platform:          "mock",
 		ExternalProductID: &extID,
-		CanonicalURL:      "https://mock.dealhunter.vn/item/" + extID,
+		CanonicalURL:      "https://mock.dealhunter.io.vn/item/" + extID,
 		Currency:          "VND",
 		Active:            true,
 		CreatedAt:         time.Now(),

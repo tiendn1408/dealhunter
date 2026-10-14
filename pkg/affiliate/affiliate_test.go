@@ -121,13 +121,13 @@ func TestFormatSubID(t *testing.T) {
 	pID := uuid.MustParse("99999999-8888-7777-6666-555555555555")
 
 	res := FormatSubID(uID, pID)
-	if res != "u_11111111_p_99999999" {
-		t.Fatalf("expected 'u_11111111_p_99999999', got: %s", res)
+	if res != "u11111111-p99999999" {
+		t.Fatalf("expected 'u11111111-p99999999', got: %s", res)
 	}
 
 	resGuest := FormatSubID(uuid.Nil, pID)
-	if resGuest != "guest_p_99999999" {
-		t.Fatalf("expected 'guest_p_99999999', got: %s", resGuest)
+	if resGuest != "guest-p99999999" {
+		t.Fatalf("expected 'guest-p99999999', got: %s", resGuest)
 	}
 }
 
@@ -158,5 +158,27 @@ func TestTransform_TemplateWithoutURLKeepsOriginal(t *testing.T) {
 	raw := "https://shopee.vn/product/1/2"
 	if got := tr.Transform(raw, "shopee", "u_1_p_2"); got != raw {
 		t.Fatalf("expected original link, got %q", got)
+	}
+}
+
+// The Shopee "an_redir" long link from Shopee's affiliate short-link guide:
+// s.shopee.<tld>/an_redir?origin_link=<encoded product URL>&affiliate_id=<id>&sub_id=<a-b-...>
+func TestTransformer_ShopeeAnRedirLink(t *testing.T) {
+	tr := NewTransformer(Config{
+		Enabled:        true,
+		ShopeeID:       "17300000000",
+		ShopeeTemplate: "https://s.shopee.vn/an_redir?origin_link={URL}&affiliate_id={AFFILIATE_ID}&sub_id={SUB_ID}",
+	})
+	subID := FormatSubID(uuid.MustParse("11111111-2222-3333-4444-555555555555"), uuid.MustParse("99999999-8888-7777-6666-555555555555"))
+	got := tr.Transform("https://shopee.vn/Tai-nghe-i.123.456", "shopee", subID)
+	want := "https://s.shopee.vn/an_redir?origin_link=https%3A%2F%2Fshopee.vn%2FTai-nghe-i.123.456&affiliate_id=17300000000&sub_id=u11111111-p99999999"
+	if got != want {
+		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+	// Shopee accepts only letters, digits and "-" in sub IDs
+	for _, r := range subID {
+		if !(r == '-' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z')) {
+			t.Fatalf("sub ID %q has %q, which Shopee may drop", subID, r)
+		}
 	}
 }

@@ -47,18 +47,18 @@
 | `ACCESSTRADE_DEEPLINK_URL` | Tuỳ chọn | trống | Mục 2.3. |
 | `ZALO_ENABLED` | Tuỳ chọn | `false` | [Mục 2.2](#22-zalo-oa--zns-thông-báo). Có `ZALO_REFRESH_TOKEN` hoặc `ZALO_OA_ACCESS_TOKEN` thì Zalo **tự bật**. |
 | `ZALO_APP_ID` | Prod khi bật Zalo | trống | Mục 2.2. |
-| `ZALO_OA_SECRET_KEY` | Prod khi bật Zalo | trống | Mục 2.2. |
+| `ZALO_OA_SECRET_KEY` | Prod khi bật Zalo | trống | **App Secret Key** của ứng dụng (dù tên biến có chữ OA). Mục 2.2. |
 | `ZALO_REFRESH_TOKEN` | Khi bật Zalo | trống | Mục 2.2. |
 | `ZALO_OA_ACCESS_TOKEN` | Tuỳ chọn | trống | Mục 2.2 (thường để trống). |
 | `ZALO_TEMPLATE_ID` | Khi bật Zalo | trống | Mẫu ZNS báo giá giảm. |
 | `ZALO_OTP_TEMPLATE_ID` | Tuỳ chọn | trống | Mẫu ZNS gửi mã xác minh khi người dùng liên kết Zalo. Trống = không liên kết được Zalo. |
-| `ZALO_WEBHOOK_SECRET` | Tuỳ chọn | = `ZALO_OA_SECRET_KEY` | Khoá kiểm chữ ký webhook. Để trống là đúng trong hầu hết trường hợp. |
+| `ZALO_WEBHOOK_SECRET` | Khi dùng webhook | = `ZALO_OA_SECRET_KEY` | **OA Secret Key** ở trang Webhook của ứng dụng (khác App Secret Key). |
 
 ### 1.2. Chỉ dùng với `docker-compose.prod.yml`
 
 | Biến | Bắt buộc | Ý nghĩa |
 | :--- | :--- | :--- |
-| `NEXT_PUBLIC_API_URL` | Có | URL API mà web gọi, nhúng vào image web lúc **build** (ví dụ `https://dealhunter.vn/api/v1`). |
+| `NEXT_PUBLIC_API_URL` | Có | URL API mà web gọi, nhúng vào image web lúc **build** (ví dụ `https://dealhunter.io.vn/api/v1`). |
 | `EXTENSION_ID` | Tuỳ chọn | ID extension trên Chrome Web Store; web dùng làm `NEXT_PUBLIC_EXTENSION_ID`. |
 | `DEALHUNTER_GATEWAY` | Tuỳ chọn | Gateway mạng Docker mà API tin `X-Forwarded-For` (mặc định `172.30.240.1`). |
 
@@ -88,7 +88,7 @@ Web dùng **Google Identity Services** (nút «Đăng nhập với Google», nh�
 1. [Google Cloud Console](https://console.cloud.google.com/): tạo project (ví dụ `DealHunter`).
 2. **APIs & Services → OAuth consent screen**: User type **External**, điền tên app và email hỗ trợ.
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, loại **Web application**.
-4. **Authorized JavaScript origins**: `http://localhost:3000` (dev) và `https://dealhunter.vn` (prod). Không cần redirect URI vì luồng này không chuyển hướng.
+4. **Authorized JavaScript origins**: `http://localhost:3000` (dev) và `https://dealhunter.io.vn` (prod). Không cần redirect URI vì luồng này không chuyển hướng.
 5. Copy **Client ID** (dạng `….apps.googleusercontent.com`) vào `GOOGLE_CLIENT_ID` (backend) **và** `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (web).
 
 Không có client secret trong cấu hình: luồng ID token không cần secret.
@@ -97,21 +97,16 @@ Không có client secret trong cấu hình: luồng ID token không cần secret
 
 ### 2.2. Zalo OA & ZNS (thông báo)
 
-Không bật Zalo thì thông báo Zalo được ghi là **failed** (chưa cấu hình). **Không có chế độ giả lập** trong ứng dụng; client giả `tests/fakezalo` chỉ dùng cho test.
+Hướng dẫn đầy đủ, từng bước: [`runbooks/zalo-setup.md`](runbooks/zalo-setup.md). Gồm tạo ứng dụng (mô tả, danh mục), lấy khoá, refresh token ban đầu, hai mẫu ZNS, webhook và cách xử lý sự cố.
 
-1. [Zalo for Developers](https://developers.zalo.me/): tạo ứng dụng, liên kết với Zalo Official Account.
-   - **App ID** → `ZALO_APP_ID`
-   - **Secret key** của ứng dụng → `ZALO_OA_SECRET_KEY`
-2. **Refresh token ban đầu (OAuth v4 cho OA):**
-   - Admin OA mở `https://oauth.zaloapp.com/v4/oa/permission?app_id=<APP_ID>&redirect_uri=<REDIRECT_URI>` và cấp quyền. Zalo trả `code` về redirect URI.
-   - Đổi `code` lấy token: `POST https://oauth.zaloapp.com/v4/oa/access_token`, kèm header `secret_key`; body gồm `app_id`, `code`, `grant_type=authorization_code`.
-   - `refresh_token` nhận được → `ZALO_REFRESH_TOKEN`. Hệ thống tự làm mới token mỗi **12 giờ** và lưu token mới vào Redis (`zalo:oa:refresh_token`). Vì refresh token xoay vòng, **chỉ dùng giá trị ban đầu một lần**; sau đó hệ thống tự quản lý.
-3. **Mẫu ZNS** (Zalo Cloud / ZNS → Quản lý mẫu), tạo và chờ Zalo duyệt:
-   - Mẫu báo giá giảm → `ZALO_TEMPLATE_ID`. Biến hệ thống gửi: `price_before`, `price_after`, `deal_url` (link sản phẩm, đã gắn affiliate nếu bật).
-   - Mẫu mã xác minh → `ZALO_OTP_TEMPLATE_ID`. Biến: `otp`.
-4. **Webhook:** URL `https://<domain>/api/v1/webhooks/zalo`, đăng ký sự kiện người dùng nhận tin và đọc tin. Zalo ký bằng header `X-ZEvent-Signature` = `sha256(appId + body + timestamp + OA secret key)`. Vì vậy `ZALO_WEBHOOK_SECRET` để trống là đúng: hệ thống tự dùng `ZALO_OA_SECRET_KEY`.
+Tóm tắt các biến:
+- `ZALO_APP_ID` = App ID.
+- `ZALO_OA_SECRET_KEY` = **App Secret Key** (code gửi làm header `secret_key` khi lấy và làm mới token, và dùng tính header `appsecret_proof` cho mọi lệnh gửi ZNS).
+- `ZALO_WEBHOOK_SECRET` = **OA Secret Key** ở trang Webhook (kiểm chữ ký `X-ZEvent-Signature`).
+- `ZALO_REFRESH_TOKEN` = refresh token ban đầu từ OAuth v4. Hệ thống tự làm mới mỗi 12 giờ và lưu vào Redis.
+- `ZALO_TEMPLATE_ID` = mẫu báo giá (biến `price_before`, `price_after`, `deal_url`). `ZALO_OTP_TEMPLATE_ID` = mẫu mã xác minh (biến `otp`).
 
-Chi tiết kiểm chứng với hệ thống thật: [`plans/real-integration-setup.md`](plans/real-integration-setup.md).
+Không bật Zalo thì thông báo Zalo được ghi là **failed**. **Không có chế độ giả lập** trong ứng dụng; client giả `tests/fakezalo` chỉ dùng cho test.
 
 ### 2.3. Affiliate (tiếp thị liên kết)
 
@@ -122,15 +117,31 @@ Khi bật, link «Mua» (trên web, trong tin Zalo, trong trang so sánh) đư�
 - Mỗi sàn dùng template riêng **chỉ khi có cả** `*_AFFILIATE_ID` và `*_URL_TEMPLATE`. Thiếu một trong hai thì dùng `ACCESSTRADE_DEEPLINK_URL` nếu có, không thì giữ link gốc.
 - Template phải chứa `{URL}` (link sản phẩm đã URL-encode) hoặc `{RAW_URL}`. Không chứa thì bị bỏ qua, để tránh đưa mọi sản phẩm về cùng một trang.
 - Biến thay thế được: `{URL}`, `{RAW_URL}`, `{SUB_ID}`, `{AFFILIATE_ID}`.
-- `{SUB_ID}` có dạng `u_<8 ký tự user>_p_<8 ký tự sản phẩm>`, hoặc `guest_…` với khách.
+- `{SUB_ID}` có dạng `u<8 ký tự user>-p<8 ký tự sản phẩm>`, hoặc `guest-…` với khách (chỉ chữ, số và `-`).
 
-**Lấy giá trị:**
-- **Shopee / Lazada / TikTok Shop Affiliate:** đăng ký chương trình affiliate của sàn, lấy **mã affiliate** và **mẫu link tuỳ chỉnh** (custom link / deeplink) trong trang quản lý. Đổi phần link sản phẩm thành `{URL}` và phần sub-id thành `{SUB_ID}`.
-- **AccessTrade (một tài khoản cho nhiều sàn):** trong trang publisher, lấy **deeplink** có tham số `url=`, đổi giá trị đó thành `{URL}`. Ví dụ dạng: `https://go.isclix.com/deep_link/<ma_publisher>?url={URL}&utm_content={SUB_ID}`.
+**Lấy giá trị cho Shopee (từng bước):**
 
-> **[Chưa kiểm chứng]** Định dạng link của từng chương trình affiliate chưa được thử với tài khoản thật trong repo này. Ví dụ ở trên (và trong `plans/phase-3-5-monetization-and-voucher-engine.md`) chỉ minh hoạ vị trí `{URL}` / `{SUB_ID}`. Lấy đúng mẫu từ trang quản lý affiliate của bạn.
+1. **Đăng ký Shopee Tiếp thị liên kết** (Shopee Affiliate): app Shopee → **Tôi** → **Shopee Tiếp Thị Liên Kết**, hoặc trang [affiliate.shopee.vn](https://affiliate.shopee.vn). Chờ Shopee duyệt; chưa được duyệt thì link không ghi nhận hoa hồng.
+2. **Lấy Affiliate ID** (một dãy số, khác với *mã giới thiệu*): xem trong trang quản lý affiliate, phần thông tin tài khoản. Không thấy thì làm cách này: vào mục **Custom Link** (Liên kết tùy chỉnh), tạo link cho một sản phẩm bất kỳ, mở link vừa tạo trong trình duyệt và xem địa chỉ cuối cùng; dãy số sau `affiliate_id=` (hoặc sau `an_`) là Affiliate ID. **[Cần kiểm chứng trên tài khoản của bạn]**
+3. **Điền cấu hình** (file i èn vi của backend):
+   ```ini
+   AFFILIATE_ENABLED=true
+   SHOPEE_AFFILIATE_ID=<Affiliate ID ở bước 2>
+   SHOPEE_AFFILIATE_URL_TEMPLATE=https://s.shopee.vn/an_redir?origin_link={URL}&affiliate_id={AFFILIATE_ID}&sub_id={SUB_ID}
+   ```
+   Lazada, TikTok, AccessTrade để trống: link của các sàn đó giữ nguyên link gốc.
+4. **Khởi động lại API** (và notifier nếu dùng Zalo).
 
-**Kiểm tra:** bật cấu hình, theo dõi một sản phẩm, gọi `GET /api/v1/tracked-products/{id}`. Trường `AffiliateURL` phải là link affiliate chứa link sản phẩm, không phải link gốc. Nút «Mua trên …» ở trang chủ dùng đúng trường này.
+**Về mẫu link:** dạng `s.shopee.<tên miền>/an_redir?origin_link=...&affiliate_id=...&sub_id=...` là dạng chính thức trong hướng dẫn «Short Link Implementation» của Shopee cho [Singapore](https://help.shopee.sg/portal/10/article/171184), [Malaysia](https://help.shopee.com.my/portal/10/article/174050-%5BENG%5D-Short-Link-Implementation-Guideline) và [Philippines](https://help.shopee.ph/portal/10/article/172142-Short-Link-Implementation-Guideline). Với `s.shopee.vn`, cộng đồng affiliate Việt Nam dùng cùng dạng, nhưng **chưa thấy tài liệu chính thức của Shopee Việt Nam**. Vì vậy kiểm tra theo mục «Kiểm tra» dưới đây trước khi tin vào nó. Nếu trang Shopee Affiliate của bạn đưa ra mẫu khác, dùng mẫu đó, miễn là giữ `{URL}`.
+
+**Sub ID:** DealHunter gửi `{SUB_ID}` dạng `u1a2b3c4d-p5e6f7a8b` (8 ký tự đầu mã người dùng, 8 ký tự đầu mã sản phẩm; khách là `guest-…`). Shopee chỉ nhận chữ, số và dấu `-`, và tách theo `-` thành **Sub_id1 = người dùng**, **Sub_id2 = sản phẩm** trong báo cáo **[Đã kiểm, có test]**.
+
+**Lazada / TikTok / AccessTrade:** làm tương tự khi có tài khoản. Lấy mẫu deeplink từ trang quản lý affiliate của sàn, đổi chỗ link sản phẩm thành `{URL}` và chỗ sub-id thành `{SUB_ID}`. AccessTrade dùng một deeplink cho nhiều sàn, ví dụ dạng `https://go.isclix.com/deep_link/<ma_publisher>?url={URL}&utm_content={SUB_ID}`. **[Chưa kiểm chứng với tài khoản thật]**
+
+**Kiểm tra:**
+1. Trên web local, dán một link Shopee ở trang chủ. Ở kết quả, bấm **«Mua trên Shopee»**: link phải bắt đầu bằng `https://s.shopee.vn/an_redir?...` và mở **đúng sản phẩm**. Hoặc gọi `GET /api/v1/tracked-products/{id}`: trường `AffiliateURL` phải là link affiliate, không phải link gốc.
+2. Vào trang quản lý Shopee Affiliate, xem báo cáo lượt bấm (thường trễ vài phút tới vài giờ).
+3. Chắc chắn nhất: đặt thử một đơn nhỏ qua link đó. Báo cáo đơn hàng phải có Sub_id1 = `u…`, Sub_id2 = `p…`.
 
 ### 2.4. Khoá và hạ tầng nội bộ
 
@@ -159,4 +170,5 @@ Khi bật, link «Mua» (trên web, trong tin Zalo, trong trang so sánh) đư�
 - JWT không phải «7 ngày»: access token 15 phút, refresh token 30 ngày (`ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL`).
 - Thêm các biến code có đọc nhưng tài liệu cũ thiếu: `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL`, `AUTH_COOKIE_SECURE`, `ADMIN_EMAILS`, `TRUSTED_PROXIES`, `ZALO_OTP_TEMPLATE_ID`, toàn bộ nhóm affiliate, `NEXT_PUBLIC_EXTENSION_ID`, `EXTENSION_ID`, `DEALHUNTER_GATEWAY`.
 - Bỏ các biến web không có code nào đọc: `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_DEFAULT_POLL_INTERVAL`, `NEXT_PUBLIC_ENABLE_MOCK_SANDBOX`.
-- Mẫu ZNS báo giá có thêm biến `deal_url`; webhook dùng chính `ZALO_OA_SECRET_KEY` để kiểm chữ ký.
+- Mẫu ZNS báo giá có thêm biến `deal_url`.
+- Hai khoá Zalo khác nhau: `ZALO_OA_SECRET_KEY` nhận App Secret Key (lấy token), `ZALO_WEBHOOK_SECRET` nhận OA Secret Key (kiểm chữ ký webhook).

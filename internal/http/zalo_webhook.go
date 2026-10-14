@@ -34,6 +34,8 @@ type ZaloWebhookPayload struct {
 	} `json:"data,omitempty"`
 	Message *struct {
 		MsgID string `json:"msg_id"`
+		// "Seen" events can acknowledge several messages at once
+		MsgIDs []string `json:"msg_ids,omitempty"`
 	} `json:"message,omitempty"`
 }
 
@@ -45,15 +47,25 @@ func (h *Handler) HandleZaloWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Signature verification is mandatory; never trust a secret supplied by the caller.
-	if h.zaloAppID == "" || h.zaloWebhookSecret == "" {
-		http.Error(w, "zalo webhook not configured", http.StatusServiceUnavailable)
-		return
-	}
-
 	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxZaloWebhookBody))
 	if err != nil {
 		http.Error(w, "read body failed", http.StatusBadRequest)
+		return
+	}
+
+	// Zalo only saves a webhook URL that answers 200 to its "Kiểm tra" test POST, which carries no
+	// signature. An unsigned request, or any request while the Zalo keys are not configured, is
+	// acknowledged with 200 and changes nothing: only a request with a valid signature is processed.
+	// Never trust a secret supplied by the caller.
+	sigHeader := r.Header.Get("X-ZEvent-Signature")
+	if h.zaloAppID == "" || h.zaloWebhookSecret == "" {
+		h.log().Warn("zalo webhook ignored", "reason", "zalo webhook not configured (ZALO_APP_ID / ZALO_WEBHOOK_SECRET)")
+		writeZaloAck(w)
+		return
+	}
+	if sigHeader == "" {
+		h.log().Info("zalo webhook ignored", "reason", "unsigned request (Zalo URL check or probe)", "body_bytes", len(bodyBytes))
+		writeZaloAck(w)
 		return
 	}
 
@@ -69,10 +81,9 @@ func (h *Handler) HandleZaloWebhook(w http.ResponseWriter, r *http.Request) {
 	timestamp := strings.Trim(string(envelope.Timestamp), `"`)
 
 	// Rejections are logged with the reason (never the secret or the body) so a real callback can be diagnosed.
-	sigHeader := r.Header.Get("X-ZEvent-Signature")
-	if sigHeader == "" || !verifyZaloSignature(sigHeader, h.zaloAppID, bodyBytes, timestamp, h.zaloWebhookSecret) {
+	if !verifyZaloSignature(sigHeader, h.zaloAppID, bodyBytes, timestamp, h.zaloWebhookSecret) {
 		h.log().Warn("zalo webhook rejected", "reason", "invalid signature",
-			"event_name", envelope.EventName, "has_signature", sigHeader != "", "timestamp", timestamp)
+			"event_name", envelope.EventName, "timestamp", timestamp)
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
@@ -100,7 +111,18 @@ func (h *Handler) HandleZaloWebhook(w http.ResponseWriter, r *http.Request) {
 		msgID = payload.Message.MsgID
 	}
 
+	msgIDs := []string{}
 	if msgID != "" {
+		msgIDs = append(msgIDs, msgID)
+	} else if payload.Message != nil {
+		for _, id := range payload.Message.MsgIDs {
+			if id != "" {
+				msgIDs = append(msgIDs, id)
+			}
+		}
+	}
+
+	if len(msgIDs) > 0 {
 		event := strings.ToLower(payload.EventName)
 		statusField := strings.ToLower(payload.Status)
 		if statusField == "" && payload.Data != nil {
@@ -108,7 +130,8 @@ func (h *Handler) HandleZaloWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var targetStatus notification.Status
-		if event == "user_read_message" || statusField == "read" || statusField == "seen" {
+		// The read event's name is not confirmed against Zalo's docs: both known spellings are accepted
+		if event == "user_read_message" || event == "user_seen_message" || statusField == "read" || statusField == "seen" {
 			targetStatus = notification.StatusRead
 		} else if event == "user_received_message" || statusField == "delivered" || event == "delivery" {
 			targetStatus = notification.StatusDelivered
@@ -122,7 +145,9 @@ func (h *Handler) HandleZaloWebhook(w http.ResponseWriter, r *http.Request) {
 				eventTime = parseEpoch(payload.Timestamp)
 			}
 
-			_ = h.notifRepo.UpdateDeliveryStatus(r.Context(), msgID, targetStatus, eventTime)
+			for _, id := range msgIDs {
+				_ = h.notifRepo.UpdateDeliveryStatus(r.Context(), id, targetStatus, eventTime)
+			}
 		}
 	}
 
@@ -187,4 +212,11 @@ func absDuration(d time.Duration) time.Duration {
 		return -d
 	}
 	return d
+}
+
+// writeZaloAck answers 200 with an empty JSON object (what Zalo expects from a webhook).
+func writeZaloAck(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{}`))
 }

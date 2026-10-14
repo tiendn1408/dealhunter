@@ -218,5 +218,7 @@ func newPhoneVerifier(cfg *config.Config, rdb *redis.Client, logger *slog.Logger
 			"zalo_enabled", cfg.ZaloEnabled, "otp_template", cfg.ZaloOTPTemplateID != "")
 		return nil
 	}
-	return notification.NewPhoneVerifier(rdb, zalo.NewHTTPZaloClient(cfg.ZaloOAAccessToken, rdb), cfg.ZaloOTPTemplateID)
+	zaloCli := zalo.NewHTTPZaloClient(cfg.ZaloOAAccessToken, rdb)
+	zaloCli.SetAppSecret(cfg.ZaloOASecretKey) // appsecret_proof on every ZNS call
+	return notification.NewPhoneVerifier(rdb, zaloCli, cfg.ZaloOTPTemplateID)
 }

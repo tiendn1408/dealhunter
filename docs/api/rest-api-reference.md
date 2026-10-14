@@ -8,7 +8,7 @@ Tai lieu nay dac ta chi tiet toan bo cac endpoint HTTP REST API cua he thong **D
 
 ### Base URL:
 - **Local Development**: `http://localhost:8080/api/v1`
-- **Production**: `https://dealhunter.vn/api/v1`
+- **Production**: `https://dealhunter.io.vn/api/v1`
 
 ### Authentication & Authorization Headers:
 Moi endpoint du lieu ca nhan deu yeu cau **access token** trong header `Authorization: Bearer <access_token>`.

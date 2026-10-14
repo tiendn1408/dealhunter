@@ -49,7 +49,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 
 	// Initialize dependencies matching cmd/api/main.go
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -86,7 +86,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	// Step 1: User tracks initial product (Shopee) via POST /api/v1/tracked-products
 	t.Log("Step 1: Tracking initial product on Shopee...")
 	trackPayload, _ := json.Marshal(map[string]string{
-		"url": "https://mock.dealhunter.vn/shopee/headphones-" + slug,
+		"url": "https://mock.dealhunter.io.vn/shopee/headphones-" + slug,
 	})
 	req, _ := http.NewRequest("POST", server.URL+"/api/v1/tracked-products", bytes.NewReader(trackPayload))
 	req.Header.Set("Content-Type", "application/json")
@@ -153,7 +153,7 @@ func TestPhase3FullHTTPFlow(t *testing.T) {
 	// Step 3: User opens LinkSourceModal -> calls POST /api/v1/products/{product_id}/link-source
 	t.Log("Step 3: Linking second marketplace source (TikTok)...")
 	linkPayload, _ := json.Marshal(map[string]string{
-		"url": "https://mock.dealhunter.vn/tiktok/headphones-" + slug,
+		"url": "https://mock.dealhunter.io.vn/tiktok/headphones-" + slug,
 	})
 	req, _ = http.NewRequest("POST", server.URL+"/api/v1/products/"+canonicalProductID+"/link-source", bytes.NewReader(linkPayload))
 	req.Header.Set("Content-Type", "application/json")

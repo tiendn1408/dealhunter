@@ -32,8 +32,8 @@ Web gửi ở mỗi lần đăng nhập, mỗi lần làm mới token và khi đ
   "expiresAt": 1797000000000,
   "email": "user@example.com",
   "name": "Tên",
-  "apiUrl": "https://dealhunter.vn/api/v1",
-  "webUrl": "https://dealhunter.vn"
+  "apiUrl": "https://dealhunter.io.vn/api/v1",
+  "webUrl": "https://dealhunter.io.vn"
 }
 ```
 
@@ -55,9 +55,9 @@ Ghi chú:
 
 | | Bản phát hành (`npm run build`) | Bản dev (`npm run build:dev` / `npm run dev`) |
 |---|---|---|
-| Web được gửi phiên (`externally_connectable`, `DEALHUNTER_WEB_ORIGINS`) | `https://dealhunter.vn`, `https://www.dealhunter.vn` | thêm `http://localhost:3000`, `http://localhost:3100` |
-| `apiUrl` hợp lệ | `https` trên `dealhunter.vn` / `*.dealhunter.vn` | thêm `http://localhost:*` / `127.0.0.1:*` |
-| API mặc định (khi chưa có phiên) | `https://dealhunter.vn/api/v1` | `http://localhost:8080/api/v1` |
+| Web được gửi phiên (`externally_connectable`, `DEALHUNTER_WEB_ORIGINS`) | `https://dealhunter.io.vn`, `https://www.dealhunter.io.vn` | thêm `http://localhost:3000`, `http://localhost:3100` |
+| `apiUrl` hợp lệ | `https` trên `dealhunter.io.vn` / `*.dealhunter.io.vn` | thêm `http://localhost:*` / `127.0.0.1:*` |
+| API mặc định (khi chưa có phiên) | `https://dealhunter.io.vn/api/v1` | `http://localhost:8080/api/v1` |
 
 Bản phát hành được lọc tự động lúc build: `manifest.json` trong `dist/` không còn dòng localhost nào (`extension/src/build/manifest_env.ts`), mã nguồn dùng cờ `__DH_DEV__` (`extension/src/lib/build_env.ts`).
 

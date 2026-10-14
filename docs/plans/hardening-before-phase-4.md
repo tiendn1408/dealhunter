@@ -148,7 +148,7 @@
 - [x] Migration `000017` dọn dữ liệu bịa còn sót trên DB chưa reset: người bán = tên sàn (`og:site_name`) ⇒ NULL; mọi phí ship đã lưu ⇒ NULL (chưa có đường nào đo được phí ship), giá hiệu dụng = giá hàng.
 - [x] Nhỏ: `ParseVNDPrice("6290000.000")`; guard DB test chặn `?dbname=`; comparison lưu người bán rỗng là NULL.
 - [x] Web: đăng nhập sau khi phiên đầu thất bại vẫn cập nhật UI; thành viên hết phiên mà tạo guest lỗi vẫn hiện banner; khoá localStorage chỉ gia hạn/nhả khi còn là chủ; đăng xuất/đổi tài khoản lan sang tab khác (BroadcastChannel, fallback storage event); OTP bị huỷ (429) ⇒ quay về bước xin mã mới; thống kê "90 ngày" tính đúng 90 ngày, bộ lọc 7/30 ngày không còn hiện toàn bộ lịch sử, đạt mục tiêu ⇒ 100%; bỏ hiển thị `zalo_id`.
-- [x] Extension: URL API/web production do web gửi sang (kiểm tra host: localhost hoặc dealhunter.vn), mặc định localhost cho dev; "rẻ hơn X%" tính so với giá Shopee đang xem.
+- [x] Extension: URL API/web production do web gửi sang (kiểm tra host: localhost hoặc dealhunter.io.vn), mặc định localhost cho dev; "rẻ hơn X%" tính so với giá Shopee đang xem.
 - [x] Tài liệu API: payload thật của comparison, gợi ý ghép, voucher.
 - Ghi chú: phí ship hiện **luôn** NULL (chưa có đường nào đọc được phí ship); tin Zalo và web cùng tính giá chưa gồm ship nên khớp nhau. Logout không cần "storm" refresh: tab nhận broadcast chỉ refresh một lần dưới khoá.
 
@@ -181,7 +181,7 @@
 - [x] Web: tab "Tất cả" cắt tại ngày tạo tracking cả với tracking dưới 90 ngày; `CreatedAt` không đọc được ⇒ lỗi hiện ngay (không retry); preflight E2E chỉ dựa vào Redis DB 15 (traffic dev đồng thời không gây báo nhầm, không đề nghị xoá entry không chứng minh được), `E2E_DB` được kiểm tra và `psql` chạy không qua shell. Extension: không so giá khi nguồn Shopee đang xem chưa rõ phí ship mà best deal đã gồm ship.
 
 **Chỉ dùng dữ liệu thật (2026-10-08)** — dự án đang phát triển, toàn bộ dữ liệu local là dữ liệu test/mock:
-- [x] **Nguyên nhân dữ liệu mock quay lại**: integration test ghi thẳng vào DB dev (`DATABASE_URL`, mặc định `dealdb`) và Redis DB 0 — sau migration `000010` DB dev vẫn có 645 user test (`*@dealhunter.vn`) và 132 sản phẩm, phần lớn `mock.dealhunter.vn`. Nay test dùng `TEST_DATABASE_URL` / `TEST_REDIS_URL` (mặc định `dealdb_test`, Redis DB 15) và **từ chối chạy** nếu tên DB không kết thúc bằng `_test` hoặc Redis là DB 0. `make test-integration` tự tạo + migrate `dealdb_test`.
+- [x] **Nguyên nhân dữ liệu mock quay lại**: integration test ghi thẳng vào DB dev (`DATABASE_URL`, mặc định `dealdb`) và Redis DB 0 — sau migration `000010` DB dev vẫn có 645 user test (`*@dealhunter.io.vn`) và 132 sản phẩm, phần lớn `mock.dealhunter.io.vn`. Nay test dùng `TEST_DATABASE_URL` / `TEST_REDIS_URL` (mặc định `dealdb_test`, Redis DB 15) và **từ chối chạy** nếu tên DB không kết thúc bằng `_test` hoặc Redis là DB 0. `make test-integration` tự tạo + migrate `dealdb_test`.
 - [ ] **Xoá dữ liệu dev**: `make db-reset` (drop mọi bảng, migrate lại, `FLUSHDB` Redis DB 0) — cần chạy thủ công.
 - [x] Giá trị không rõ là `NULL`, không phải `0`/`false`/giá trị cũ (migration `000012`):
   - Phí ship: adapter không còn chép phí ship lần trước vào snapshot mới; không đo được ⇒ `NULL`, giá hiệu dụng = giá hàng (`pricing.EffectivePriceOf`). `price_snapshots.shipping_fee`, `comparison_snapshots.shipping_fee` cho phép `NULL`.
@@ -384,15 +384,15 @@ Theo yêu cầu "dữ liệu thật, việc thật". Phần auth (demo login, to
 
 | ID | Mock còn lại | Vị trí | Thay bằng |
 |---|---|---|---|
-| **NOMOCK-01** | Adapter sàn giả `mock` được đăng ký trong binary; registry chuyển mọi host chứa "mock" tới adapter giả (giá sinh ra) | `cmd/api/main.go:75`, `cmd/worker/main.go:62`, `internal/marketplace/registry.go:35`, `internal/marketplace/mock/` | Bỏ đăng ký khỏi `cmd/*`; adapter giả chỉ dùng trong test; dọn `products`/`product_sources` có URL `mock.dealhunter.vn` |
+| **NOMOCK-01** | Adapter sàn giả `mock` được đăng ký trong binary; registry chuyển mọi host chứa "mock" tới adapter giả (giá sinh ra) | `cmd/api/main.go:75`, `cmd/worker/main.go:62`, `internal/marketplace/registry.go:35`, `internal/marketplace/mock/` | Bỏ đăng ký khỏi `cmd/*`; adapter giả chỉ dùng trong test; dọn `products`/`product_sources` có URL `mock.dealhunter.io.vn` |
 | **NOMOCK-02** | Notifier dùng `MockZaloClient` khi thiếu token (đánh dấu `sent` dù không gửi) | `cmd/notifier/main.go:79-80`, `internal/notification/zalo/mock_client.go` | Thiếu cấu hình Zalo ⇒ không gửi, ghi trạng thái `failed`/`skipped` rõ ràng, log cảnh báo |
 | **NOMOCK-03** | TokenManager ghi token giả `mock_zalo_access_token_active` vào Redis | `internal/notification/zalo/token_manager.go:86-93` | Trả lỗi cấu hình; không ghi đè token thật |
 | **NOMOCK-04** | Voucher bịa (`SHOP15K`, `PLAT24K`, freeship) sinh và lưu khi GET | `internal/http/voucher_handler.go:80-81,125-211` | = DATA-03: xoá; GET chỉ đọc; migration dọn voucher giả đã lưu |
 | **NOMOCK-05** | Scraper trả giá lần trước như lần đo mới khi bị chặn; `ResolveProduct` trả tiêu đề placeholder, giá 0 | `internal/marketplace/{shopee,lazada,tiktok}/adapter.go` | = DATA-01/02: trả lỗi thật |
 | **NOMOCK-06** | Catalog seed trong tìm kiếm auto-match (TikTok luôn seed) | `internal/matching/searcher.go:92-140` | = DATA-12: bị chặn ⇒ không có ứng viên |
 | **NOMOCK-07** | Template affiliate placeholder `s.lazada.vn/s.xxxx`, `vt.tiktok.com/xxxx` | `pkg/config/config.go:140-142` | = DATA-04: mặc định rỗng, giữ link gốc |
-| **NOMOCK-08** | Trang chủ: link mẫu `mock.dealhunter.vn` với giá/giảm giá cứng; thẻ minh hoạ Sony với giá cứng; tham số `?sample=`; tiến trình tải giả bằng timer | `dealhunter-web/app/page.tsx:46,64-65,85-113,257-297,495-516,591` | Xoá link/giá mẫu; minh hoạ không chứa số liệu giả; tiến trình theo trạng thái thật |
-| **NOMOCK-09** | EmptyState: 3 sản phẩm mẫu `mock.dealhunter.vn` | `dealhunter-web/components/ui/EmptyState.tsx:29-45,70-77` | Hướng dẫn dán link thật |
+| **NOMOCK-08** | Trang chủ: link mẫu `mock.dealhunter.io.vn` với giá/giảm giá cứng; thẻ minh hoạ Sony với giá cứng; tham số `?sample=`; tiến trình tải giả bằng timer | `dealhunter-web/app/page.tsx:46,64-65,85-113,257-297,495-516,591` | Xoá link/giá mẫu; minh hoạ không chứa số liệu giả; tiến trình theo trạng thái thật |
+| **NOMOCK-09** | EmptyState: 3 sản phẩm mẫu `mock.dealhunter.io.vn` | `dealhunter-web/components/ui/EmptyState.tsx:29-45,70-77` | Hướng dẫn dán link thật |
 | **NOMOCK-10** | Nút "Giả lập giảm giá 12%" chèn thông báo giả vào cache | `dealhunter-web/app/notifications/page.tsx:187-211` | Xoá |
 | **NOMOCK-11** | Nút "Dùng số thử nghiệm (Sandbox)" điền số `0988123456` | `dealhunter-web/components/settings/ZaloConnectModal.tsx:70-73,176-186` | Xoá |
 | **NOMOCK-12** | Platform `"mock"` / badge "Mock Store"; biến `NEXT_PUBLIC_ENABLE_MOCK_SANDBOX` | `dealhunter-web/lib/formatting.ts:163,213-220`, `.env.example` | Xoá |

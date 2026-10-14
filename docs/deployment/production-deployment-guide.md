@@ -50,7 +50,7 @@ File `.env` tren may chu Production phai duoc bao ve nghiem ngat (`chmod 600 .en
 APP_ENV=production
 HTTP_PORT=8080
 LOG_LEVEL=info
-CORS_ALLOWED_ORIGINS=https://dealhunter.vn,https://www.dealhunter.vn
+CORS_ALLOWED_ORIGINS=https://dealhunter.io.vn,https://www.dealhunter.io.vn
 # Reverse proxy duoc tin header X-Forwarded-For (IP client cho rate limit). Thieu bien nay thi moi client
 # deu la IP cua nginx => ca site dung chung mot han muc tao guest / goi san.
 #   - Docker Compose: KHONG dat bien nay. Compose tu dung localhost + gateway mang Docker (DEALHUNTER_GATEWAY);
@@ -69,7 +69,7 @@ ACCESS_TOKEN_TTL=15m
 REFRESH_TOKEN_TTL=720h
 AUTH_COOKIE_SECURE=true
 # Luu y: cookie refresh dung SameSite=Lax, vi vay Web va API phai cung "site"
-# (vi du dealhunter.vn va api.dealhunter.vn). Frontend can NEXT_PUBLIC_GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID.
+# (vi du dealhunter.io.vn va api.dealhunter.io.vn). Frontend can NEXT_PUBLIC_GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID.
 
 # 3. POSTGRESQL DATABASE
 # Compose prod tu ghep DATABASE_URL tu POSTGRES_* (dong DATABASE_URL o day chi dung cho systemd).
@@ -110,21 +110,22 @@ ACCESSTRADE_DEEPLINK_URL=
 # 7. ZALO OA & ZNS NOTIFICATION (PROD LIVE)
 ZALO_ENABLED=true
 ZALO_APP_ID=YOUR_PRODUCTION_ZALO_APP_ID
-ZALO_OA_SECRET_KEY=YOUR_PRODUCTION_ZALO_SECRET_KEY
+# App Secret Key cua ung dung (dung lay/lam moi token)
+ZALO_OA_SECRET_KEY=YOUR_PRODUCTION_ZALO_APP_SECRET_KEY
 ZALO_REFRESH_TOKEN=YOUR_PRODUCTION_INITIAL_REFRESH_TOKEN
 ZALO_OA_ACCESS_TOKEN=
 ZALO_TEMPLATE_ID=YOUR_APPROVED_ZNS_TEMPLATE_ID
 # Mau ZNS gui ma xac minh khi lien ket Zalo (bien: otp). De trong = nguoi dung khong lien ket duoc Zalo
 ZALO_OTP_TEMPLATE_ID=
-# De trong: he thong dung ZALO_OA_SECRET_KEY de kiem chu ky webhook (dung cach Zalo ky)
-ZALO_WEBHOOK_SECRET=
+# OA Secret Key o trang Webhook cua ung dung (KHAC App Secret Key o ZALO_OA_SECRET_KEY). Xem docs/runbooks/zalo-setup.md
+ZALO_WEBHOOK_SECRET=YOUR_OA_SECRET_KEY_FROM_WEBHOOK_PAGE
 
 # 8. QUAN TRI
 # Email Google duoc phep tao voucher qua API (cach nhau dau phay)
 ADMIN_EMAILS=
 
 # 9. FRONTEND BUILD VARIABLES (nhung vao image web luc build)
-NEXT_PUBLIC_API_URL=https://dealhunter.vn/api/v1
+NEXT_PUBLIC_API_URL=https://dealhunter.io.vn/api/v1
 # ID extension tren Chrome Web Store (web gui phien dang nhap sang extension). De trong = tat
 EXTENSION_ID=
 ```
@@ -196,7 +197,7 @@ CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate
 Tai thu muc `/opt/dealhunter-web`:
 ```bash
 npm ci
-NEXT_PUBLIC_API_URL=https://dealhunter.vn/api/v1 npm run build
+NEXT_PUBLIC_API_URL=https://dealhunter.io.vn/api/v1 npm run build
 ```
 
 ### 4.2 Thiet lap cac Systemd Service Units:
@@ -312,14 +313,14 @@ sudo systemctl enable --now dealhunter-api dealhunter-worker dealhunter-schedule
 
 > **IP client va rate limit**: API chi tin header `X-Forwarded-For` tu cac dia chi trong `TRUSTED_PROXIES` (compose mac dinh: localhost va gateway mang Docker `DEALHUNTER_GATEWAY` = `172.30.240.1`). Nginx phai **noi them** IP client vao `X-Forwarded-For` (`$proxy_add_x_forwarded_for`, nhu cau hinh duoi). API chi bind `127.0.0.1:8080`, nen moi request phai di qua nginx. Neu doi subnet (`DEALHUNTER_SUBNET`/`DEALHUNTER_GATEWAY`) hoac dat proxy o may khac, cap nhat `TRUSTED_PROXIES` cho dung IP proxy.
 
-Tao file `/etc/nginx/sites-available/dealhunter.vn`:
+Tao file `/etc/nginx/sites-available/dealhunter.io.vn`:
 
 ```nginx
 # Redirect HTTP sang HTTPS
 server {
     listen 80;
     listen [::]:80;
-    server_name dealhunter.vn www.dealhunter.vn;
+    server_name dealhunter.io.vn www.dealhunter.io.vn;
     return 301 https://$host$request_uri;
 }
 
@@ -327,10 +328,10 @@ server {
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name dealhunter.vn www.dealhunter.vn;
+    server_name dealhunter.io.vn www.dealhunter.io.vn;
 
-    ssl_certificate /etc/letsencrypt/live/dealhunter.vn/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/dealhunter.vn/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/dealhunter.io.vn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/dealhunter.io.vn/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
@@ -381,7 +382,7 @@ server {
 
 Cap nhat chung chi SSL mien phi bang Certbot:
 ```bash
-sudo certbot --nginx -d dealhunter.vn -d www.dealhunter.vn
+sudo certbot --nginx -d dealhunter.io.vn -d www.dealhunter.io.vn
 ```
 
 ---
@@ -419,7 +420,7 @@ sudo systemctl restart dealhunter-api dealhunter-worker dealhunter-scheduler dea
 
 1. **Health Check Endpoint**:
    - `GET /health` tra ve `{"status":"ok","app":"DealHunter"}` kem HTTP 200.
-   - Thiet lap UptimeRobot / Pingdom kiem tra dinh ky moi 1 phut toi `https://dealhunter.vn/health`.
+   - Thiet lap UptimeRobot / Pingdom kiem tra dinh ky moi 1 phut toi `https://dealhunter.io.vn/health`.
 
 2. **Prometheus Metrics Endpoint**:
    - `GET /metrics` cung cap cac metric theo thoi gian thuc:

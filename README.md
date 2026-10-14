@@ -101,7 +101,7 @@ go run cmd/notifier/main.go
 - [x] Caffiliate: diem danh 3 tang (ham cua trang -> API cua trang -> bam nut), toi thieu 5 lan gui theo lich tinh toan, nhat ky trong Cai dat.
 - [x] Huy hieu gia tren trang san pham Shopee / Lazada / Tiki / TikTok Shop cho thanh vien da dang nhap.
 - [x] Dang nhap mot lan qua web (`DH_WEB_SESSION`, `externally_connectable`, `chrome.storage.session`).
-- [x] Ban phat hanh / ban dev: `npm run build` (chi tin `dealhunter.vn`) va `npm run build:dev` (them localhost). 33 file, 317 unit test pass.
+- [x] Ban phat hanh / ban dev: `npm run build` (chi tin `dealhunter.io.vn`) va `npm run build:dev` (them localhost). 33 file, 317 unit test pass.
 
 ## Documentation
 Chi tiet tai lieu he thong duoc quan ly trong thu muc [`docs/`](docs/README.md):

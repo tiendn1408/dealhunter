@@ -2,7 +2,7 @@ import { DEALHUNTER_WEB_ORIGINS, DEFAULT_SETTINGS } from "./constants";
 import { IS_DEV_BUILD } from "./build_env";
 
 /**
- * DealHunter API / web URLs. Defaults are the local dev servers in a development build and dealhunter.vn
+ * DealHunter API / web URLs. Defaults are the local dev servers in a development build and dealhunter.io.vn
  * in a production build (build_env.ts); the DealHunter web app
  * sends its own URLs with the session message (see web_session.ts). Every URL is validated before use:
  * the access token is only ever sent to a DealHunter API host.
@@ -33,13 +33,13 @@ function isLocalHost(hostname: string): boolean {
 }
 
 function isDealHunterHost(hostname: string): boolean {
-  return hostname === "dealhunter.vn" || hostname.endsWith(".dealhunter.vn");
+  return hostname === "dealhunter.io.vn" || hostname.endsWith(".dealhunter.io.vn");
 }
 
 /**
- * The API base URL (e.g. "https://api.dealhunter.vn/api/v1") normalized without a trailing slash, or null
- * when it is not http(s) on an allowed host: localhost (development builds only), or dealhunter.vn /
- * *.dealhunter.vn over https.
+ * The API base URL (e.g. "https://api.dealhunter.io.vn/api/v1") normalized without a trailing slash, or null
+ * when it is not http(s) on an allowed host: localhost (development builds only), or dealhunter.io.vn /
+ * *.dealhunter.io.vn over https.
  * Query strings and fragments are rejected (they would corrupt every request path).
  */
 export function validateApiUrl(value: unknown): string | null {
@@ -52,7 +52,7 @@ export function validateApiUrl(value: unknown): string | null {
 }
 
 /**
- * The web app origin (e.g. "https://dealhunter.vn"), or null unless it is an http(s) origin listed in
+ * The web app origin (e.g. "https://dealhunter.io.vn"), or null unless it is an http(s) origin listed in
  * DEALHUNTER_WEB_ORIGINS and, when given, the origin of the page that sent it.
  */
 export function validateWebUrl(value: unknown, senderOrigin?: string): string | null {

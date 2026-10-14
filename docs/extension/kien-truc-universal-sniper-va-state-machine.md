@@ -524,8 +524,8 @@ Từ web DealHunter (`onMessageExternal`): `{ type: "DH_WEB_SESSION", ... }`, tr
 | | `npm run build` (production) | `npm run build:dev` / `npm run dev` (watch) |
 | :--- | :--- | :--- |
 | `__DH_DEV__` ([`lib/build_env.ts`](../../extension/src/lib/build_env.ts)) | `false` | `true` (`--mode development` hoặc `DH_ENV=development`) |
-| Web được trao phiên đăng nhập (`DEALHUNTER_WEB_ORIGINS`) | `https://dealhunter.vn`, `https://www.dealhunter.vn` | thêm `http://localhost:3000`, `http://localhost:3100` |
-| API mặc định | `https://dealhunter.vn/api/v1` | `http://localhost:8080/api/v1` |
+| Web được trao phiên đăng nhập (`DEALHUNTER_WEB_ORIGINS`) | `https://dealhunter.io.vn`, `https://www.dealhunter.io.vn` | thêm `http://localhost:3000`, `http://localhost:3100` |
+| API mặc định | `https://dealhunter.io.vn/api/v1` | `http://localhost:8080/api/v1` |
 | Manifest | [`src/build/manifest_env.ts`](../../extension/src/build/manifest_env.ts) bỏ mọi mẫu localhost khỏi `externally_connectable` và `content_scripts` | giữ nguyên `public/manifest.json` |
 | Caffiliate Bench simulator (:3100) | không | có |
 

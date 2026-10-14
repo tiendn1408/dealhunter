@@ -56,7 +56,7 @@ func TestAffiliateLinkEngineFlow(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -105,13 +105,13 @@ func TestAffiliateLinkEngineFlow(t *testing.T) {
 
 	// 1. Create a user session
 	userID := uuid.New()
-	_, loginDataPtr, _ := googleLogin(t, server.URL, fmt.Sprintf("affiliate-%s@dealhunter.vn", userID.String()[:8]), "")
+	_, loginDataPtr, _ := googleLogin(t, server.URL, fmt.Sprintf("affiliate-%s@dealhunter.io.vn", userID.String()[:8]), "")
 	loginData := *loginDataPtr
 	userToken := loginData.AccessToken
 	authUserID := loginData.User.ID
 
 	// 2. Track a Shopee product
-	mockShopeeURL := fmt.Sprintf("https://mock.dealhunter.vn/item/shopee-mouse-%s", uuid.New().String()[:8])
+	mockShopeeURL := fmt.Sprintf("https://mock.dealhunter.io.vn/item/shopee-mouse-%s", uuid.New().String()[:8])
 	trackPayload, _ := json.Marshal(map[string]string{"url": mockShopeeURL})
 	reqTrack, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/tracked-products", bytes.NewBuffer(trackPayload))
 	reqTrack.Header.Set("Content-Type", "application/json")

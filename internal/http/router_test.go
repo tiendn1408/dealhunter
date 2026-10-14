@@ -16,14 +16,14 @@ import (
 
 func TestCORS_OnlyConfiguredOriginsGetCredentials(t *testing.T) {
 	h := newTestHandler()
-	h.SetCORSAllowedOrigins([]string{"https://dealhunter.vn"})
+	h.SetCORSAllowedOrigins([]string{"https://dealhunter.io.vn"})
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), h)
 
 	cases := []struct {
 		origin  string
 		allowed bool
 	}{
-		{"https://dealhunter.vn", true},
+		{"https://dealhunter.io.vn", true},
 		{"https://evil.example", false},
 	}
 	for _, tc := range cases {
@@ -45,7 +45,7 @@ func TestCORS_OnlyConfiguredOriginsGetCredentials(t *testing.T) {
 // Login CSRF: cross-site form posts to /auth/* are rejected before reaching the handler
 func TestAuthCSRFGuard(t *testing.T) {
 	h := newTestHandler()
-	h.SetCORSAllowedOrigins([]string{"https://dealhunter.vn"})
+	h.SetCORSAllowedOrigins([]string{"https://dealhunter.io.vn"})
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), h)
 
 	cases := []struct {
@@ -54,7 +54,7 @@ func TestAuthCSRFGuard(t *testing.T) {
 	}{
 		{"cross-site form post", "https://evil.example", "text/plain", http.StatusForbidden},
 		{"foreign origin with json", "https://evil.example", "application/json", http.StatusForbidden},
-		{"allowed origin form post", "https://dealhunter.vn", "application/x-www-form-urlencoded", http.StatusUnsupportedMediaType},
+		{"allowed origin form post", "https://dealhunter.io.vn", "application/x-www-form-urlencoded", http.StatusUnsupportedMediaType},
 		{"no content type", "", "", http.StatusUnsupportedMediaType},
 	}
 	for _, tc := range cases {

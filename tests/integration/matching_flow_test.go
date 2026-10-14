@@ -77,7 +77,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 
 	// Test doubles only: no live marketplace traffic from tests
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 
 	trackingSvc := tracking.NewTrackingService(registry, productRepo, trackingRepo, jobRepo, q)
 	pricingSvc := pricing.NewPricingService(pricingRepo)
@@ -87,10 +87,10 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	runID := uuid.New().String()[:8]
 	searcher := &fakemarket.Searcher{Candidates: map[string][]matching.MatchCandidate{
 		// Same model, official store, same price: should auto-link
-		"tiktok": {{Platform: "tiktok", URL: "https://mock.dealhunter.vn/item/tiktok-sony-wh1000xm6-" + runID,
+		"tiktok": {{Platform: "tiktok", URL: "https://mock.dealhunter.io.vn/item/tiktok-sony-wh1000xm6-" + runID,
 			Title: "Tai nghe Sony WH-1000XM6", SellerName: "Sony Official Store", Price: 6290000, IsMall: true}},
 		// Same model but weaker signals: should become a suggestion for review
-		"lazada": {{Platform: "lazada", URL: "https://mock.dealhunter.vn/item/lazada-sony-wh1000xm6-" + runID,
+		"lazada": {{Platform: "lazada", URL: "https://mock.dealhunter.io.vn/item/lazada-sony-wh1000xm6-" + runID,
 			Title: "Tai nghe Sony WH-1000XM6 chong on hang cu", SellerName: "Shop Tai Nghe", Price: 4990000, IsMall: false}},
 	}}
 	linker := &testTrackingLinker{trackingSvc: trackingSvc}
@@ -113,7 +113,7 @@ func TestAutoMatchingAndSuggestionsFlow(t *testing.T) {
 	createGuestUser(t, dbPool, userID)
 
 	t.Log("Step 1: Tracking a product with model code (Sony WH-1000XM5) on Shopee...")
-	testURL := "https://mock.dealhunter.vn/item/shopee-sony-wh1000xm6-" + runID
+	testURL := "https://mock.dealhunter.io.vn/item/shopee-sony-wh1000xm6-" + runID
 	trackPayload, _ := json.Marshal(map[string]string{
 		"url": testURL,
 	})

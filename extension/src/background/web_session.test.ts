@@ -69,19 +69,19 @@ describe("webSession.handleExternalMessage", () => {
 });
 
 describe("web app URLs in the session message", () => {
-  const PROD = "https://dealhunter.vn";
+  const PROD = "https://dealhunter.io.vn";
 
   it("stores valid API and web URLs sent by the DealHunter web app, with the token", async () => {
-    await webSession.handleExternalMessage(msg({ apiUrl: "https://api.dealhunter.vn/api/v1/", webUrl: PROD }), PROD);
+    await webSession.handleExternalMessage(msg({ apiUrl: "https://api.dealhunter.io.vn/api/v1/", webUrl: PROD }), PROD);
     const session = await webSession.get();
-    expect(session?.apiUrl).toBe("https://api.dealhunter.vn/api/v1");
+    expect(session?.apiUrl).toBe("https://api.dealhunter.io.vn/api/v1");
     expect(session?.webUrl).toBe(PROD);
     expect((await storage.getEndpoints()).webUrl).toBe(PROD);
   });
 
   it("keeps the URLs on sign-out (no token)", async () => {
-    await webSession.handleExternalMessage(msg({ apiUrl: "https://api.dealhunter.vn/api/v1", webUrl: PROD }), PROD);
-    await webSession.handleExternalMessage(msg({ accessToken: null, apiUrl: "https://api.dealhunter.vn/api/v1", webUrl: PROD }), PROD);
+    await webSession.handleExternalMessage(msg({ apiUrl: "https://api.dealhunter.io.vn/api/v1", webUrl: PROD }), PROD);
+    await webSession.handleExternalMessage(msg({ accessToken: null, apiUrl: "https://api.dealhunter.io.vn/api/v1", webUrl: PROD }), PROD);
     expect(await webSession.get()).toBeNull();
     expect((await storage.getEndpoints()).webUrl).toBe(PROD);
   });
@@ -100,7 +100,7 @@ describe("web app URLs in the session message", () => {
   });
 
   it("stores nothing for pages that are not DealHunter web", async () => {
-    await webSession.handleExternalMessage(msg({ apiUrl: "https://api.dealhunter.vn/api/v1" }), "https://evil.example");
+    await webSession.handleExternalMessage(msg({ apiUrl: "https://api.dealhunter.io.vn/api/v1" }), "https://evil.example");
     expect(local[STORAGE_KEYS.SETTINGS]).toBeUndefined();
     expect(local[STORAGE_KEYS.LAST_WEB_URL]).toBeUndefined();
     expect(store[STORAGE_KEYS.WEB_SESSION]).toBeUndefined();
@@ -118,8 +118,8 @@ describe("shopeeIds", () => {
 });
 
 describe("concurrent pushes from two allowed pages (dev and production)", () => {
-  const PROD = "https://dealhunter.vn";
-  const PROD_API = "https://api.dealhunter.vn/api/v1";
+  const PROD = "https://dealhunter.io.vn";
+  const PROD_API = "https://api.dealhunter.io.vn/api/v1";
   const DEV_API = "http://localhost:8080/api/v1";
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   // Storage writes take a variable time (here: by content), so concurrent handlers' writes land in any

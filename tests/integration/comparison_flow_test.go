@@ -42,7 +42,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 	_ = q.Init(ctx)
 
 	registry := marketplace.NewRegistry()
-	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.vn")
+	registry.RegisterForHosts(fakemarket.NewMockAdapter(), "mock.dealhunter.io.vn")
 
 	productRepo := product.NewPostgresRepository(dbPool)
 	trackingRepo := tracking.NewPostgresRepository(dbPool)
@@ -59,7 +59,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 	slug := uuid.New().String()
 
 	// 1. Ingest initial product (Shopee)
-	shopeeURL := "https://mock.dealhunter.vn/shopee/sony-" + slug
+	shopeeURL := "https://mock.dealhunter.io.vn/shopee/sony-" + slug
 	tracked1, err := trackingSvc.TrackURL(ctx, userID, shopeeURL)
 	if err != nil {
 		t.Fatalf("TrackURL shopee failed: %v", err)
@@ -93,7 +93,7 @@ func TestEndToEndComparisonFlow(t *testing.T) {
 	}
 
 	// 3. Link second source (TikTok) to canonicalProductID
-	tiktokURL := "https://mock.dealhunter.vn/tiktok/sony-" + slug
+	tiktokURL := "https://mock.dealhunter.io.vn/tiktok/sony-" + slug
 	source2, err := trackingSvc.LinkSourceToProduct(ctx, userID, canonicalProductID, tiktokURL, true)
 	if err != nil {
 		t.Fatalf("LinkSourceToProduct tiktok failed: %v", err)
