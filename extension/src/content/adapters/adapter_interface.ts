@@ -17,6 +17,12 @@ export interface MarketplaceAdapter {
    */
   executeDirectStrike?(target?: HTMLElement | null): Promise<boolean> | boolean;
   /**
+   * Optional: the direct strike does not need the target button (e.g. Caffiliate calls the page's own
+   * check-in). The engine then strikes on time even when the button cannot be found or looks done;
+   * the button is only read afterwards to confirm the result.
+   */
+  strikesWithoutTarget?(): boolean;
+  /**
    * Optional platform schedule: how long before the drop the direct strike starts (ms).
    * Recomputed by the engine right after preWarmStrike().
    */

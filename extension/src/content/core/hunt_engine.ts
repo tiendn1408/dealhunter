@@ -203,7 +203,9 @@ export function startHunt(opts: HuntOptions): () => void {
   };
 
   const isLockedHunt = Boolean(opts.locked || opts.universalDescriptor);
-  if (!isLockedHunt) {
+  /** The platform strikes on time by itself (Caffiliate): the button is only read to confirm. */
+  const strikesWithoutTarget = () => Boolean(adapter?.strikesWithoutTarget?.() && adapter.executeDirectStrike);
+  if (!isLockedHunt && !strikesWithoutTarget()) {
     // Decision 0 / C3: only the button the user picked is ever clicked; a keyword alone is not a target.
     ticker.stop();
     opts.onDone({ result: "not_found", clicks: 0, detail: "No target locked" });
@@ -457,6 +459,30 @@ export function startHunt(opts: HuntOptions): () => void {
       const isFireMoment = t >= opts.targetTimestamp - preFireLeadMs;
       const isLockedTarget = Boolean(isLockedHunt && el);
 
+      // Platforms that strike through the page itself (Caffiliate's app.checkIn()) fire on time,
+      // whatever the button shows or even when it cannot be found: it is only read afterwards.
+      if (isFireMoment && clicks === 0 && !clickedBeforeReload && strikesWithoutTarget()) {
+        baselineTextAtDrop = el ? elementResolver.text(el) : null;
+        toastBaseline = snapshotToasts();
+        let handled = false;
+        try {
+          handled = Boolean(adapter?.executeDirectStrike?.(el));
+        } catch {
+          // fall through to the normal path below
+        }
+        if (handled) {
+          clicks = 1;
+          lastClickAt = t;
+          try {
+            sessionStorage.setItem(clickedKey, "1");
+          } catch {
+            // ignore
+          }
+          status(t, "Strike sent · Awaiting server update...");
+          return;
+        }
+      }
+
       // Track if target was initially disabled prior to DOM unblocking
       if (
         el &&
@@ -497,7 +523,7 @@ export function startHunt(opts: HuntOptions): () => void {
       // 1. Completion verification: ONLY valid if we clicked at least once (or before a reload of
       // this drop): yesterday's "saved" label is not today's success.
       if (clicks > 0 || clickedBeforeReload) {
-        if (el && adapter?.confirmsCompletion?.(el)) {
+        if ((el || strikesWithoutTarget()) && adapter?.confirmsCompletion?.(el as HTMLElement)) {
           return finish("saved", "The site confirmed completion");
         }
 

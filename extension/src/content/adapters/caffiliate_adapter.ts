@@ -210,6 +210,11 @@ export class CaffiliateAdapter implements MarketplaceAdapter {
     }
   }
 
+  /** The strike goes through the page's own check-in, so it never waits for the button. */
+  strikesWithoutTarget(): boolean {
+    return true;
+  }
+
   /**
    * Check-in through the page itself: asks the main-world helper to run its attempts
    * (page function -> API -> button). No F5 and no waiting for the button to re-enable.
