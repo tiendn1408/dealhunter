@@ -14,6 +14,7 @@ type SourcePrice struct {
 	SellerName   string    `json:"seller_name"`
 	CanonicalURL string    `json:"canonical_url"`
 	AffiliateURL string    `json:"affiliate_url,omitempty"`
+	ImageURL     *string   `json:"image_url"` // null when the marketplace never stated one
 	// Unknown values (not fetched yet / not stated by the marketplace) are null, never 0 or false.
 	ListedPrice    *int64     `json:"listed_price"`
 	ShippingFee    *int64     `json:"shipping_fee"`

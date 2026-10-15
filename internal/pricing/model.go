@@ -32,6 +32,9 @@ type PriceSnapshot struct {
 	InStock         *bool
 	CapturedAt      time.Time
 	CreatedAt       time.Time
+	// ImageURL is the product image read with this price ("" when absent). It is stored on the product
+	// source, not in the snapshot.
+	ImageURL string
 }
 
 // EffectivePriceOf adds the shipping fee to the price when the fee is known.

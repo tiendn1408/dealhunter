@@ -106,3 +106,44 @@ func TestRegistryRegisterForHosts(t *testing.T) {
 		t.Fatal("expected unregistered real platform to be rejected")
 	}
 }
+
+func TestRegistryDetectShareShortLinks(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&dummyAdapter{name: "shopee"})
+	reg.Register(&dummyAdapter{name: "lazada"})
+	reg.Register(&dummyAdapter{name: "tiktok"})
+
+	cases := map[string]string{
+		"https://vn.shp.ee/pzvUeCZa":      "shopee",
+		"https://shope.ee/abc123":         "shopee",
+		"https://s.shopee.vn/AbC":         "shopee",
+		"https://s.lazada.vn/s.xyz":       "lazada",
+		"https://vt.tiktok.com/ZSabc123/": "tiktok",
+	}
+	for u, want := range cases {
+		m, err := reg.Detect(u)
+		if err != nil {
+			t.Fatalf("Detect(%q) error: %v", u, err)
+		}
+		if m.Name() != want {
+			t.Errorf("Detect(%q) = %s, want %s", u, m.Name(), want)
+		}
+	}
+	// Look-alike hosts are not marketplaces
+	if _, err := reg.Detect("https://shp.ee.evil.com/x"); err == nil {
+		t.Errorf("look-alike host must not be detected")
+	}
+}
+
+func TestIsShortLinkAndWithoutQuery(t *testing.T) {
+	if !IsShortLink("shopee", "https://vn.shp.ee/pzvUeCZa") {
+		t.Errorf("vn.shp.ee should be a Shopee short link")
+	}
+	if IsShortLink("shopee", "https://shopee.vn/product/1054984507/29254262829") {
+		t.Errorf("a product page is not a short link")
+	}
+	got := WithoutQuery("https://shopee.vn/product/1054984507/29254262829?d_id=2846b&uls_trackid=56slrg8g05lj&utm_content=x#top")
+	if got != "https://shopee.vn/product/1054984507/29254262829" {
+		t.Errorf("WithoutQuery = %q", got)
+	}
+}

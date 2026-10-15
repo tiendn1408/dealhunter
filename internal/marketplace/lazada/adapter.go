@@ -36,10 +36,10 @@ func (a *LazadaAdapter) Name() string {
 func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
 	var lastErr error // classified cause of the last failed request
 	// Expand shortlinks if necessary
-	if strings.Contains(rawURL, "s.lazada.vn") {
+	if marketplace.IsShortLink("lazada", rawURL) {
 		resolved, err := a.client.ResolveFinalURL(ctx, rawURL)
-		if err == nil && resolved != "" {
-			rawURL = resolved
+		if err == nil && resolved != "" && !marketplace.IsShortLink("lazada", resolved) {
+			rawURL = marketplace.WithoutQuery(resolved)
 		}
 	}
 
@@ -78,6 +78,7 @@ func (a *LazadaAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 				CanonicalURL:      rawURL,
 				RawTitle:          extracted.Title,
 				SellerName:        seller,
+				ImageURL:          extracted.ImageURL,
 				Price: pricing.Price{
 					ListedPrice: listedPrice,
 					SalePrice:   price,
@@ -107,6 +108,7 @@ func (a *LazadaAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 				Currency:        extracted.Currency,
 				InStock:         extracted.InStock,
 				CapturedAt:      time.Now(),
+				ImageURL:        extracted.ImageURL,
 			}, nil
 		}
 	}

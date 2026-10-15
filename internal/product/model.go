@@ -23,6 +23,7 @@ type ProductSource struct {
 	ExternalProductID  *string
 	CanonicalURL       string
 	SellerName         *string
+	ImageURL           *string // https product image from the marketplace; nil when never stated
 	RawTitle           *string
 	Currency           string
 	LastPrice          *int64

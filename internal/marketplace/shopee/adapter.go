@@ -17,6 +17,7 @@ import (
 var (
 	shopeeItemPattern        = regexp.MustCompile(`i\.(\d+)\.(\d+)`)
 	shopeeProductPathPattern = regexp.MustCompile(`/product/(\d+)/(\d+)`)
+	shopeeImageIDPattern     = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
 type shopeeApiResponse struct {
@@ -29,7 +30,26 @@ type shopeeApiResponse struct {
 		Stock               int    `json:"stock"`
 		HistoricalSold      int    `json:"historical_sold"`
 		ShopLocation        string `json:"shop_location"`
+		Image               string `json:"image"` // image id on Shopee's CDN (or a full URL)
 	} `json:"data"`
+}
+
+// shopeeImageCDN serves the item API's image ids (the same host the Shopee web app uses).
+const shopeeImageCDN = "https://down-vn.img.susercontent.com/file/"
+
+// shopeeImageURL turns the item API's image field into an https URL; "" when the API gave none.
+func shopeeImageURL(image string) string {
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return ""
+	}
+	if strings.Contains(image, "/") {
+		return crawler.SafeImageURL(image)
+	}
+	if !shopeeImageIDPattern.MatchString(image) {
+		return ""
+	}
+	return shopeeImageCDN + image
 }
 
 // ShopeeAdapter handles real product ingestion and price scraping for Shopee Vietnam.
@@ -57,10 +77,10 @@ func (a *ShopeeAdapter) Name() string {
 func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*marketplace.ProductData, error) {
 	var lastErr error // classified cause of the last failed request
 	// Expand shortlinks if necessary
-	if strings.Contains(rawURL, "s.shopee.vn") {
+	if marketplace.IsShortLink("shopee", rawURL) {
 		resolved, err := a.client.ResolveFinalURL(ctx, rawURL)
-		if err == nil && resolved != "" {
-			rawURL = resolved
+		if err == nil && resolved != "" && !marketplace.IsShortLink("shopee", resolved) {
+			rawURL = marketplace.WithoutQuery(resolved)
 		}
 	}
 
@@ -112,6 +132,7 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 					ExternalProductID: extID,
 					CanonicalURL:      rawURL,
 					RawTitle:          crawler.CleanTitle(apiResp.Data.Name),
+					ImageURL:          shopeeImageURL(apiResp.Data.Image),
 					// The item API exposes neither the shop name nor the shipping fee; leave them unknown
 					Price: pricing.Price{
 						ListedPrice: listedPrice,
@@ -141,6 +162,7 @@ func (a *ShopeeAdapter) ResolveProduct(ctx context.Context, rawURL string) (*mar
 				CanonicalURL:      rawURL,
 				RawTitle:          extracted.Title,
 				SellerName:        seller,
+				ImageURL:          extracted.ImageURL,
 				Price: pricing.Price{
 					ListedPrice: listedPrice,
 					SalePrice:   price,
@@ -187,6 +209,7 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 						Currency:        "VND",
 						InStock:         &inStock,
 						CapturedAt:      time.Now(),
+						ImageURL:        shopeeImageURL(apiResp.Data.Image),
 					}, nil
 				}
 			}
@@ -207,6 +230,7 @@ func (a *ShopeeAdapter) FetchPrice(ctx context.Context, source *product.ProductS
 				Currency:        extracted.Currency,
 				InStock:         extracted.InStock,
 				CapturedAt:      time.Now(),
+				ImageURL:        extracted.ImageURL,
 			}, nil
 		}
 	}

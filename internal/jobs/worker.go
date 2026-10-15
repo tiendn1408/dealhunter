@@ -213,6 +213,12 @@ func (w *Worker) processJob(ctx context.Context, msg queue.Message) {
 	source.LastEffectivePrice = &snapshot.EffectivePrice
 	source.LastInStock = snapshot.InStock
 	source.LastFetchedAt = &now
+	// An image read with this price replaces the stored one; none leaves it as it was.
+	source.ImageURL = nil
+	if snapshot.ImageURL != "" {
+		img := snapshot.ImageURL
+		source.ImageURL = &img
+	}
 
 	if err := w.productRepo.UpdateProductSourcePrice(ctx, tx, source); err != nil {
 		w.logger.Error("Update source price failed", "err", err)

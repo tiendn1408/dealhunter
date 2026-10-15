@@ -157,3 +157,31 @@ func TestCleanTitle(t *testing.T) {
 		t.Errorf("CleanTitle failed, got: '%s'", lazadaCleaned)
 	}
 }
+
+// The product image comes only from what the page states, as an https URL; anything else is dropped.
+func TestExtractFromHTML_Image(t *testing.T) {
+	cases := []struct {
+		name string
+		html string
+		want string
+	}{
+		{"json-ld image object", `<script type="application/ld+json">{"@type":"Product","name":"Tai nghe","image":{"@type":"ImageObject","url":"https://cdn.example.vn/a.jpg"}}</script>`, "https://cdn.example.vn/a.jpg"},
+		{"json-ld list skips http", `<script type="application/ld+json">{"@type":"Product","name":"Tai nghe","image":["http://cdn.example.vn/a.jpg","https://cdn.example.vn/b.jpg"]}</script>`, "https://cdn.example.vn/b.jpg"},
+		{"og:image fallback", `<meta property="og:title" content="Tai nghe" /><meta property="og:image" content="https://cdn.example.vn/og.jpg" />`, "https://cdn.example.vn/og.jpg"},
+		{"protocol-relative is https", `<meta property="og:title" content="Tai nghe" /><meta property="og:image" content="//cdn.example.vn/p.jpg" />`, "https://cdn.example.vn/p.jpg"},
+		{"plain http dropped", `<meta property="og:title" content="Tai nghe" /><meta property="og:image" content="http://cdn.example.vn/x.jpg" />`, ""},
+		{"script url dropped", `<meta property="og:title" content="Tai nghe" /><meta property="og:image" content="javascript:alert(1)" />`, ""},
+		{"no image stated", `<meta property="og:title" content="Tai nghe" />`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prod, err := ExtractFromHTML([]byte("<html><head>"+tc.html+"</head><body></body></html>"), "https://shop.example.vn/p")
+			if err != nil {
+				t.Fatalf("extract: %v", err)
+			}
+			if prod.ImageURL != tc.want {
+				t.Errorf("ImageURL = %q, want %q", prod.ImageURL, tc.want)
+			}
+		})
+	}
+}

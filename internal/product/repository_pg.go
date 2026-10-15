@@ -52,16 +52,17 @@ func (r *PostgresRepository) UpsertProductSource(ctx context.Context, tx pgx.Tx,
 	query := `
 		INSERT INTO product_sources (
 			id, product_id, platform, external_product_id, canonical_url,
-			seller_name, raw_title, currency, active, created_at, updated_at
+			seller_name, raw_title, currency, active, created_at, updated_at, image_url
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (platform, external_product_id) DO UPDATE
 		SET canonical_url = EXCLUDED.canonical_url,
 		    seller_name = COALESCE(EXCLUDED.seller_name, product_sources.seller_name),
 		    raw_title = COALESCE(EXCLUDED.raw_title, product_sources.raw_title),
+		    image_url = COALESCE(EXCLUDED.image_url, product_sources.image_url),
 		    updated_at = NOW()
 		RETURNING id, product_id, platform, external_product_id, canonical_url,
-		          seller_name, raw_title, currency, last_price, last_shipping_fee,
+		          seller_name, image_url, raw_title, currency, last_price, last_shipping_fee,
 		          last_effective_price, last_in_stock, last_fetched_at, active,
 		          created_at, updated_at;
 	`
@@ -87,6 +88,7 @@ func (r *PostgresRepository) UpsertProductSource(ctx context.Context, tx pgx.Tx,
 		ps.Active,
 		ps.CreatedAt,
 		ps.UpdatedAt,
+		ps.ImageURL,
 	).Scan(
 		&ps.ID,
 		&ps.ProductID,
@@ -94,6 +96,7 @@ func (r *PostgresRepository) UpsertProductSource(ctx context.Context, tx pgx.Tx,
 		&ps.ExternalProductID,
 		&ps.CanonicalURL,
 		&ps.SellerName,
+		&ps.ImageURL,
 		&ps.RawTitle,
 		&ps.Currency,
 		&ps.LastPrice,
@@ -110,7 +113,7 @@ func (r *PostgresRepository) UpsertProductSource(ctx context.Context, tx pgx.Tx,
 func (r *PostgresRepository) GetProductSource(ctx context.Context, id uuid.UUID) (*ProductSource, error) {
 	query := `
 		SELECT id, product_id, platform, external_product_id, canonical_url,
-		       seller_name, raw_title, currency, last_price, last_shipping_fee,
+		       seller_name, image_url, raw_title, currency, last_price, last_shipping_fee,
 		       last_effective_price, last_in_stock, last_fetched_at, active,
 		       created_at, updated_at
 		FROM product_sources
@@ -124,6 +127,7 @@ func (r *PostgresRepository) GetProductSource(ctx context.Context, id uuid.UUID)
 		&ps.ExternalProductID,
 		&ps.CanonicalURL,
 		&ps.SellerName,
+		&ps.ImageURL,
 		&ps.RawTitle,
 		&ps.Currency,
 		&ps.LastPrice,
@@ -148,7 +152,7 @@ func (r *PostgresRepository) GetProductSource(ctx context.Context, id uuid.UUID)
 func (r *PostgresRepository) GetProductSourceByExternalID(ctx context.Context, platform, externalID string) (*ProductSource, error) {
 	query := `
 		SELECT id, product_id, platform, external_product_id, canonical_url,
-		       seller_name, raw_title, currency, last_price, last_shipping_fee,
+		       seller_name, image_url, raw_title, currency, last_price, last_shipping_fee,
 		       last_effective_price, last_in_stock, last_fetched_at, active,
 		       created_at, updated_at
 		FROM product_sources
@@ -162,6 +166,7 @@ func (r *PostgresRepository) GetProductSourceByExternalID(ctx context.Context, p
 		&ps.ExternalProductID,
 		&ps.CanonicalURL,
 		&ps.SellerName,
+		&ps.ImageURL,
 		&ps.RawTitle,
 		&ps.Currency,
 		&ps.LastPrice,
@@ -191,6 +196,7 @@ func (r *PostgresRepository) UpdateProductSourcePrice(ctx context.Context, tx pg
 		    last_effective_price = $3,
 		    last_in_stock = $4,
 		    last_fetched_at = $5,
+		    image_url = COALESCE($7, image_url),
 		    updated_at = NOW()
 		WHERE id = $6;
 	`
@@ -203,6 +209,7 @@ func (r *PostgresRepository) UpdateProductSourcePrice(ctx context.Context, tx pg
 			update.LastInStock,
 			update.LastFetchedAt,
 			update.ID,
+			update.ImageURL,
 		)
 	} else {
 		_, err = r.pool.Exec(ctx, query,
@@ -212,6 +219,7 @@ func (r *PostgresRepository) UpdateProductSourcePrice(ctx context.Context, tx pg
 			update.LastInStock,
 			update.LastFetchedAt,
 			update.ID,
+			update.ImageURL,
 		)
 	}
 
@@ -240,9 +248,9 @@ func (r *PostgresRepository) InsertProductSourceIfAbsent(ctx context.Context, tx
 	query := `
 		INSERT INTO product_sources (
 			id, product_id, platform, external_product_id, canonical_url,
-			seller_name, raw_title, currency, active, created_at, updated_at
+			seller_name, raw_title, currency, active, created_at, updated_at, image_url
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (platform, external_product_id) DO NOTHING;
 	`
 	exec := r.pool.Exec
@@ -250,7 +258,7 @@ func (r *PostgresRepository) InsertProductSourceIfAbsent(ctx context.Context, tx
 		exec = tx.Exec
 	}
 	tag, err := exec(ctx, query, ps.ID, ps.ProductID, ps.Platform, ps.ExternalProductID, ps.CanonicalURL,
-		ps.SellerName, ps.RawTitle, ps.Currency, ps.Active, ps.CreatedAt, ps.UpdatedAt)
+		ps.SellerName, ps.RawTitle, ps.Currency, ps.Active, ps.CreatedAt, ps.UpdatedAt, ps.ImageURL)
 	if err != nil {
 		return false, fmt.Errorf("insert product source: %w", err)
 	}

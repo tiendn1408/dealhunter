@@ -202,6 +202,7 @@ func (r *PostgresRepository) ListUserNotifications(ctx context.Context, userID u
 		       COALESCE(ps.raw_title, p.title, '') AS product_title,
 		       COALESCE(ps.platform, '') AS platform,
 		       COALESCE(ps.canonical_url, '') AS product_url,
+		       COALESCE(ps.image_url, '') AS product_image,
 		       ps.product_id
 		FROM notification_logs n
 		JOIN alert_rules ar ON n.alert_rule_id = ar.id
@@ -240,6 +241,7 @@ func (r *PostgresRepository) ListUserNotifications(ctx context.Context, userID u
 			&n.ProductTitle,
 			&n.Platform,
 			&n.ProductURL,
+			&n.ProductImage,
 			&productID,
 		); err != nil {
 			return nil, fmt.Errorf("scan user notification: %w", err)

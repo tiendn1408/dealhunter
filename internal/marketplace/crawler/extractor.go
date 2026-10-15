@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -120,10 +121,11 @@ func ExtractFromHTML(body []byte, pageURL string) (*ExtractedProduct, error) {
 	}
 
 	if prod.ImageURL == "" {
-		if ogImg, ok := metaTags["og:image"]; ok && ogImg != "" {
-			prod.ImageURL = ogImg
-		} else if twImg, ok := metaTags["twitter:image"]; ok && twImg != "" {
-			prod.ImageURL = twImg
+		for _, key := range []string{"og:image:secure_url", "og:image", "twitter:image"} {
+			if img := SafeImageURL(metaTags[key]); img != "" {
+				prod.ImageURL = img
+				break
+			}
 		}
 	}
 
@@ -239,13 +241,7 @@ func extractProductMap(m map[string]interface{}, prod *ExtractedProduct) bool {
 		prod.Brand = brandStr
 	}
 
-	if img, ok := m["image"].(string); ok {
-		prod.ImageURL = img
-	} else if imgList, ok := m["image"].([]interface{}); ok && len(imgList) > 0 {
-		if firstImg, ok := imgList[0].(string); ok {
-			prod.ImageURL = firstImg
-		}
-	}
+	prod.ImageURL = jsonLdImage(m["image"])
 
 	// Parse offers
 	if offers, ok := m["offers"]; ok {
@@ -301,6 +297,44 @@ func parseSingleOffer(offer map[string]interface{}, prod *ExtractedProduct) {
 			prod.SellerName = sName
 		}
 	}
+}
+
+// jsonLdImage reads a schema.org image: a URL string, an ImageObject ({"url": ...}) or a list of
+// either; the first usable https URL wins.
+func jsonLdImage(v interface{}) string {
+	switch img := v.(type) {
+	case string:
+		return SafeImageURL(img)
+	case map[string]interface{}:
+		for _, key := range []string{"url", "contentUrl"} {
+			if s, ok := img[key].(string); ok {
+				if u := SafeImageURL(s); u != "" {
+					return u
+				}
+			}
+		}
+	case []interface{}:
+		for _, item := range img {
+			if u := jsonLdImage(item); u != "" {
+				return u
+			}
+		}
+	}
+	return ""
+}
+
+// SafeImageURL returns the image URL when it is an absolute https URL (a protocol-relative "//host/..."
+// is read as https), and "" otherwise: nothing else is ever shown as a product image.
+func SafeImageURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if strings.HasPrefix(s, "//") {
+		s = "https:" + s
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "https" || u.Host == "" || strings.ContainsAny(s, " \t\n\"'<>") {
+		return ""
+	}
+	return u.String()
 }
 
 var suffixRegex = regexp.MustCompile(`(?i)\s*(\|\s*Shopee\s*Vi[ệe]t\s*Nam|\-\s*Mua\s*ngay\s*\|\s*Lazada\.vn|\|\s*Lazada\.vn|\|\s*TikTok\s*Shop|\|\s*Tiki).*$`)

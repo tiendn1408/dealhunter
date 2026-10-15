@@ -356,6 +356,7 @@ type EnrichedTracking struct {
 	CanonicalURL           string    `json:"CanonicalURL,omitempty"`
 	AffiliateURL           string    `json:"AffiliateURL,omitempty"`
 	SellerName             string    `json:"SellerName,omitempty"`
+	ImageURL               string    `json:"ImageURL,omitempty"`
 	LastPrice              *int64    `json:"LastPrice,omitempty"`
 	LastEffectivePrice     *int64    `json:"LastEffectivePrice,omitempty"`
 	LastInStock            *bool     `json:"LastInStock,omitempty"`
@@ -383,6 +384,9 @@ func (h *Handler) enrichTracking(r *http.Request, t *domain.TrackedProduct) Enri
 		enriched.CanonicalURL = source.CanonicalURL
 		if source.SellerName != nil {
 			enriched.SellerName = *source.SellerName
+		}
+		if source.ImageURL != nil {
+			enriched.ImageURL = *source.ImageURL
 		}
 		enriched.LastPrice = source.LastPrice
 		enriched.LastEffectivePrice = source.LastEffectivePrice
@@ -466,6 +470,9 @@ func (h *Handler) GetTracking(w http.ResponseWriter, r *http.Request) {
 	}
 	if source.SellerName != nil {
 		enriched.SellerName = *source.SellerName
+	}
+	if source.ImageURL != nil {
+		enriched.ImageURL = *source.ImageURL
 	}
 	if h.affiliateTransformer != nil && enriched.CanonicalURL != "" {
 		subID := affiliate.FormatSubID(userID, source.ProductID)

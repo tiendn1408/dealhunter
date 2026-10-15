@@ -41,6 +41,7 @@ type EnrichedNotification struct {
 	Platform     string `json:"platform,omitempty"`
 	ProductURL   string `json:"product_url,omitempty"`
 	AffiliateURL string `json:"affiliate_url,omitempty"`
+	ProductImage string `json:"product_image,omitempty"` // https image of the product; empty when unknown
 }
 
 // QueuePayload is serialized into Redis Stream dh:stream:notifications

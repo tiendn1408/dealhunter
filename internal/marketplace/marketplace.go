@@ -29,6 +29,7 @@ type ProductData struct {
 	CanonicalURL      string
 	RawTitle          string
 	SellerName        string
+	ImageURL          string // https product image as the marketplace states it; "" when absent
 	Price             pricing.Price
 }
 

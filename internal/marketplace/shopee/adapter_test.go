@@ -134,3 +134,37 @@ func TestShopeeAdapter_ItemAPI(t *testing.T) {
 		t.Errorf("unexpected external id %q", data.ExternalProductID)
 	}
 }
+
+// The item API's image id becomes a URL on Shopee's own image CDN; no image id, no URL.
+func TestShopeeAdapter_ItemAPIImage(t *testing.T) {
+	image := "vn-11134207-7r98o-abc123"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"error":0,"data":{"name":"Tai nghe","price":189000000000,"stock":3,"image":"` + image + `"}}`))
+	}))
+	defer server.Close()
+
+	adapter := newTestAdapter(server)
+	testURL := server.URL + "/product-shopee.vn-i.111.222"
+	data, err := adapter.ResolveProduct(context.Background(), testURL)
+	if err != nil {
+		t.Fatalf("ResolveProduct: %v", err)
+	}
+	want := "https://down-vn.img.susercontent.com/file/" + image
+	if data.ImageURL != want {
+		t.Errorf("ResolveProduct ImageURL = %q, want %q", data.ImageURL, want)
+	}
+	snap, err := adapter.FetchPrice(context.Background(), &product.ProductSource{ID: uuid.New(), CanonicalURL: testURL})
+	if err != nil {
+		t.Fatalf("FetchPrice: %v", err)
+	}
+	if snap.ImageURL != want {
+		t.Errorf("FetchPrice ImageURL = %q, want %q", snap.ImageURL, want)
+	}
+
+	for _, bad := range []string{"", "../x", "http://evil.example/x.jpg"} {
+		if got := shopeeImageURL(bad); got != "" {
+			t.Errorf("shopeeImageURL(%q) = %q, want empty", bad, got)
+		}
+	}
+}
