@@ -56,18 +56,38 @@ describe("planStrike", () => {
 
   // 13/10 night: the first attempt waited 1571 ms for its Turnstile token and the server answered
   // in 186 ms (it verifies the token with Cloudflare first); the plan had assumed 0 ms and 39 ms.
-  it("token-bound: the first arrival lands after 00:00, never before (an early one burns the token)", () => {
+  it("token-bound: the first receipt lands after 00:00, never before (an early one burns the token)", () => {
     const plan = planStrike({ rttMs: 78, clockErrorMs: 20, prepSamplesMs: [1571], serverSamplesMs: [186] });
     expect(plan.tokenBound).toBe(true);
     expect(plan.prepMs).toBe(1571);
-    expect(plan.oneWayMs).toBe(186 - 39); // learned: response time minus the way back
+    expect(plan.oneWayMs).toBe(39); // the receipt: request sent + one-way network
     expect(plan.arrivalsMs[0]).toBeGreaterThan(0);
-    expect(plan.arrivalsMs[0]).toBeGreaterThanOrEqual(plan.sigmaMs * STRIKE_PLAN.SAFE_SIGMAS - 1);
+    expect(plan.arrivalsMs[0]).toBeGreaterThanOrEqual(plan.sigmaMs * STRIKE_PLAN.TOKEN_SAFE_SIGMAS - 1);
     expect(plan.arrivalsMs.every((a, i) => i === 0 || a - plan.arrivalsMs[i - 1] === STRIKE_PLAN.MIN_GAP_MS)).toBe(true);
-    // starts about prep + server time + margin before 00:00 (13/10 started only 98 ms before)
     expect(plan.leadMs).toBe(Math.round(plan.prepMs + plan.oneWayMs - plan.arrivalsMs[0]));
-    expect(plan.leadMs).toBeGreaterThan(1300);
     expect(plan.leadMs).toBeLessThanOrEqual(STRIKE_PLAN.MAX_LEAD_MS);
+  });
+
+  // 15/10 night: second measurement 1522 ms (the first was 1571 ms); the server took 418 ms on a busy
+  // night. With one sample the plan assumed a 393 ms spread and aimed 395 ms after 00:00; the request
+  // left at 00:00:00.207. Two close measurements now give a ~50 ms spread.
+  it("two close token times shrink the margin from ~395 ms to under 100 ms after 00:00", () => {
+    const night2 = planStrike({ rttMs: 78, clockErrorMs: 20, prepSamplesMs: [1571], serverSamplesMs: [186] });
+    const night3 = planStrike({ rttMs: 78, clockErrorMs: 20, prepSamplesMs: [1571, 1522], serverSamplesMs: [186, 418] });
+    expect(night3.prepMs).toBe(1547);
+    expect(night3.arrivalsMs[0]).toBeGreaterThan(0);
+    expect(night3.arrivalsMs[0]).toBeLessThan(100);
+    expect(night3.arrivalsMs[0]).toBeLessThan(night2.arrivalsMs[0]);
+    // the request leaves after 00:00 minus the one-way time, so it reaches the server after 00:00
+    const sentAt = -night3.leadMs + night3.prepMs;
+    expect(sentAt + night3.oneWayMs).toBeGreaterThan(0);
+  });
+
+  it("a slow server night does not push the receipt later (it cannot make the request early)", () => {
+    const calm = planStrike({ rttMs: 78, clockErrorMs: 20, prepSamplesMs: [1571, 1522], serverSamplesMs: [186, 190] });
+    const busy = planStrike({ rttMs: 78, clockErrorMs: 20, prepSamplesMs: [1571, 1522], serverSamplesMs: [186, 418] });
+    expect(busy.arrivalsMs[0]).toBe(calm.arrivalsMs[0]);
+    expect(busy.leadMs).toBe(calm.leadMs);
   });
 
   it("the margin after 00:00 shrinks as the measured token time gets steadier", () => {
