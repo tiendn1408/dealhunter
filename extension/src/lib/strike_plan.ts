@@ -123,15 +123,24 @@ function quantile(sorted: number[], q: number): number {
 
 export function planStrike(inputs: StrikeInputs): StrikePlan {
   const P = STRIKE_PLAN;
-  const samples = inputs.prepSamplesMs.filter((v) => Number.isFinite(v) && v >= 0).sort((x, y) => x - y);
+  const raw = (inputs.prepSamplesMs ?? []).filter((v) => Number.isFinite(v) && v >= 0).sort((x, y) => x - y);
+  // Drop stalled / interactive-challenge outliers (> 2x the lower quartile and > 1 s slower) so a
+  // single bad sample cannot blow up the sample standard deviation or IQR and push the start after T.
+  const q1 = raw.length > 0 ? raw[Math.floor((raw.length - 1) * 0.25)] : 0;
+  const samples =
+    raw.length >= 2 && q1 >= P.TOKEN_BOUND_PREP_MS
+      ? raw.filter((v) => v <= q1 * 2 || v - q1 <= 1000)
+      : raw;
 
   // Prep time: median of history; its spread from the measurements (a quarter of the median while
-  // there is only one).
+  // there is only one, and capped there when token-bound).
   const prepMs = samples.length > 0 ? quantile(samples, 0.5) : 0;
-  const prepJitter = spreadOf(samples, prepMs * 0.25);
+  const rawPrepJitter = spreadOf(samples, prepMs * 0.25);
+  const prepJitter = prepMs >= P.TOKEN_BOUND_PREP_MS ? Math.min(rawPrepJitter, prepMs * 0.25) : rawPrepJitter;
 
-  const rttKnown = inputs.rttMs > 0;
-  const rttOneWay = rttKnown ? inputs.rttMs / 2 : P.UNKNOWN_ONE_WAY_MS;
+  const rttMs = Number.isFinite(inputs.rttMs) && inputs.rttMs > 0 ? inputs.rttMs : 0;
+  const rttKnown = rttMs > 0;
+  const rttOneWay = rttKnown ? rttMs / 2 : P.UNKNOWN_ONE_WAY_MS;
   // The leaderboard time is taken while the server handles the request, just before it answers:
   // from the request leaving, that is the measured response time minus the way back.
   const server = (inputs.serverSamplesMs ?? []).filter((v) => Number.isFinite(v) && v > 0).sort((x, y) => x - y);
@@ -145,7 +154,8 @@ export function planStrike(inputs: StrikeInputs): StrikePlan {
       : oneWayMs;
 
   // The calibration error is a bound (uniform within ±E): its sigma is E / sqrt(3).
-  const clockSigma = Math.min(Math.max(inputs.clockErrorMs, 0), 1000) / Math.sqrt(3);
+  const rawClockError = Number.isFinite(inputs.clockErrorMs) ? inputs.clockErrorMs : 1000;
+  const clockSigma = Math.min(Math.max(rawClockError, 0), 1000) / Math.sqrt(3);
   const sigmaMs = Math.max(P.MIN_SIGMA_MS, Math.sqrt(clockSigma ** 2 + prepJitter ** 2 + netJitter ** 2));
 
   const tokenBound = prepMs >= P.TOKEN_BOUND_PREP_MS;
@@ -159,7 +169,7 @@ export function planStrike(inputs: StrikeInputs): StrikePlan {
     const starts = arrivalsMs.map((a) => a - prepMs - rttOneWay);
     return {
       offsetsMs: starts.map((st) => Math.round(st - starts[0])),
-      leadMs: Math.min(P.MAX_LEAD_MS, Math.round(-starts[0])),
+      leadMs: Math.max(0, Math.min(P.MAX_LEAD_MS, Math.round(-starts[0]))),
       arrivalsMs,
       prepMs: Math.round(prepMs),
       oneWayMs: Math.round(rttOneWay),
@@ -177,7 +187,7 @@ export function planStrike(inputs: StrikeInputs): StrikePlan {
   }
 
   const starts = arrivalsMs.map((a) => a - prepMs - oneWayMs);
-  const leadMs = Math.min(P.MAX_LEAD_MS, Math.round(-starts[0]));
+  const leadMs = Math.max(0, Math.min(P.MAX_LEAD_MS, Math.round(-starts[0])));
   const offsetsMs = starts.map((s) => Math.round(s - starts[0]));
 
   return {

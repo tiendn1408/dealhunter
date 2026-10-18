@@ -58,4 +58,13 @@ describe("timings learned from the check-in log", () => {
     expect(prepSamplesFromLogs([sim, real], 10, "caffiliate.vn")).toEqual([1571]);
     expect(serverSamplesFromLogs([sim, real], 10, "caffiliate.vn")).toEqual([186]);
   });
+
+  it("ignores stalled (> 3500 ms) or token-errored runs when learning prep samples", () => {
+    const stalled = log([attempt(1, 7864, 210)]);
+    const errored = log([{ ...attempt(1, 1600, 200), tokenError: true }]);
+    const clean1 = log([attempt(1, 1571, 186)]);
+    const clean2 = log([attempt(1, 1522, 418)]);
+    const clean3 = log([attempt(1, 1494, 224)]);
+    expect(prepSamplesFromLogs([clean3, stalled, errored, clean2, clean1])).toEqual([1494, 1522, 1571]);
+  });
 });

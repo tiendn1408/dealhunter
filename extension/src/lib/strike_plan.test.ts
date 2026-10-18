@@ -101,4 +101,54 @@ describe("planStrike", () => {
     expect(steady.arrivalsMs[0]).toBeLessThan(one.arrivalsMs[0]);
     expect(steady.arrivalsMs[0]).toBeGreaterThan(0);
   });
+
+  // 18/10 night: a stalled ~7864 ms sample alongside [1522, 1571] blew up stdDev * 1.5 to 5471 ms,
+  // pushing the target receipt to +8206 ms and making leadMs negative (-6598 ms -> started at 00:00:06.603).
+  it("drops stalled outlier samples so sigmaMs stays tight and leadMs is never negative", () => {
+    const withOutlier3 = planStrike({
+      rttMs: 74,
+      clockErrorMs: 20,
+      prepSamplesMs: [1522, 1571, 7864],
+      serverSamplesMs: [186, 418],
+    });
+    expect(withOutlier3.prepMs).toBe(1547);
+    expect(withOutlier3.sigmaMs).toBeLessThan(100);
+    expect(withOutlier3.arrivalsMs[0]).toBeLessThan(100);
+    expect(withOutlier3.leadMs).toBeGreaterThan(1400);
+
+    const withOutlier4 = planStrike({
+      rttMs: 74,
+      clockErrorMs: 20,
+      prepSamplesMs: [1494, 1522, 1571, 7864],
+      serverSamplesMs: [186, 418, 224],
+    });
+    expect(withOutlier4.prepMs).toBe(1522);
+    expect(withOutlier4.sigmaMs).toBeLessThan(100);
+    expect(withOutlier4.arrivalsMs[0]).toBeLessThan(100);
+    expect(withOutlier4.leadMs).toBeGreaterThan(1400);
+
+    // Only 2 samples, one is an outlier: drops the outlier and uses fallback jitter
+    const twoSamples = planStrike({
+      rttMs: 74,
+      clockErrorMs: 20,
+      prepSamplesMs: [1500, 8000],
+    });
+    expect(twoSamples.prepMs).toBe(1500);
+    expect(twoSamples.leadMs).toBeGreaterThan(900);
+    expect(twoSamples.leadMs).toBeLessThanOrEqual(STRIKE_PLAN.MAX_LEAD_MS);
+    expect(twoSamples.arrivalsMs[0]).toBeGreaterThan(0);
+  });
+
+  it("handles malformed, NaN or missing inputs gracefully without producing NaN or negative leadMs", () => {
+    const malformed = planStrike({
+      rttMs: NaN,
+      clockErrorMs: NaN,
+      prepSamplesMs: [NaN, -50, 1500, Infinity] as any,
+    });
+    expect(malformed.prepMs).toBe(1500);
+    expect(Number.isFinite(malformed.leadMs)).toBe(true);
+    expect(malformed.leadMs).toBeGreaterThanOrEqual(0);
+    expect(malformed.leadMs).toBeLessThanOrEqual(STRIKE_PLAN.MAX_LEAD_MS);
+    expect(malformed.arrivalsMs.every((a) => Number.isFinite(a) && a > 0)).toBe(true);
+  });
 });

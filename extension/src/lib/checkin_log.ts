@@ -116,6 +116,9 @@ export function describeAttempt(a: CheckInLogEntry["attempts"][number]): string 
   return parts.join(" · ");
 }
 
+/** Attempts taking longer than this hit a manual captcha or a stalled tab, not a normal token fetch. */
+export const MAX_SANE_PREP_MS = 3500;
+
 /**
  * The attempt of each run whose request actually went out first, the one that waited for the
  * Turnstile token. Later attempts reuse the page's pending token and wait behind it: their times
@@ -129,7 +132,8 @@ function firstSentAttempts(logs: CheckInLogEntry[], maxRuns: number, host?: stri
   for (const log of own.slice(0, maxRuns)) {
     const a = log.attempts.find((x) => x.sentAfterMs !== null);
     const first = a?.tiers[0];
-    if (!a || !first || !first.ok) continue;
+    if (!a || !first || !first.ok || a.tokenError) continue;
+    if (a.sentAfterMs === null || a.sentAfterMs < 0 || a.sentAfterMs > MAX_SANE_PREP_MS) continue;
     if (first.tier === 1 || log.source === "manual") out.push(a);
   }
   return out;
