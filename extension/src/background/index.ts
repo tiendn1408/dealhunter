@@ -55,7 +55,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     timeCalibrator
-      .calibrate(message.samples || 5, 6000, message.targetUrl)
+      .calibrate(
+        message.samples || 5,
+        // precise mode adds about one probe per second for each refine round
+        6000 + (Number(message.refine) || 0) * 1200,
+        message.targetUrl,
+        Number(message.refine) || 0
+      )
       .then((cal) => sendResponse({ success: true, calibration: cal }))
       .catch((err) => sendResponse({ success: false, error: (err as Error).message }));
     return true; // Keep message channel open for async response

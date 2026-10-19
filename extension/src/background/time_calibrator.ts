@@ -38,6 +38,31 @@ export function estimateOffsetFromProbes(probes: ClockProbe[]): { offsetMs: numb
   return { offsetMs: Math.round(median.offset), errorMs: Math.round(median.error) };
 }
 
+/** Where the true offset (serverTime - localTime) can be: lo <= offset <= hi. */
+export interface OffsetBracket {
+  lo: number;
+  hi: number;
+}
+
+/**
+ * One probe aimed at the server's second boundary `boundaryMs`. Taking the server's moment as the
+ * probe's midpoint (as estimateOffsetFromProbes does), the answer tells on which side of the boundary
+ * that moment was: the new second means offset >= boundary - mid, the old one offset < boundary - mid.
+ * When the two edges cross (the midpoint is only an approximation of the server's moment), the
+ * offset is between them, so they are swapped rather than dropped.
+ */
+export function narrowBracket(bracket: OffsetBracket, probe: ClockProbe, boundaryMs: number): OffsetBracket {
+  const mid = (probe.sentAt + probe.receivedAt) / 2;
+  const edge = boundaryMs - mid;
+  let { lo, hi } = bracket;
+  if (probe.serverSecondMs >= boundaryMs) lo = Math.max(lo, edge);
+  else hi = Math.min(hi, edge);
+  return lo <= hi ? { lo, hi } : { lo: hi, hi: lo };
+}
+
+/** Aim at a boundary at least this far ahead, so the probe can be sent on time. */
+const REFINE_AIM_AHEAD_MS = 150;
+
 /** Time a stale cached response cannot have: the server second stopped moving or is far off. */
 const STALE_OFFSET_MS = 10 * 60 * 1000;
 
@@ -69,7 +94,7 @@ export class TimeCalibrator {
    * Probes targetUrl back-to-back until `boundaries` second roll-overs were observed (or the time budget
    * runs out) and stores the median offset.
    */
-  async calibrate(boundaries = 3, budgetMs = 6000, targetUrl?: string): Promise<ClockCalibration> {
+  async calibrate(boundaries = 3, budgetMs = 6000, targetUrl?: string, refineRounds = 0): Promise<ClockCalibration> {
     // Only the site being hunted is probed: there is no default site to fall back to.
     let urlHost: string;
     try {
@@ -81,12 +106,18 @@ export class TimeCalibrator {
     }
     const running = this.inFlight.get(urlHost);
     if (running) return running;
-    const run = this.run(boundaries, budgetMs, targetUrl!, urlHost).finally(() => this.inFlight.delete(urlHost));
+    const run = this.run(boundaries, budgetMs, targetUrl!, urlHost, refineRounds).finally(() => this.inFlight.delete(urlHost));
     this.inFlight.set(urlHost, run);
     return run;
   }
 
-  private async run(boundaries: number, budgetMs: number, activeUrl: string, urlHost: string): Promise<ClockCalibration> {
+  private async run(
+    boundaries: number,
+    budgetMs: number,
+    activeUrl: string,
+    urlHost: string,
+    refineRounds = 0
+  ): Promise<ClockCalibration> {
 
     const probes: ClockProbe[] = [];
     const deadline = Date.now() + budgetMs;
@@ -135,7 +166,13 @@ export class TimeCalibrator {
 
     const rtts = probes.map((p) => p.receivedAt - p.sentAt).sort((a, b) => a - b);
     const medianRtt = rtts.length ? rtts[Math.floor(rtts.length / 2)] : 0;
-    const estimate = estimateOffsetFromProbes(probes);
+    let estimate = estimateOffsetFromProbes(probes);
+
+    // Precise mode: aim single probes at the next second boundaries and halve the bracket each time
+    // (one probe per second, about refineRounds seconds), from ~RTT/2 + pacing down to a few ms.
+    if (estimate && refineRounds > 0) {
+      estimate = await this.refine(estimate, refineRounds, activeUrl, medianRtt, rtts);
+    }
 
     const calibration: ClockCalibration = estimate
       ? {
@@ -151,6 +188,45 @@ export class TimeCalibrator {
     // A failed run (site unreachable, no Date header) must not replace a good calibration
     if (calibration.calibrated) await storage.saveCalibration(calibration);
     return calibration;
+  }
+
+  private async refine(
+    rough: { offsetMs: number; errorMs: number },
+    rounds: number,
+    url: string,
+    medianRtt: number,
+    roughRtts: number[]
+  ): Promise<{ offsetMs: number; errorMs: number }> {
+    let bracket: OffsetBracket = { lo: rough.offsetMs - rough.errorMs, hi: rough.offsetMs + rough.errorMs };
+    const rtts = [...roughRtts];
+    for (let r = 0; r < rounds && bracket.hi - bracket.lo > 2; r++) {
+      const center = (bracket.lo + bracket.hi) / 2;
+      const boundary = Math.ceil((Date.now() + center + medianRtt / 2 + REFINE_AIM_AHEAD_MS) / 1000) * 1000;
+      // Send so that the probe's midpoint falls on the boundary if the offset is the bracket's centre
+      const sendAt = boundary - center - medianRtt / 2;
+      await new Promise((res) => setTimeout(res, Math.max(0, sendAt - Date.now())));
+      let p: ClockProbe | null = null;
+      try {
+        p = await this.probe(url);
+      } catch {
+        p = null;
+      }
+      if (!p) continue;
+      // Aimed at the boundary, the answer can only be the second before it or the boundary's own:
+      // anything else means the server clock jumped or the answer was cached. Trust none of it.
+      if (p.serverSecondMs !== boundary && p.serverSecondMs !== boundary - 1000) return rough;
+      rtts.push(p.receivedAt - p.sentAt);
+      bracket = narrowBracket(bracket, p, boundary);
+    }
+    const offsetMs = Math.round((bracket.lo + bracket.hi) / 2);
+    // A refined offset outside the rough one (plus an RTT) means the probes went wrong: keep the rough
+    if (Math.abs(offsetMs - rough.offsetMs) > rough.errorMs + medianRtt) return rough;
+    // The midpoint is not exactly the server's moment: add half the spread of the round trips
+    rtts.sort((a, b) => a - b);
+    const q = (f: number) => rtts[Math.min(rtts.length - 1, Math.floor((rtts.length - 1) * f))] ?? 0;
+    const rttSpread = rtts.length >= 4 ? q(0.75) - q(0.25) : medianRtt / 2;
+    const errorMs = Math.min(rough.errorMs, Math.max(2, Math.round((bracket.hi - bracket.lo) / 2 + rttSpread / 2)));
+    return { offsetMs, errorMs };
   }
 }
 

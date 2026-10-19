@@ -1,4 +1,4 @@
-import { MESSAGE_ACTIONS, STORAGE_KEYS } from "../../lib/constants";
+import { CLOCK_REFINE_ROUNDS, MESSAGE_ACTIONS, STORAGE_KEYS } from "../../lib/constants";
 import { ClockCalibration, PlatformTier } from "../../lib/types";
 
 export class TimeSyncClient {
@@ -80,7 +80,15 @@ export class TimeSyncClient {
     }
   }
 
-  async calibrate(targetUrl?: string): Promise<ClockCalibration | null> {
+  /**
+   * Precise calibration shortly before a drop: the usual measurement, then single probes aimed at the
+   * server's next second boundaries to halve the uncertainty each second (about 10 s in all).
+   */
+  calibratePrecise(): Promise<ClockCalibration | null> {
+    return this.calibrate(undefined, CLOCK_REFINE_ROUNDS);
+  }
+
+  async calibrate(targetUrl?: string, refine = 0): Promise<ClockCalibration | null> {
     if (this.isCalibrating) return null;
     this.isCalibrating = true;
     try {
@@ -91,6 +99,7 @@ export class TimeSyncClient {
       const res = await chrome.runtime.sendMessage({
         action: MESSAGE_ACTIONS.CALIBRATE_TIME,
         samples: 3, // second roll-overs to observe
+        refine, // probes aimed at second boundaries (precise mode)
         targetUrl: targetUrl || defaultPing,
       });
       if (res && res.calibration) {

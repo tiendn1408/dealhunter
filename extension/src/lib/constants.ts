@@ -72,3 +72,8 @@ export const MESSAGE_ACTIONS = {
 
 /** Message the DealHunter web app sends (chrome.runtime.sendMessage from the page) on sign-in, token refresh and sign-out. */
 export const WEB_SESSION_MESSAGE = "DH_WEB_SESSION";
+
+/** Precise clock calibration: probes aimed at the server's second boundaries, each halves the uncertainty. */
+export const CLOCK_REFINE_ROUNDS = 6;
+/** The precise calibration runs this long before a planned strike (it takes about 10 s). */
+export const PRECISE_CALIBRATION_LEAD_MS = 30_000;

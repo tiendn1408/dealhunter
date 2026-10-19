@@ -4,7 +4,7 @@ import { timeSyncClient } from "./time_sync_client";
 import { targetDiagnostics } from "./target_diagnostics";
 import { ClickProfileMode } from "./human_biometrics";
 import { storage } from "../../lib/storage";
-import { MESSAGE_ACTIONS } from "../../lib/constants";
+import { MESSAGE_ACTIONS, PRECISE_CALIBRATION_LEAD_MS } from "../../lib/constants";
 import { ScheduledTask, TaskStatus, TargetDiagnosticsSummary } from "../../lib/types";
 import { nextExactDropAt } from "../../lib/drop_time";
 import { isSamePageUrl } from "../../lib/url";
@@ -49,6 +49,8 @@ export interface CoordinatorState {
 
 export class HuntCoordinator {
   private activeCancel: (() => void) | null = null;
+  /** Precise clock calibration shortly before a planned strike (see schedulePreciseCalibration). */
+  private preciseTimer: ReturnType<typeof setTimeout> | null = null;
   private currentSession: ArmedSession | null = null;
   private retired = false;
   private listeners: Set<(state: CoordinatorState) => void> = new Set();
@@ -207,6 +209,8 @@ export class HuntCoordinator {
       taskId: params.taskId,
       outcome: undefined,
     });
+
+    this.schedulePreciseCalibration(params.targetTimestamp, adapter);
 
     this.activeCancel = startHunt({
       targetTimestamp: params.targetTimestamp,
@@ -367,9 +371,34 @@ export class HuntCoordinator {
   }
 
   /**
+   * A platform that plans its strike from the measured times (Caffiliate) gets a precise clock
+   * calibration about 30 s before the drop: the strike plan is computed at T - 3.5 s from the
+   * clock error, so a few ms instead of ~80 ms both moves the aim closer to 00:00 and removes the
+   * offset's own bias. Other marketplaces are not probed again near the drop.
+   */
+  private schedulePreciseCalibration(targetTimestamp: number, adapter: ReturnType<typeof getAdapterForUrl>): void {
+    this.clearPreciseTimer();
+    if (!adapter?.planStrike) return;
+    const run = () => {
+      this.preciseTimer = null;
+      timeSyncClient.calibratePrecise().catch(() => {});
+    };
+    const untilDrop = targetTimestamp - timeSyncClient.getServerTime();
+    const delay = untilDrop - PRECISE_CALIBRATION_LEAD_MS;
+    if (delay > 0) this.preciseTimer = setTimeout(run, delay);
+    else if (untilDrop > 12_000) run(); // armed late: still time to finish before the plan at T - 3.5 s
+  }
+
+  private clearPreciseTimer(): void {
+    if (this.preciseTimer) clearTimeout(this.preciseTimer);
+    this.preciseTimer = null;
+  }
+
+  /**
    * Cancels the active hunt and optionally notifies background to cancel the task.
    */
   disarm(updateStorage = true): void {
+    this.clearPreciseTimer();
     const taskId = this.currentSession?.taskId;
     const token = this.currentSession?.token;
     // A running engine reports the cancel itself (handleDone -> TASK_STATUS_UPDATE "cancelled")
@@ -414,6 +443,7 @@ export class HuntCoordinator {
    */
   retire(): void {
     this.retired = true;
+    this.clearPreciseTimer();
     const cancel = this.activeCancel;
     this.activeCancel = null;
     this.currentSession = null;
@@ -425,6 +455,7 @@ export class HuntCoordinator {
   }
 
   clearTargetAndOutcome(): void {
+    this.clearPreciseTimer();
     const token = this.currentSession?.token;
     if (this.activeCancel) {
       this.activeCancel();
@@ -469,6 +500,7 @@ export class HuntCoordinator {
 
   private handleDone(outcome: HuntOutcome): void {
     if (this.retired) return;
+    this.clearPreciseTimer();
     this.activeCancel = null;
     const taskId = this.currentSession?.taskId;
     const token = this.currentSession?.token;

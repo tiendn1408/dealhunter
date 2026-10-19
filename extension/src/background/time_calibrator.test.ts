@@ -84,3 +84,78 @@ describe("a site whose favicon comes from a CDN cache", () => {
     expect(isStaleServerTime([first], { sentAt: now + 900, receivedAt: now + 900, serverSecondMs: sec })).toBe(false);
   });
 });
+
+describe("precise calibration: probes aimed at second boundaries", () => {
+  it("narrowBracket halves the bracket around the true offset, whichever side the probe lands", async () => {
+    const { narrowBracket } = await import("./time_calibrator");
+    const trueOffset = 437;
+    let b = { lo: 437 - 80, hi: 437 + 80 }; // the rough measurement: ±80 ms
+    for (let r = 0; r < 6; r++) {
+      const center = (b.lo + b.hi) / 2;
+      const boundary = 2_000_000_000_000 + r * 1000;
+      const mid = boundary - center; // probe midpoint aimed at the boundary
+      const probe = { sentAt: mid - 20, receivedAt: mid + 20, serverSecondMs: Math.floor((mid + trueOffset) / 1000) * 1000 };
+      b = narrowBracket(b, probe, boundary);
+      expect(b.lo).toBeLessThanOrEqual(trueOffset);
+      expect(b.hi).toBeGreaterThanOrEqual(trueOffset);
+    }
+    expect(b.hi - b.lo).toBeLessThanOrEqual(160 / 2 ** 6 + 1);
+  });
+
+  it("finds the server offset within a few ms (was ~RTT/2 + pacing)", async () => {
+    (globalThis as any).chrome = {
+      storage: { local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) } },
+    };
+    const trueOffset = 437;
+    const oneWay = 15;
+    globalThis.fetch = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, oneWay));
+      const server = Date.now() + trueOffset; // the server stamps the response half-way
+      await new Promise((r) => setTimeout(r, oneWay));
+      return { headers: { get: (h: string) => (h === "Date" ? new Date(Math.floor(server / 1000) * 1000).toUTCString() : null) } };
+    }) as any;
+
+    const rough = await new TimeCalibrator().calibrate(3, 6000, "https://caffiliate.vn/favicon.ico");
+    const precise = await new TimeCalibrator().calibrate(3, 6000 + 6 * 1200, "https://caffiliate.vn/favicon.ico", 6);
+    expect(precise.calibrated).toBe(true);
+    expect(Math.abs(precise.offsetMs - trueOffset)).toBeLessThanOrEqual(8);
+    expect(precise.errorMs).toBeLessThan(rough.errorMs);
+    expect(precise.errorMs).toBeLessThanOrEqual(15);
+  }, 30_000);
+});
+
+describe("precise calibration never makes things worse", () => {
+  beforeEach(() => {
+    (globalThis as any).chrome = {
+      storage: { local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) } },
+    };
+  });
+
+  function server(trueOffset: () => number, oneWay = 15, fail: () => boolean = () => false) {
+    globalThis.fetch = vi.fn(async () => {
+      if (fail()) throw new Error("network down");
+      await new Promise((r) => setTimeout(r, oneWay));
+      const at = Date.now() + trueOffset();
+      await new Promise((r) => setTimeout(r, oneWay));
+      return { headers: { get: (h: string) => (h === "Date" ? new Date(Math.floor(at / 1000) * 1000).toUTCString() : null) } };
+    }) as any;
+  }
+
+  it("a server clock that jumps 3 s during the refine is ignored: the rough measurement is kept", async () => {
+    const start = Date.now();
+    server(() => (Date.now() - start > 4000 ? 437 + 3000 : 437));
+    const cal = await new TimeCalibrator().calibrate(3, 13_200, "https://caffiliate.vn/favicon.ico", 6);
+    expect(cal.calibrated).toBe(true);
+    expect(Math.abs(cal.offsetMs - 437)).toBeLessThanOrEqual(80); // the rough one, not 3437
+    expect(cal.errorMs).toBeGreaterThan(10); // and its honest error, no false precision
+  }, 30_000);
+
+  it("probes failing during the refine keep the rough measurement and its error", async () => {
+    const start = Date.now();
+    server(() => 437, 15, () => Date.now() - start > 4000);
+    const cal = await new TimeCalibrator().calibrate(3, 13_200, "https://caffiliate.vn/favicon.ico", 6);
+    expect(cal.calibrated).toBe(true);
+    expect(Math.abs(cal.offsetMs - 437)).toBeLessThanOrEqual(80);
+    expect(cal.errorMs).toBeGreaterThan(10); // no fake precision when nothing was refined
+  }, 30_000);
+});

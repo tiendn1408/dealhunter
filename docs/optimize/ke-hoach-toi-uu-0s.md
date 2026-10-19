@@ -78,11 +78,12 @@ Chi tiết từng lần thử trong chuỗi khai hỏa:
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **1** | **23:59:58.685** | **Hàm** | **1432 ms** | **00:00:00.207 (+1522 ms)** | **418 ms · 200** | **«success=true · Điểm danh thành công!»** |
 
-> **Lưu ý đọc nhật ký [Đã kiểm, `src/lib/checkin_log.ts`]:** mốc `00:00:00.207 (+1522)` là lúc request **rời trình duyệt** (`sent`, theo giờ máy chủ đã hiệu chỉnh), không phải lúc máy chủ trả lời. `418 ms` là thời gian từ lúc gửi tới lúc nhận câu trả lời. Request tới máy chủ khoảng `00:00:00.207 + mạng một chiều (~39 ms)` ≈ `00:00:00.246`; câu trả lời về khoảng `00:00:00.625`.
 | 2 | 23:59:58.705 | Hàm | 1 ms | — | — | (Đã xác nhận từ lần 1) |
 | 3 | 23:59:58.728 | Hàm | 1 ms | — | — | (Đã xác nhận từ lần 1) |
 | 4 | 23:59:58.748 | Hàm | 1 ms | — | — | (Đã xác nhận từ lần 1) |
 | 5 | 23:59:58.770 | Hàm | 1 ms | — | — | (Đã xác nhận từ lần 1) |
+
+> **Lưu ý đọc nhật ký [Đã kiểm, `src/lib/checkin_log.ts`]:** mốc `00:00:00.207 (+1522)` là lúc request **rời trình duyệt** (`sent`, theo giờ máy chủ đã hiệu chỉnh), không phải lúc máy chủ trả lời. `418 ms` là thời gian từ lúc gửi tới lúc nhận câu trả lời. Request tới máy chủ khoảng `00:00:00.207 + mạng một chiều (~39 ms)` ≈ `00:00:00.246`; câu trả lời về khoảng `00:00:00.625`.
 
 ---
 
@@ -142,7 +143,7 @@ So sánh giữa dự kiến lý thuyết và thực tế đo được đêm 15/1
 
 ---
 
-## 6. Kế hoạch hành động để bứt phá vào Top 1–3 (Đêm 16/10 → 17/10)
+## 6. Kế hoạch hành động để bứt phá vào Top 1–3 (Đêm 16/10 → 17/10) — *đã thay bằng mục 7–9*
 
 Dữ liệu thực tế cho thấy hệ thống chỉ còn cách Top 3 khoảng **100 mili-giây**. Hai đòn bẩy kỹ thuật để san lấp khoảng cách này:
 
@@ -278,7 +279,7 @@ Chi tiết từng lần thử trong chuỗi khai hỏa:
 
 ### 9.3. Bước chuyển tự động sang chế độ 4 mẫu (IQR) cho đêm 19/10 → 20/10 **[Đã kiểm]**
 
-Sau đêm 19/10, lịch sử của `caffiliate.vn` trong trình duyệt đã tích lũy đủ **4 mẫu sạch**: **`[1494, 1522, 1571, 1625]`**. Theo thiết kế trong [`strike_plan.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/lib/strike_plan.ts#L110-L122), kể từ mẫu thứ 4 trở đi, thuật toán tự động nâng cấp theo hai hướng:
+Sau đêm 19/10, lịch sử của `caffiliate.vn` trong trình duyệt đã tích lũy đủ **4 mẫu sạch**: **`[1494, 1522, 1571, 1625]`**. Theo thiết kế trong `extension/src/lib/strike_plan.ts` (`spreadOf`), kể từ mẫu thứ 4 trở đi, thuật toán tự động nâng cấp theo hai hướng:
 
 1. **Trung vị `prepMs` tự động dịch chuyển để bù độ trễ Turnstile**:
    * Với 4 mẫu `[1494, 1522, 1571, 1625]`, trung vị nội suy tuyến tính là:
@@ -305,3 +306,57 @@ Sau đêm 19/10, lịch sử của `caffiliate.vn` trong trình duyệt đã tí
 | **Mốc dự kiến tới máy chủ (`arrivalsMs`)** | `+112 +132 +152 +172 +192 ms` | **`+80 .. +160 ms`** (hoặc `+105 .. +185 ms`) |
 | **Độ sớm khai hỏa (`leadMs`)** | `T − 1448 ms` (`23:59:58.552`) | **`T − 1480 ms` đến `T − 1504 ms`** (`23:59:58.496` – `.520`) |
 | **Dự kiến chạm máy chủ nếu prep = 1522–1571ms** | `~00:00:00.216` (thực tế khi prep = 1625ms) | **`~00:00:00.055` – `~00:00:00.129`** |
+
+---
+
+## 10. Chỉnh đồng hồ chính xác sát 0h (v2.5, 19/10/2026 — chưa chạy thực tế)
+
+**Kết quả đêm 18/10 → 19/10:** Hạng **#4** trên Bảng vàng (gửi `00:00:00.178`, tới máy chủ ~`00:00:00.216`). Top 3 tới máy chủ sớm hơn mốc này. **[Đã kiểm, theo chủ dự án]**
+
+### 10.1. Vì sao sai số đồng hồ ~±80 ms **[Đã kiểm, `src/background/time_calibrator.ts`]**
+
+Giờ máy chủ chỉ đọc được qua header `Date` (độ phân giải 1 giây). Cách cũ gửi request liên tục cách nhau 80 ms và bắt lúc giây máy chủ nhảy; mỗi lần nhảy chỉ kẹp được giữa 2 request cách nhau ~RTT + 80 ms, nên sai số ≈ (RTT + 80) / 2 ≈ 78 ms, và bản thân độ lệch đo được cũng có thể **lệch hẳn** vài chục ms.
+
+### 10.2. Cách mới: bắn đúng vào lúc máy chủ đổi giây, chia đôi mỗi giây
+
+1. Đo thô như cũ (3 lần nhảy giây).
+2. Sau đó 6 vòng, mỗi giây 1 request, căn để điểm giữa của request rơi đúng vào lúc **dự đoán** máy chủ đổi sang giây mới. Máy chủ trả giây mới → đồng hồ máy chủ đi nhanh hơn dự đoán; trả giây cũ → chậm hơn. Mỗi vòng thu hẹp khoảng nghi ngờ còn một nửa (`narrowBracket`).
+3. Sai số cuối = nửa khoảng còn lại + nửa độ dao động RTT; nếu kết quả lệch khỏi lần đo thô quá xa thì bỏ, giữ lần đo thô.
+
+Chạy **khoảng 30 giây trước 0h** (`PRECISE_CALIBRATION_LEAD_MS`), chỉ cho nền tảng tự lập lịch bắn (Caffiliate), mất khoảng 10 giây, xong trước lúc lập kế hoạch bắn (T − 3.5 s). Các sàn khác không bị gửi thêm request sát giờ.
+
+Thử với máy chủ giả lệch đúng 437 ms (test `time_calibrator.test.ts` và chạy thử):
+
+| Mạng một chiều | Cách cũ | Cách mới |
+| :--- | :--- | :--- |
+| 15 ms | 450 ms ± 58 | **436 ms ± 3** |
+| 38 ms | 484 ms ± 83 | **435 ms ± 6** |
+
+Với mạng ~38 ms (như Caffiliate), cách cũ đo **lệch 47 ms** so với thật mà vẫn tưởng là đúng trong biên ±83.
+
+### 10.3. Ảnh hưởng tới kế hoạch đêm 19/10 → 20/10 **[Suy luận]**
+
+- Biên an toàn: sai số đồng hồ từ ~±80 ms xuống vài ms, mốc ngắm tới máy chủ từ ~+105 ms về ~+80 ms.
+- Quan trọng hơn: bỏ được độ lệch có hệ thống của đồng hồ (có thể tới vài chục ms, sớm hoặc muộn) mà cách cũ không biết.
+- Giới hạn còn lại là độ dao động của Turnstile (4 đêm: 1494–1625 ms, ~130 ms): dù đồng hồ đúng tuyệt đối, request vẫn tới trong khoảng ~+27 đến ~+158 ms tuỳ đêm.
+
+**Cần kiểm chứng sau đêm nay:** dòng «Kế hoạch» trong Nhật ký phải có `±` nhỏ hơn hẳn (khoảng ±50–55 ms thay vì ±75); hạng Bảng vàng; mốc `sent`.
+
+### 10.4. Kiểm tra trước đêm 19/10 → 20/10 **[Đã kiểm]**
+
+**Luồng tự động lúc 23:59:00** (`src/background/scheduler.ts`, `preWarmSeconds` mặc định 60): chỉnh giờ thô theo máy chủ Caffiliate → tìm tab Caffiliate đang mở, chuyển sang tab đó và đưa cửa sổ lên trước (còn ≥ 20 s thì tải lại trang); chưa có tab thì tự mở tab mới → gửi lệnh săn. Bước chỉnh giờ chính xác chạy ở 23:59:30, xong khoảng 23:59:40, trước khi lập kế hoạch bắn (23:59:56.5).
+
+**Test mới (345 test, tất cả qua):**
+
+| Tình huống | Kết quả mong đợi | File test |
+| :--- | :--- | :--- |
+| Mẫu kẹt 7864 ms (đêm 17/10), một mẫu kẹt giữa 4 mẫu tốt | Không bao giờ bắt đầu sau 0h; thay đổi < 60 ms | `src/lib/strike_plan_safety.test.ts` |
+| Không có lịch sử, đồng hồ chưa chỉnh, chỉ có mẫu kẹt, số 0/âm/NaN, mạng chậm, 2000 bộ dữ liệu ngẫu nhiên | Kế hoạch luôn hợp lệ: bắt đầu trong [0, 3000] ms trước 0h, các lần thử tăng dần, request đầu tới sau 0h | `src/lib/strike_plan_safety.test.ts` |
+| Đầu vào tối nay với đồng hồ chính xác | Mốc tới máy chủ +60..+100 ms, bắt đầu 1.4–1.6 s trước 0h | `src/lib/strike_plan_safety.test.ts` |
+| Máy chủ giả lệch 437 ms | Tìm lại trong ±8 ms, sai số ≤ 15 ms | `src/background/time_calibrator.test.ts` |
+| Giờ máy chủ nhảy 3 s giữa chừng / request lỗi giữa chừng | Giữ kết quả đo thô và sai số thật, không báo chính xác giả | `src/background/time_calibrator.test.ts` |
+| Hẹn giờ chỉnh chính xác | Chạy đúng 1 lần ở T−30 s; chỉ cho Caffiliate; huỷ khi tắt săn; trang tải lại lúc 23:59:00 không làm chạy 2 lần; bật trễ (T−20 s) thì chạy ngay; quá trễ (T−8 s) thì bỏ | `src/content/core/hunt_coordinator_precise_clock.test.ts` |
+
+**Đo thật với máy chủ Caffiliate** (từ môi trường test Node, RTT ~300 ms, cao hơn ~76 ms của Chrome): cách cũ `350 ms ± 424`, cách mới `228 ms ± 63` và `197 ms ± 44`. Hai lần đo cách mới chênh 31 ms, nằm trong sai số tự báo.
+
+**Lưu ý vận hành:** đừng bấm «Đồng bộ giờ» trong popup/HUD sau 23:59:30, vì nút đó chỉnh giờ thô và ghi đè kết quả chính xác.
