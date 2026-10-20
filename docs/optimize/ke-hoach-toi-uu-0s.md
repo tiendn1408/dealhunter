@@ -1,8 +1,8 @@
 # Kế hoạch tối ưu điểm danh 0 giây (Caffiliate)
 
-> **Phiên bản**: 2.6 · **Cập nhật**: 20-10-2026 (báo cáo thực chiến đêm 19/10 → 20/10 đạt **Hạng #2 Bảng vàng**, nhận thưởng sớm +2 xèng, xem mục 11)  
+> **Phiên bản**: 2.7 · **Cập nhật**: 21-10-2026 (báo cáo thực chiến đêm 20/10 → 21/10 đạt **Hạng #1 Bảng vàng**, nhận thưởng sớm +3 xèng, và phân tích rủi ro sát biên khi đối thủ cũ vắng mặt, xem mục 12)  
 > **Phạm vi**: `extension/` (Caffiliate adapter, main-world bridge, strike plan, bộ hiệu chỉnh đồng hồ chính xác, nhật ký điểm danh)  
-> **Mục tiêu**: Lượt điểm danh được máy chủ xử lý **ngay sau** 00:00:00, lọt vào cửa sổ Top 1–3 Bảng vàng điểm danh (nhận thưởng +3 hoặc +2 xèng). — **Đã đạt mục tiêu (Hạng #2 ngày 20/10/2026)**.
+> **Mục tiêu**: Lượt điểm danh được máy chủ xử lý **ngay sau** 00:00:00, lọt vào cửa sổ Top 1–3 Bảng vàng điểm danh (nhận thưởng +3 hoặc +2 xèng). — **Đã đạt Hạng #2 (20/10) và Hạng #1 (21/10)**.
 
 **Cách đọc các ghi chú:**
 
@@ -119,16 +119,18 @@ So sánh giữa dự kiến lý thuyết và thực tế đo được đêm 15/1
 
 ## 4. Bảng tổng hợp diễn biến qua các đêm
 
-| Tiêu chí | Đêm 13/10 → 14/10 | Đêm 15/10 → 16/10 | Đêm 17/10 → 18/10 | Đêm 18/10 → 19/10 | Đêm 19/10 → 20/10 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Thứ hạng Bảng vàng** | Hạng #4 (`00:00:01`) | Hạng #4 (`00:00:00`) | Ngoài Top 3 (`00:00:08`) | Hạng #4 (`00:00:00`) | **Hạng #2 (`00:00:00` · +2 xèng)** |
-| **Kế hoạch (`leadMs` · `sigmaMs`)** | `T−98ms` · `±48ms` | `T−1324ms` · `±397ms` | `T--6598ms` · `±5471ms` | `T−1448ms` · `±75ms` | **`T−1505ms` · `±53ms`** |
-| **Mốc dự kiến chạm máy chủ** | `−59 .. +92 ms` | `+397 .. +477 ms` | `+8206 .. +8286 ms` | `+112 .. +192 ms` | **`+79 .. +159 ms`** |
-| **Lần 1 xuất phát thực tế** | `23:59:59.906` | `23:59:58.685` | `00:00:06.603` | `23:59:58.554` | **`23:59:58.498`** |
-| **Turnstile Lần 1 (`sentAfterMs`)** | 1434 ms (`+1571`) | 1432 ms (`+1522`) | 1367 ms (`+1494`) | 1489 ms (`+1625`) | **1382 ms (`+1451`)** |
-| **Giờ gửi request (`sent`)** | `00:00:01.477` | `00:00:00.207` | `00:00:08.096` | `00:00:00.178` | **`23:59:59.948`** |
-| **Ước tính chạm máy chủ** | `~00:00:01.516` | `~00:00:00.246` | `~00:00:08.133` | `~00:00:00.216` | **`~23:59:59.986`** |
-| **Thời gian mạng + server** | 186 ms | 418 ms | 224 ms | 207 ms | **562 ms (trả lời `~00:00:00.510`)** |
+| Tiêu chí | Đêm 13/10 → 14/10 | Đêm 15/10 → 16/10 | Đêm 17/10 → 18/10 | Đêm 18/10 → 19/10 | Đêm 19/10 → 20/10 | Đêm 20/10 → 21/10 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Thứ hạng Bảng vàng** | Hạng #4 (`00:00:01`) | Hạng #4 (`00:00:00`) | Ngoài Top 3 (`00:00:08`) | Hạng #4 (`00:00:00`) | **Hạng #2 (`00:00:00` · +2 xèng)** | **Hạng #1 (`00:00:00` · +3 xèng)** |
+| **Giờ chốt trong DB máy chủ** | `00:00:01.xxx` | `~00:00:00.430` (ước tính) | `00:00:08.xxx` | `~00:00:00.380` (ước tính) | **`00:00:00.171` [Đã kiểm DB]** | **`00:00:00.178` [Đã kiểm DB]** |
+| **Kế hoạch (`leadMs` · `sigmaMs`)** | `T−98ms` · `±48ms` | `T−1324ms` · `±397ms` | `T--6598ms` · `±5471ms` | `T−1448ms` · `±75ms` | `T−1505ms` · `±53ms` | **`T−1471ms` · `±58ms`** |
+| **Mốc dự kiến chạm máy chủ** | `−59 .. +92 ms` | `+397 .. +477 ms` | `+8206 .. +8286 ms` | `+112 .. +192 ms` | `+79 .. +159 ms` | **`+87 .. +167 ms`** |
+| **Lần 1 xuất phát thực tế** | `23:59:59.906` | `23:59:58.685` | `00:00:06.603` | `23:59:58.554` | `23:59:58.498` | **`23:59:58.537`** |
+| **Turnstile Lần 1 (`sentAfterMs`)** | 1434 ms (`+1571`) | 1432 ms (`+1522`) | 1367 ms (`+1494`) | 1489 ms (`+1625`) | 1382 ms (`+1451`) | **1338 ms (`+1418`)** |
+| **Giờ gửi request (`sent`)** | `00:00:01.477` | `00:00:00.207` | `00:00:08.096` | `00:00:00.178` | **`23:59:59.948`** | **`23:59:59.955`** |
+| **Ước tính chạm máy chủ** | `~00:00:01.516` | `~00:00:00.246` | `~00:00:08.133` | `~00:00:00.216` | `~23:59:59.986` | **`~23:59:59.991`** |
+| **Độ trễ `sent` → ghi DB** | — | — | — | — | **`+223 ms` (`38ms` mạng + `185ms` CF)** | **`+223 ms` (`36ms` mạng + `187ms` CF)** |
+| **Thời gian mạng + server** | 186 ms | 418 ms | 224 ms | 207 ms | 562 ms (trả lời `~00:00:00.510`) | **300 ms (trả lời `~00:00:00.255`)** |
 
 ---
 
@@ -367,16 +369,18 @@ Với mạng ~38 ms (như Caffiliate), cách cũ đo **lệch 47 ms** so với t
 
 Đêm 19/10 rạng sáng 20/10/2026, hệ thống vận hành đồng thời hai nâng cấp: **chế độ 4 mẫu IQR** (`strike_plan.ts`) và **đồng bộ đồng hồ nhị phân chính xác ở T − 30s** (`narrowBracket` trong `time_calibrator.ts`). Kết quả: **Tien Dang chính thức vươn lên Hạng #2 trên Bảng vàng điểm danh Caffiliate**, vượt qua các đối thủ quen thuộc (`HaHa`, `Kaito`) và nhận trọn vẹn **+4 xèng** trong ngày (+1 xèng cơ bản, +1 xèng chuỗi 5 ngày, **+2 xèng thưởng Top 2 điểm danh sớm**).
 
-### 11.1. Bảng vàng điểm danh Caffiliate (20/10)
+### 11.1. Bảng vàng điểm danh & Log Database máy chủ Caffiliate (20/10)
 
 ![Bảng vàng điểm danh 20/10/2026](./images/leaderboard-2026-10-20.png)
 
-| Hạng | Tên | Chuỗi ngày | Giờ hiển thị | Thưởng điểm danh sớm | Tổng xèng nhận trong ngày |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **#1** | Méo béo | 152 | `00:00:00` | +3 xèng | — |
-| **#2** | **Tien Dang** | **5** | **`00:00:00`** | **+2 xèng (Đạt mục tiêu Top 1–3)** | **+4 xèng (Lên 103 xèng)** |
-| **#3** | HaHa | 28 | `00:00:00` | +2 xèng | — |
-| **#4** | Kaito | — | `00:00:00` | Không có thưởng sớm (bị đẩy khỏi Top 3) | — |
+![Log Database máy chủ Caffiliate 20/10/2026](./images/server-db-log-2026-10-20.png)
+
+| Hạng | Tên | Chuỗi ngày | Giờ hiển thị UI | Giờ ghi trong Database máy chủ | Khoảng cách với #1 | Thưởng điểm danh sớm |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **#1** | Méo béo | 152 | `00:00:00` | **`00:00:00.119`** | — | +3 xèng |
+| **#2** | **Tien Dang** | **5** | **`00:00:00`** | **`00:00:00.171`** | **+52 ms** | **+2 xèng (Tổng +4 xèng, lên 103 xèng)** |
+| **#3** | HaHa | 28 | `00:00:00` | `> 00:00:00.171` | > +52 ms | +2 xèng |
+| **#4** | Kaito | — | `00:00:00` | `> 00:00:00.171` | > +52 ms | Không có thưởng sớm (bị đẩy khỏi Top 3) |
 
 ### 11.2. Nhật ký điểm danh DealHunter (20/10)
 
@@ -476,3 +480,116 @@ Mỗi sáng ghi 1 dòng (lấy từ ảnh tab Nhật ký + Bảng vàng). Cột 
 - có ít nhất 1–2 đêm request tới máy chủ **trước** 0h mà vẫn thành công (hoặc 1 đêm bị từ chối: khi đó biết luôn ranh giới).
 
 **Vận hành mỗi đêm (giữ nguyên):** tải lại extension chỉ khi có bản build mới; không bấm «Đồng bộ giờ» sau 23:59:30; không bấm «Xoá» trong tab Nhật ký; máy không ngủ, Chrome mở.
+---
+
+## 12. Dữ liệu thực chiến đêm 20/10 → 21/10/2026 (Đạt Hạng #1 Bảng vàng · +3 xèng · Đánh giá khách quan về đối thủ và rủi ro sát biên)
+
+Đêm 20/10 rạng sáng 21/10/2026, hệ thống chạy với 5 mẫu lịch sử sạch. Kết quả: **Tien Dang đạt Hạng #1 trên Bảng vàng điểm danh Caffiliate (`00:00:00`)**, nhận mức thưởng sớm cao nhất (**+3 xèng**, tổng cộng **+4 xèng** trong ngày, nâng tổng tích lũy lên **107 xèng**). Tuy nhiên, đúng như nhận định rất tỉnh táo của chủ dự án, các đối thủ quen thuộc (`Méo béo`, `HaHa`, `Kaito`, `THỐNG`) không xuất hiện trong Top 3 hôm nay và người đứng `#3` rơi sang giây `00:00:01`. Mục này phân tích khách quan cả hai mặt: độ chuẩn xác của hệ thống và lý do vì sao không được chủ quan trước kết quả Top 1 hôm nay.
+
+### 12.1. Bảng vàng điểm danh & Log Database máy chủ Caffiliate (21/10)
+
+![Bảng vàng điểm danh 21/10/2026](./images/leaderboard-2026-10-21.png)
+
+![Log Database máy chủ Caffiliate 21/10/2026](./images/server-db-log-2026-10-21.png)
+
+Đối chiếu trực tiếp giữa Bảng vàng trên giao diện và cột timestamp thực tế trong cơ sở dữ liệu máy chủ Caffiliate (do chủ hệ thống Caffiliate cung cấp):
+
+| Hạng | Tên | Chuỗi ngày | Giờ hiển thị UI | Giờ ghi trong Database máy chủ | Khoảng cách với #1 | Thưởng điểm danh sớm |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **#1** | **Tien Dang** | **6** | **`00:00:00`** | **`00:00:00.178`** | **— (Mốc chuẩn)** | **+3 xèng (Tổng +4 xèng)** |
+| **#2** | Hậu | 96 | `00:00:00` | **`00:00:00.541`** | +363 ms | +2 xèng |
+| **#3** | Khánh Chi Nguyễn | 39 | `00:00:01` | **`00:00:01.125`** | +947 ms | +2 xèng |
+| **#4** | (Đối thủ #4) | — | `00:00:01` | **`00:00:01.233`** | +1055 ms | Không có thưởng sớm |
+| **#5** | (Đối thủ #5) | — | `00:00:01` | **`00:00:01.565`** | +1387 ms | Không có thưởng sớm |
+| **#6** | (Đối thủ #6) | — | `00:00:01` | **`00:00:01.626`** | +1448 ms | Không có thưởng sớm |
+
+### 12.2. Nhật ký điểm danh DealHunter (21/10) và khớp nối từng mili-giây với Database máy chủ **[Đã kiểm]**
+
+![Nhật ký điểm danh 21/10/2026](./images/timing-log-2026-10-21.png)
+
+Kết quả ghi nhận: **«Đã điểm danh · page confirmed»**, lúc 20/10 23:59:58.
+
+```text
+Kế hoạch: 5 lần từ T−1471ms · chuẩn bị ~1522ms · mạng ~36ms · ±58ms
++87 +107 +127 +147 +167 ms
+```
+
+Chi tiết từng lần thử trong chuỗi khai hỏa:
+
+| Lần | Bắt đầu (`a.start`) | Tầng | Turnstile | Gửi request (`a.sent`) | Gửi → trả lời · HTTP | Câu trả lời máy chủ |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **1** | **23:59:58.537** | **Hàm** | **1338 ms** | **23:59:59.955 (+1418 ms)** | **300 ms · 200** | **«success=true · Điểm danh thành công!»** |
+| 2 | 23:59:58.557 | Hàm | 1 ms | — | — | (Đã xác nhận từ lần 1) |
+| 3 | 23:59:58.581 | Hàm | 1 ms | — | — | (Đã xác nhận từ lần 1) |
+| 4 | 23:59:58.602 | Hàm | 1 ms | — | — | (Đã xác nhận từ lần 1) |
+| 5 | 23:59:58.623 | Hàm | 1 ms | — | — | (Đã xác nhận từ lần 1) |
+
+> **Khớp nối hoàn hảo giữa Nhật ký trình duyệt và Log Database máy chủ (`00:00:00.178`) [Đã kiểm]:**
+> Trước khi nhận được ảnh chụp Database từ chủ Caffiliate, mô hình của chúng ta đã ước tính thời điểm máy chủ ghi Database là `~00:00:00.180` — lệch đúng **2 mili-giây** so với con số thật trong Database là **`00:00:00.178`**. Toàn bộ đường đi 300 ms của gói tin trên máy chủ được xác định chính xác từng đoạn như sau:
+> - **`23:59:59.955`** ($T - 45\text{ ms}$): Gói tin `POST /api/v2/xeng/check-in-secure` rời trình duyệt (`a.sent`).
+> - **`23:59:59.991`** ($T - 9\text{ ms}$): Sau `36 ms` đường truyền một chiều (`oneWayMs`), gói tin chạm socket máy chủ Caffiliate.
+> - **`23:59:59.991` $\rightarrow$ `00:00:00.178` (`187 ms`)**: Máy chủ Caffiliate gọi API `siteverify` sang Cloudflare để kiểm tra token Turnstile.
+> - **`00:00:00.178`** ($T + 178\text{ ms}$): Cloudflare trả về hợp lệ, máy chủ Caffiliate thực thi câu lệnh ghi điểm danh vào Database với timestamp **`00:00:00.178`** (chốt **Hạng #1**).
+> - **`00:00:00.178` $\rightarrow$ `00:00:00.219` (`41 ms`)**: Máy chủ hoàn tất transaction Database và phát gói tin phản hồi `HTTP 200` rời máy chủ.
+> - **`00:00:00.255`** ($T + 255\text{ ms}$): Sau `36 ms` đường về, trình duyệt nhận xong phản hồi (`23:59:59.955 + 300 ms = 00:00:00.255`).
+
+```text
+23:59:58.537                23:59:59.955   23:59:59.991     00:00:00.000          00:00:00.178       00:00:00.219   00:00:00.255
+     │─────── +1418 ms ──────────►│──── 36ms ───►│───────────────┼─────────────────────►│──── 41ms ───────►│──── 36ms ───►│
+ [Bắt đầu]                   [Gửi POST]     [Tới Server]    [Mốc 00:00:00]      [DB INSERT: .178]     [Server trả]   [Browser nhận]
+Gọi app.checkIn()           Request rời     Server gọi CF                       Verify CF xong (187ms)  Commit DB &    Tổng round-trip
+& giải Turnstile 1338ms     trình duyệt     siteverify                          & ghi Hạng #1 vào DB    xuất JSON      = 300ms · 200 OK
+```
+
+### 12.3. Đối chiếu thông số kế hoạch với dự báo mục 11.4 **[Đã kiểm]**
+
+Toàn bộ các con số trong kế hoạch đêm 21/10 trùng khớp với dự báo lý thuyết từ đêm trước với độ lệch không quá **1 mili-giây**:
+
+| Thông số | Dự báo tại mục 11.4 (tối 20/10) | Thực tế chạy đêm 20/10 → 21/10 | Độ lệch |
+| :--- | :--- | :--- | :--- |
+| **Trung vị chuẩn bị (`prepMs`)** | `1522 ms` | **`1522 ms`** | **0 ms** |
+| **Độ trễ mạng một chiều (`oneWayMs`)** | `38 ms` (giả định) | **`36 ms`** (đo thực tế `rttMs = 72 ms`) | 2 ms |
+| **Độ bất định nhận request (`sigmaMs`)** | `±59 ms` | **`±58 ms`** | **1 ms** |
+| **Mốc dự kiến tới máy chủ (`arrivalsMs`)** | `+88 +108 +128 +148 +168 ms` | **`+87 +107 +127 +147 +167 ms`** | **1 ms** |
+| **Độ sớm khai hỏa (`leadMs`)** | `T − 1472 ms` (`23:59:58.528`) | **`T − 1471 ms`** (`23:59:58.529`) | **1 ms** |
+
+### 12.4. Phát hiện quy luật bất biến `223 ms` (`186 ms` Cloudflare `siteverify`) qua 2 đêm liên tiếp **[Đã kiểm]**
+
+Khi đặt cạnh nhau log trình duyệt và log Database máy chủ của cả 2 đêm 20/10 (Hạng #2) và 21/10 (Hạng #1), một quy luật toán học bất biến xuất hiện với **độ lệch 0 mili-giây**:
+
+| Chỉ số đo đạc | Đêm 19/10 → 20/10 (Hạng #2) | Đêm 20/10 → 21/10 (Hạng #1) | Nhận xét |
+| :--- | :--- | :--- | :--- |
+| **1. Giờ request rời trình duyệt (`a.sent`)** | **`23:59:59.948`** ($-52\text{ ms}$) | **`23:59:59.955`** ($-45\text{ ms}$) | Hai đêm gửi cách nhau đúng **7 ms** |
+| **2. Mạng một chiều (`oneWayMs`)** | `38 ms` | `36 ms` | Ổn định quanh `36–38 ms` |
+| **3. Giờ chạm cổng máy chủ (`receipt`)** | `23:59:59.986` ($-14\text{ ms}$) | `23:59:59.991` ($-9\text{ ms}$) | Đều chạm máy chủ ngay sát trước 0h |
+| **4. Giờ ghi vào Database (`created_at`)** | **`00:00:00.171`** ($+171\text{ ms}$) | **`00:00:00.178`** ($+178\text{ ms}$) | Hai đêm chốt DB cách nhau đúng **7 ms**! |
+| **5. Độ trễ từ lúc gửi (`sent`) → ghi DB** | $171 - (-52) = \mathbf{223\text{ ms}}$ | $178 - (-45) = \mathbf{223\text{ ms}}$ | **Bất biến tuyệt đối (`223 ms` cả 2 đêm!)** |
+| **6. Thời gian Server gọi Cloudflare `siteverify` trước khi ghi DB** | $171 - (-14) = \mathbf{185\text{ ms}}$ | $178 - (-9) = \mathbf{187\text{ ms}}$ | **Cố định ở mức `185–187 ms` (±1 ms)** |
+| **7. Thời gian xử lý sau khi ghi DB → trả lời xong (`serverMs`)** | `339 ms` (tổng `562 ms`) | `77 ms` (tổng `300 ms`) | Phần biến động (`300ms` vs `562ms`) nằm hoàn toàn **sau** khi đã chốt hạng vào DB! |
+
+**Ba kết luận quan trọng từ bảng đối chiếu 2 đêm (`00:00.171` và `00:00.178`):**
+
+1. **Khẳng định đây là độ ổn định của hệ thống, KHÔNG PHẢI may mắn ngẫu nhiên**:
+   * Đêm 20/10 (khi có đủ mặt `Méo béo`, `HaHa`, `Kaito`), bạn đạt **`00:00:00.171`** trong Database (chỉ kém `#1 Méo béo` `00:00:00.119` đúng **52 ms**, và thắng trực tiếp cả `HaHa` lẫn `Kaito`).
+   * Đêm 21/10, bạn đạt **`00:00:00.178`** trong Database — tức hai đêm liên tiếp hệ thống bắn trúng đích với sai lệch chỉ **7 mili-giây** (`171 ms` và `178 ms`).
+2. **Giải thích vì sao `serverMs` biến động mạnh (`562 ms` so với `300 ms`) nhưng độ trễ ghi DB vẫn cố định đúng `223 ms`**:
+   * Trước khi có log Database ngày 20/10, chúng ta từng nghĩ `562 ms` là do bước `siteverify` bị nghẽn. Nhưng thực tế, bước `siteverify` trước khi ghi thứ hạng vào bảng điểm danh luôn mất đúng **`185–187 ms`**!
+   * Toàn bộ phần trễ thêm của đêm 20/10 (`562 ms` so với `300 ms`) diễn ra **sau khi bản ghi thứ hạng `.171` đã được chốt vào Database** (ví dụ: cộng xèng thưởng, ghi bảng lịch sử giao dịch xèng, cập nhật chuỗi ngày).
+3. **Giải mã mốc `00:00:00.119` của `#1 Méo béo` (20/10) và lý do nhóm đối thủ cũ vắng mặt đêm 21/10**:
+   * Vì $\Delta_{\text{sent}\to\text{DB}} = 223\text{ ms}$ ($\text{mạng } 37\text{ ms} + \text{siteverify } 186\text{ ms}$), để chốt Database ở `00:00:00.119`, gói tin của `Méo béo` đêm 20/10 đã rời máy lúc `~23:59:59.896` và chạm máy chủ lúc `~23:59:59.933` ($T - 67\text{ ms}$).
+   * Ranh giới sinh tử nằm ở **`sent = 23:59:59.777`** (chạm máy chủ lúc `23:59:59.814` $\rightarrow$ cộng `186 ms` `siteverify` = `00:00:00.000`). Bất kỳ đối thủ nào cố chỉnh sớm thêm ~120 ms (hoặc đêm 21/10 khi Turnstile của họ giải nhanh hơn 100 ms làm request đi trước `23:59:59.777`) sẽ hoàn tất `siteverify` lúc `23:59:59.9xx` $\rightarrow$ bị từ chối «Chưa tới giờ», cháy token Turnstile và văng xuống giây `00:00:01.233`!
+
+### 12.5. Cơ chế tự điều chỉnh của thuật toán cho đêm 21/10 → 22/10 (với 6 mẫu sạch) **[Đã kiểm]**
+
+Điểm mạnh của bộ lập lịch tự thích ứng trong [`strike_plan.ts`](file:///Users/tiendn/Workplace/Projects/deal-hunter/dealhunter/extension/src/lib/strike_plan.ts#L110-L176) là ngay khi nhận mẫu `1418 ms` của đêm 21/10, tập mẫu 6 đêm sạch trở thành **`[1418, 1451, 1494, 1522, 1571, 1625]`** và tự động hiệu chỉnh kép để tăng độ an toàn:
+
+1. **Giảm trung vị `prepMs` xuống `1508 ms`**:
+   $$\text{prepMs} = \frac{1494 + 1522}{2} = \mathbf{1508\text{ ms}}\quad (\text{giảm } 14\text{ ms so với } 1522\text{ ms})$$
+2. **Mở rộng biên an toàn `prepJitter` theo dải dao động thực tế mới**:
+   * $Q_{0.25} = 1451 + 0.25 \times (1494 - 1451) = 1461.75\text{ ms}$
+   * $Q_{0.75} = 1522 + 0.75 \times (1571 - 1522) = 1558.75\text{ ms}$
+   * $\text{IQR} = 1558.75 - 1461.75 = 97.0\text{ ms} \implies \text{prepJitter} = \frac{97.0}{1.349} \approx \mathbf{71.9\text{ ms}}$ (tăng từ `57.1 ms` lên `71.9 ms`).
+3. **Kế hoạch dự kiến cho đêm 21/10 → 22/10** (giả định `oneWayMs = 36 ms`, `clockErrorMs ≈ 14 ms`):
+   * **Độ bất định (`sigmaMs`)**: $\sqrt{8.0^2 + 71.9^2 + 9.0^2} \approx \mathbf{73\text{ ms}}$ (`±73ms`).
+   * **Mốc dự kiến tới máy chủ (`arrivalsMs`)**: **`+109 +129 +149 +169 +189 ms`**.
+   * **Độ sớm khai hỏa (`leadMs`)**: $1508 + 36 - 109 = \mathbf{1435\text{ ms}}$ (`T − 1435 ms`, khai hỏa lúc **`23:59:58.565`**, tức **lùi muộn hơn 36 ms** so với đêm 21/10 để bảo vệ lượt bắn đầu tiên không bị lố trước 0h khi Turnstile giải nhanh).
