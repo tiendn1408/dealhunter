@@ -427,11 +427,12 @@ Gọi app.checkIn()           Request rời     Server bắt đầu             
      * Thực tế: **`+79 +99 +119 +139 +159 ms`** và **`T − 1505 ms`** (`23:59:58.495`).
      * Thực tế Lần 1 bắt đầu lúc **`23:59:58.498`** (sai số điều phối Spin-Wait chỉ **3 ms**).
 
-2. **Giải đáp bài toán thời điểm máy chủ chốt thứ hạng (Vì sao gửi lúc `23:59:59.948` vẫn hợp lệ và đạt Hạng #2?) **[Đã kiểm]****:
+2. **Giải đáp bài toán thời điểm máy chủ chốt thứ hạng (Vì sao gửi lúc `23:59:59.948` vẫn hợp lệ và đạt Hạng #2?)** — *gửi lúc `23:59:59.948` và HTTP 200: [Đã kiểm]; phần kết luận về cách backend xử lý: [Suy luận]*:
    * Đêm 20/10, Turnstile hoàn thành nhanh ở mức **`1382 ms`** và tổng thời gian chuẩn bị `sentAfterMs` chỉ mất **`1451 ms`** (nhanh hơn 96 ms so với trung vị dự kiến `1547 ms`).
    * Do xuất phát lúc `23:59:58.498` và chuẩn bị mất `1451 ms`, gói tin `POST /api/v2/xeng/check-in-secure` rời trình duyệt lúc **`23:59:59.948`** ($T - 52$ms) và chạm socket máy chủ Caffiliate lúc khoảng **`23:59:59.986`** ($T - 14$ms trước nửa đêm).
    * Tuy nhiên, máy chủ **không hề từ chối** báo «Chưa tới giờ», mà xử lý trong **`562 ms`** rồi trả về `HTTP 200 · «success=true · Điểm danh thành công!»` (phản hồi về tới trình duyệt lúc `23:59:59.948 + 562 ms = 00:00:00.510`, tức hoàn tất xử lý trên máy chủ lúc `~00:00:00.472`) và ghi nhận giờ điểm danh trên Bảng vàng là **`00:00:00` — Hạng #2**.
-   * **Kết luận về kiến trúc backend Caffiliate**:
+   * **Độ chắc chắn của mốc «tới máy chủ trước 0h»:** mốc `~23:59:59.986` = lúc gửi + mạng một chiều ước tính 38 ms, trên đồng hồ sai số ±14 ms, nên thực tế nằm khoảng `23:59:59.97` – `00:00:00.00`. **Rất có thể** request tới trước 0h, nhưng chưa chứng minh tuyệt đối từ một đêm.
+   * **Kết luận về kiến trúc backend Caffiliate [Suy luận, 1 đêm, chưa xem được mã nguồn máy chủ]**:
      * Khi nhận request tại `/api/v2/xeng/check-in-secure`, backend Caffiliate **gọi API xác thực token `siteverify` sang máy chủ Cloudflare trước** (quá trình này tốn khoảng `150–450 ms` tùy tải lúc nửa đêm), **sau khi Cloudflare trả về `success: true` mới lấy thời gian hiện tại của máy chủ (`NOW()`) để kiểm tra ngày mới và ghi bản ghi điểm danh vào cơ sở dữ liệu**.
      * Chính vì thời gian xác thực Turnstile phía máy chủ mất vài trăm mili-giây, một gói tin chạm máy chủ ở sát ranh giới `23:59:59.986` ($T - 14$ms) sau khi đi qua bước `siteverify` của Cloudflare sẽ bước sang bên kia mốc `00:00:00.000` đúng vào những chục mili-giây đầu tiên của ngày mới — giúp Tien Dang chiếm **Hạng #2 Bảng vàng**.
 
@@ -447,3 +448,31 @@ Sau đêm 20/10, lịch sử trình duyệt có **5 mẫu sạch**: **`[1451, 14
   $$\text{sigmaMs} = \sqrt{8.0^2 + 57.1^2 + 9.5^2} \approx \mathbf{59\text{ ms}}$$
 - **Mốc dự kiến tới máy chủ (`arrivalsMs`)**: **`+88 +108 +128 +148 +168 ms`**.
 - **Độ sớm khai hỏa (`leadMs`)**: $1522 + 38 - 88 = \mathbf{1472\text{ ms}}$ (`T − 1472 ms`, khai hỏa lúc `23:59:58.528`).
+
+### 11.5. Hệ quả cho bộ lập lịch **[Suy luận]**
+
+- Bộ lập lịch hiện giả định request **tới máy chủ** trước 0h sẽ bị từ chối «chưa tới giờ» và mất token (mục 7). Đêm 20/10 cho thấy request tới sát/trước 0h vẫn được chấp nhận; nếu đúng như vậy, mốc ngắm có thể dời sớm hơn nữa (máy chủ chốt giờ sau bước xác thực Turnstile).
+- **Chưa đổi** bộ lập lịch: mới có 1 đêm làm bằng chứng; nếu sai, request bị từ chối thì lần thử sau phải chờ token mới (~1.4 s) và rơi khỏi Top 3. Đề xuất giữ nguyên vài đêm để xem Top 3 có ổn định với mốc ngắm ~+88 ms không, rồi mới thử dời sớm từng bước nhỏ.
+- Dự báo đêm 20/10 → 21/10 (đã chạy lại `planStrike` với 5 mẫu): request tới máy chủ khoảng **+17 ms** nếu Turnstile nhanh như đêm 20/10 (1451 ms), **+88 ms** nếu bằng trung vị (1522 ms), **+191 ms** nếu chậm như đêm 19/10 (1625 ms).
+
+---
+
+## 12. Giai đoạn đo thống kê (từ đêm 20/10 → 21/10): không đổi code
+
+Quyết định của chủ dự án: giữ nguyên bản hiện tại, đo nhiều đêm để thấy kết quả ổn định tới đâu rồi mới tối ưu tiếp (ví dụ dời mốc ngắm sớm để tranh hạng #1).
+
+Mỗi sáng ghi 1 dòng (lấy từ ảnh tab Nhật ký + Bảng vàng). Cột «Tới máy chủ» = `sent` + `mạng` trong dòng Kế hoạch.
+
+| Đêm | Kế hoạch (`T−lead` · `±σ` · mốc đầu) | Turnstile | `sent` (`+chuẩn bị`) | Tới máy chủ (ước tính) | Gửi → trả lời | Câu trả lời máy chủ | Hạng |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 19/10 → 20/10 | T−1505 · ±53 · +79 | 1382 ms | 23:59:59.948 (+1451) | ~23:59:59.986 | 562 ms | success=true | **#2** |
+| 20/10 → 21/10 | | | | | | | |
+| 21/10 → 22/10 | | | | | | | |
+| 22/10 → 23/10 | | | | | | | |
+| 23/10 → 24/10 | | | | | | | |
+
+**Đủ dữ liệu để đi tiếp khi:** có ít nhất 5–7 đêm sau bản v2.5, và trong đó:
+- biết tỉ lệ đêm vào Top 3, và hạng thay đổi thế nào theo mốc «tới máy chủ»;
+- có ít nhất 1–2 đêm request tới máy chủ **trước** 0h mà vẫn thành công (hoặc 1 đêm bị từ chối: khi đó biết luôn ranh giới).
+
+**Vận hành mỗi đêm (giữ nguyên):** tải lại extension chỉ khi có bản build mới; không bấm «Đồng bộ giờ» sau 23:59:30; không bấm «Xoá» trong tab Nhật ký; máy không ngủ, Chrome mở.
